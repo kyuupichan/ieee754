@@ -250,6 +250,14 @@ APInt::tc_subtract (t_integer_part *dst, const t_integer_part *lhs,
   return c;
 }
 
+/* Negate a bignum in-place.  */
+void
+APInt::tc_negate (t_integer_part *dst, unsigned int parts)
+{
+  tc_complement (dst, const_cast<const t_integer_part *>(dst), parts);
+  tc_increment (dst, parts);
+}
+
 /*  DST += SRC * MULTIPLIER + PART   if add is true
     DST  = SRC * MULTIPLIER + PART   if add is false
 

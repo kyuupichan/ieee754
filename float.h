@@ -48,6 +48,9 @@ class APInt {
   static unsigned int tc_lsb (const t_integer_part *, unsigned int);
   static unsigned int tc_msb (const t_integer_part *, unsigned int);
 
+  /* Negate a bignum in-place.  */
+  static void tc_negate (t_integer_part *, unsigned int);
+
   /* DST = LHS + RHS + CARRY where CARRY is zero or one.  Returns the
      carry flag.  */
   static t_integer_part tc_add (t_integer_part *, const t_integer_part *,
@@ -159,7 +162,8 @@ class t_float {
   enum e_semantics_kind {
     fsk_ieee_single,
     fsk_ieee_double,
-    fsk_ieee_double_extended
+    fsk_ieee_quad,
+    fsk_x87_double_extended,
   };
 
   /* Operation status.  fs_underflow or fs_overflow are always
@@ -183,7 +187,7 @@ class t_float {
 
   /* Constructors.  */
   t_float (e_semantics_kind, const char *);
-  t_float (e_semantics_kind, t_integer_part, e_rounding_mode, e_status *);
+  t_float (e_semantics_kind, t_integer_part);
   t_float (e_semantics_kind, e_category, bool negative);
   t_float (const t_float &);
   ~t_float ();
@@ -197,17 +201,22 @@ class t_float {
 
   /* Conversions.  */
   e_status convert (e_semantics_kind, e_rounding_mode);
-  e_status convert_to_int (APInt &, e_rounding_mode);
+  e_status convert_to_integer (t_integer_part *, unsigned int, bool,
+			       e_rounding_mode) const;
   e_status convert_from_int (const APInt &, e_rounding_mode);
+  e_status convert_from_string (const char *, e_rounding_mode);
 
   /* Comparison with another floating point number.  */
   e_comparison compare (const t_float &) const;
 
   /* Simple queries.  */
-  e_category get_category () const {return category; }
+  e_category get_category () const { return category; }
   bool is_zero () const { return category == fc_zero; }
   bool is_non_zero () const { return category != fc_zero; }
   bool is_negative () const { return sign; }
+  static unsigned int precision_for_kind (e_semantics_kind);
+
+  t_float& operator= (const t_float &);
 
  private:
 
@@ -223,31 +232,34 @@ class t_float {
   const t_integer_part *sig_parts_array () const;
 
   /* Significand operations.  */
-  t_integer_part add_significand (const t_float &);
-  t_integer_part subtract_significand (const t_float &, t_integer_part carry);
+  t_integer_part add_or_subtract_significands (const t_float &, bool subtract);
   e_lost_fraction divide_significand (const t_float &);
   e_lost_fraction multiply_significand (const t_float &);
   void increment_significand ();
   void initialize (e_semantics_kind);
+  bool is_significand_zero ();
   void logical_left_shift_significand (unsigned int bits);
+  void negate_significand ();
   e_lost_fraction rescale_significand_right (unsigned int bits);
+  unsigned int significand_lsb () const;
   unsigned int significand_msb ();
   void zero_significand ();
 
   /* Right shift a bignum but return the lost fraction.  */
-  static e_lost_fraction right_shift_lost_fraction
-    (t_integer_part *, unsigned int parts, unsigned int bits);
+  static e_lost_fraction right_shift (t_integer_part *, unsigned int parts,
+				      unsigned int bits);
+  static e_lost_fraction trailing_hexadecimal_fraction (const char *,
+							unsigned int);
 
-  /* Normalization.  */
-  e_status normalize (e_rounding_mode, e_lost_fraction);
-  bool normalize_zeroes ();
-
-  /* Arithmetic with normalized zeroes but non-normalized
-     exponents.  */
+  /* Non-normalized arithmetic.  */
+  e_status unnormalized_add_or_subtract (const t_float &, bool,
+					 e_rounding_mode, e_lost_fraction *);
   e_status unnormalized_divide (const t_float &, e_lost_fraction *);
   e_status unnormalized_multiply (const t_float &, e_lost_fraction *);
 
-  /* Arithmetic with normalized results.  */
+  /* Normalization.  */
+  e_status normalize (e_rounding_mode, e_lost_fraction);
+
   e_comparison compare_absolute_value (const t_float &) const;
   e_status handle_overflow (e_rounding_mode);
   bool round_away_from_zero (e_rounding_mode, e_lost_fraction);
@@ -255,6 +267,10 @@ class t_float {
   /* Miscellany.  */
   static unsigned int part_count_for_kind (e_semantics_kind);
   static const flt_semantics &semantics_for_kind (e_semantics_kind);
+  e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
+  e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
+  void assign (const t_float &);
+  void free_significand ();
 
   /* Significand - the fraction with an explicit integer bit.  Must be
      at least one bit wider than the target precision.  */
