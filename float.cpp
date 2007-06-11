@@ -166,6 +166,7 @@ t_float::initialize (e_semantics_kind semantics_kind)
   unsigned int count;
 
   kind = semantics_kind;
+
   count = part_count_for_kind (semantics_kind);
   is_wide = (count > 1);
   if (is_wide)
@@ -182,21 +183,15 @@ t_float::free_significand ()
 void
 t_float::assign (const t_float &rhs)
 {
-  unsigned int i, parts_count;
-  const t_integer_part *src;
-  t_integer_part *dst;
-
   assert (kind == rhs.kind);
 
   sign = rhs.sign;
   category = rhs.category;
   exponent = rhs.exponent;
 
-  dst = sig_parts_array ();
-  src = rhs.sig_parts_array ();
-  parts_count = part_count_for_kind (kind);
-  for (i = 0; i < parts_count; i++)
-    dst[i] = src[i];
+  if (category == fc_normal)
+    APInt::tc_assign (sig_parts_array(), rhs.sig_parts_array(),
+		      part_count_for_kind (kind));
 }
 
 t_float &
@@ -255,15 +250,14 @@ t_float::~t_float ()
 const t_integer_part *
 t_float::sig_parts_array () const
 {
-  if (is_wide)
-    return significand.parts;
-  else
-    return &significand.part;
+  return const_cast<t_float *>(this)->sig_parts_array ();
 }
 
 t_integer_part *
 t_float::sig_parts_array ()
 {
+  assert (category == fc_normal);
+
   if (is_wide)
     return significand.parts;
   else
@@ -273,8 +267,6 @@ t_float::sig_parts_array ()
 bool
 t_float::is_significand_zero ()
 {
-  assert (category == fc_normal);
-
   return APInt::tc_is_zero (sig_parts_array (), part_count_for_kind (kind));
 }
 
@@ -297,8 +289,8 @@ t_float::combine_lost_fractions (e_lost_fraction more_significant,
 void
 t_float::zero_significand ()
 {
-  APInt::tc_set (sig_parts_array (), 0, part_count_for_kind (kind));
   category = fc_normal;
+  APInt::tc_set (sig_parts_array (), 0, part_count_for_kind (kind));
 }
 
 /* Increment a floating point number's significand.  */
@@ -309,8 +301,6 @@ t_float::increment_significand ()
 
   if (category == fc_zero)
     zero_significand ();
-
-  assert (category == fc_normal);
 
   carry = APInt::tc_increment (sig_parts_array (), part_count_for_kind (kind));
 
@@ -353,8 +343,6 @@ t_float::add_or_subtract_significands (const t_float &rhs, bool subtract)
   parts = sig_parts_array ();
 
   assert (kind == rhs.kind);
-  assert (category == fc_normal);
-  assert (rhs.category == fc_normal);
   assert (exponent == rhs.exponent);
 
   return (subtract ? APInt::tc_subtract: APInt::tc_add)
@@ -372,8 +360,6 @@ t_float::multiply_significand (const t_float &rhs)
   e_lost_fraction lost_fraction;
 
   assert (kind == rhs.kind);
-  assert (category == fc_normal);
-  assert (rhs.category == fc_normal);
 
   lhs_significand = sig_parts_array();
   parts_count = part_count_for_kind (kind);
@@ -423,8 +409,6 @@ t_float::divide_significand (const t_float &rhs)
   e_lost_fraction lost_fraction;
 
   assert (kind == rhs.kind);
-  assert (category == fc_normal);
-  assert (rhs.category == fc_normal);
 
   lhs_significand = sig_parts_array();
   rhs_significand = rhs.sig_parts_array();
