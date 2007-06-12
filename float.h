@@ -203,7 +203,8 @@ class t_float {
   e_status convert (e_semantics_kind, e_rounding_mode);
   e_status convert_to_integer (t_integer_part *, unsigned int, bool,
 			       e_rounding_mode) const;
-  e_status convert_from_int (const APInt &, e_rounding_mode);
+  e_status convert_from_integer (const t_integer_part *, unsigned int, bool,
+				 e_rounding_mode);
   e_status convert_from_string (const char *, e_rounding_mode);
 
   /* Comparison with another floating point number.  */
@@ -265,6 +266,8 @@ class t_float {
   bool round_away_from_zero (e_rounding_mode, e_lost_fraction);
 
   /* Miscellany.  */
+  e_status convert_from_unsigned_integer (t_integer_part *, unsigned int,
+					  e_rounding_mode);
   static unsigned int part_count_for_kind (e_semantics_kind);
   static const flt_semantics &semantics_for_kind (e_semantics_kind);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);

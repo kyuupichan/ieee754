@@ -42,6 +42,12 @@ struct llvm::flt_semantics
 
 namespace {
 
+  inline unsigned int
+  part_count_for_bits (unsigned int bits)
+  {
+    return ((bits) + t_integer_part_width - 1) / t_integer_part_width;
+  }
+
   unsigned int
   digit_value (unsigned int c)
   {
@@ -156,7 +162,7 @@ t_float::precision_for_kind (e_semantics_kind kind)
 unsigned int
 t_float::part_count_for_kind (e_semantics_kind kind)
 {
-  return 1 + (precision_for_kind (kind) / t_integer_part_width);
+  return part_count_for_bits (precision_for_kind (kind));
 }
 
 /* Constructors.  */
@@ -381,8 +387,7 @@ t_float::multiply_significand (const t_float &rhs)
       unsigned int bits, significant_parts;
 
       bits = msb - precision;
-      significant_parts = ((msb + t_integer_part_width - 1)
-			   / t_integer_part_width);
+      significant_parts = part_count_for_bits (msb);
       lost_fraction = right_shift (full_significand, significant_parts, bits);
       exponent += bits;
     }
@@ -1175,7 +1180,7 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
   if (category == fc_infinity || category == fc_nan)
     return fs_invalid_op;
 
-  parts_count = (width + t_integer_part_width + 1) / t_integer_part_width;
+  parts_count = part_count_for_bits (width);
 
   if (category == fc_zero)
     {
@@ -1225,6 +1230,62 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
     return fs_ok;
   else
     return fs_inexact;
+}
+
+t_float::e_status
+t_float::convert_from_unsigned_integer (t_integer_part *parts,
+					unsigned int part_count,
+					e_rounding_mode rounding_mode)
+{
+  unsigned int msb, precision;
+  e_lost_fraction lost_fraction;
+
+  msb = APInt::tc_msb (parts, part_count);
+  precision = precision_for_kind (kind);
+
+  category = fc_normal;
+  exponent = precision - 1;
+
+  if (msb > precision)
+    {
+      lost_fraction = rescale_significand_right (msb - precision);
+      msb = precision;
+    }
+  else
+    lost_fraction = lf_exactly_zero;
+
+  /* Copy the bit image.  */
+  zero_significand ();
+  APInt::tc_assign (sig_parts_array (), parts, part_count_for_bits (msb));
+
+  return normalize (rounding_mode, lost_fraction);
+}
+
+t_float::e_status
+t_float::convert_from_integer (const t_integer_part *parts,
+			       unsigned int part_count, bool is_signed,
+			       e_rounding_mode rounding_mode)
+{
+  unsigned int width;
+  e_status status;
+  t_integer_part *copy;
+
+  copy = new t_integer_part[part_count];
+  APInt::tc_assign (copy, parts, part_count);
+
+  width = part_count * t_integer_part_width;
+
+  sign = false;
+  if (is_signed && APInt::tc_extract_bit (parts, width))
+    {
+      sign = true;
+      APInt::tc_negate (copy, part_count);
+    }
+
+  status = convert_from_unsigned_integer (copy, part_count, rounding_mode);
+  delete [] copy;
+
+  return status;
 }
 
 t_float::e_lost_fraction
@@ -1423,47 +1484,6 @@ ulps_from_half (c_part *significand, unsigned int excess_precision)
     return part_ulps_from_half (significand[0], excess_precision);
   else
     return multi_part_ulps_from_half (significand, excess_precision);
-}
-
-e_arith_status
-t_int_to_float_convert (t_float *flt, const t_integer *value,
-			bool is_signed, const c_float_semantics *semantics)
-{
-  t_integer absolute;
-  unsigned int width_required, parts;
-
-  absolute = *value;
-  flt->sign = false;
-
-  if (integer_compare (value, &integer_zero, is_signed) < 0)
-    {
-      integer_change_sign (&absolute, &absolute, t_integer_width, is_signed);
-      flt->sign = true;
-    }
-
-  width_required = integer_width (&absolute);
-
-  /* If it's too big, we give up immediately.  Note that this codepath
-     is not currently exercised as none of our integer types are large
-     enough.  */
-  if (width_required > t_float_width)
-    {
-      flt->category = fc_infinity;
-      return as_flt_overflow | as_flt_inexact;
-    }
-
-  flt->category = fc_normal;
-  flt->exponent = semantics->precision - 1;
-
-  /* Copy the bit image.  */
-  parts = (width_required + c_part_width - 1) / c_part_width;
-  tc_assign (flt->significand, integer_parts (&absolute), parts);
-  while (parts < tf_parts)
-    flt->significand[parts++] = 0;
-  zero_check_significand (flt);
-
-  /* Return a normalized result.  */
-  return semantically_normalize (flt, semantics, lf_exactly_zero);
 }
 
 /* Returns the number of digits P is to the left of the (possibly
