@@ -162,7 +162,7 @@ t_float::precision_for_kind (e_semantics_kind kind)
 unsigned int
 t_float::part_count_for_kind (e_semantics_kind kind)
 {
-  return part_count_for_bits (precision_for_kind (kind));
+  return part_count_for_bits (precision_for_kind (kind) + 1);
 }
 
 /* Constructors.  */
@@ -1248,7 +1248,8 @@ t_float::convert_from_unsigned_integer (t_integer_part *parts,
 
   if (msb > precision)
     {
-      lost_fraction = rescale_significand_right (msb - precision);
+      exponent += (msb - precision);
+      lost_fraction = right_shift (parts, part_count, msb - precision);
       msb = precision;
     }
   else
