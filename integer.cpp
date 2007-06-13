@@ -437,7 +437,7 @@ APInt::tc_divide (t_integer_part *lhs, const t_integer_part *rhs,
   mask = (t_integer_part) 1 << (shift_count % t_integer_part_width);
 
   tc_assign (srhs, rhs, parts);
-  tc_left_shift (srhs, parts, shift_count);
+  tc_shift_left (srhs, parts, shift_count);
   tc_assign (remainder, lhs, parts);
   tc_set (lhs, 0, parts);
 
@@ -457,7 +457,7 @@ APInt::tc_divide (t_integer_part *lhs, const t_integer_part *rhs,
       if (shift_count == 0)
 	break;
       shift_count--;
-      tc_right_shift (srhs, parts, 1);
+      tc_shift_right (srhs, parts, 1);
       if ((mask >>= 1) == 0)
 	mask = (t_integer_part) 1 << (t_integer_part_width - 1), n--;
     }
@@ -468,7 +468,7 @@ APInt::tc_divide (t_integer_part *lhs, const t_integer_part *rhs,
 /* Shift a bignum left COUNT bits in-place.  Shifted in bits are zero.
    There are no restrictions on COUNT.  */
 void
-APInt::tc_left_shift (t_integer_part *dst, unsigned int parts,
+APInt::tc_shift_left (t_integer_part *dst, unsigned int parts,
 		      unsigned int count)
 {
   unsigned int jump, shift;
@@ -503,7 +503,7 @@ APInt::tc_left_shift (t_integer_part *dst, unsigned int parts,
 /* Shift a bignum right COUNT bits in-place.  Shifted in bits are
    zero.  There are no restrictions on COUNT.  */
 void
-APInt::tc_right_shift (t_integer_part *dst, unsigned int parts,
+APInt::tc_shift_right (t_integer_part *dst, unsigned int parts,
 		       unsigned int count)
 {
   unsigned int i, jump, shift;

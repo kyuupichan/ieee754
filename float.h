@@ -104,12 +104,12 @@ class APInt {
 
   /* Shift a bignum left COUNT bits.  Shifted in bits are zero.  There
      are no restrictions on COUNT.  */
-  static void tc_left_shift (t_integer_part *, unsigned int parts,
+  static void tc_shift_left (t_integer_part *, unsigned int parts,
 			     unsigned int count);
 
   /* Shift a bignum right COUNT bits.  Shifted in bits are zero.
      There are no restrictions on COUNT.  */
-  static void tc_right_shift (t_integer_part *, unsigned int parts,
+  static void tc_shift_right (t_integer_part *, unsigned int parts,
 			      unsigned int count);
 
   /* The obvious AND, OR and XOR and complement operations.  */
@@ -230,15 +230,15 @@ class t_float {
   void increment_significand ();
   void initialize (e_semantics_kind);
   bool is_significand_zero ();
-  void logical_left_shift_significand (unsigned int bits);
+  void shift_significand_left (unsigned int bits);
+  e_lost_fraction shift_significand_right (unsigned int bits);
   void negate_significand ();
-  e_lost_fraction rescale_significand_right (unsigned int bits);
   unsigned int significand_lsb () const;
   unsigned int significand_msb ();
   void zero_significand ();
 
   /* Right shift a bignum but return the lost fraction.  */
-  static e_lost_fraction right_shift (t_integer_part *, unsigned int parts,
+  static e_lost_fraction shift_right (t_integer_part *, unsigned int parts,
 				      unsigned int bits);
   static e_lost_fraction trailing_hexadecimal_fraction (const char *,
 							unsigned int);

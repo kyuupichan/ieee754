@@ -321,22 +321,6 @@ t_float::negate_significand ()
   APInt::tc_negate (sig_parts_array (), part_count_for_kind (kind));
 }
 
-/* Shift the significand left BITS bits, subtract BITS from its exponent.  */
-void
-t_float::logical_left_shift_significand (unsigned int bits)
-{
-  assert (bits < precision_for_kind (kind));
-
-  if (bits)
-    {
-      APInt::tc_left_shift (sig_parts_array (), part_count_for_kind (kind),
-			    bits);
-      exponent -= bits;
-
-      assert (!is_significand_zero ());
-    }
-}
-
 /* Add or subtract the significand of the RHS.  Returns the carry /
    borrow flag.  */
 t_integer_part
@@ -385,7 +369,7 @@ t_float::multiply_significand (const t_float &rhs)
 
       bits = msb - precision;
       significant_parts = part_count_for_bits (msb);
-      lost_fraction = right_shift (full_significand, significant_parts, bits);
+      lost_fraction = shift_right (full_significand, significant_parts, bits);
       exponent += bits;
     }
   else
@@ -438,7 +422,7 @@ t_float::divide_significand (const t_float &rhs)
   if (bit)
     {
       exponent += bit;
-      APInt::tc_left_shift (divisor, parts_count, bit);
+      APInt::tc_shift_left (divisor, parts_count, bit);
     }
 
   /* Normalize the dividend.  */
@@ -446,7 +430,7 @@ t_float::divide_significand (const t_float &rhs)
   if (bit)
     {
       exponent -= bit;
-      APInt::tc_left_shift (dividend, parts_count, bit);
+      APInt::tc_shift_left (dividend, parts_count, bit);
     }
 
   /* Long division.  */
@@ -462,7 +446,7 @@ t_float::divide_significand (const t_float &rhs)
       else if (!set)
 	exponent--;
 
-      APInt::tc_left_shift (dividend, parts_count, 1);
+      APInt::tc_shift_left (dividend, parts_count, 1);
     }
 
   /* Figure out the lost fraction.  */
@@ -485,7 +469,7 @@ t_float::divide_significand (const t_float &rhs)
 
 /* Shift DST right COUNT bits noting lost fraction.  */
 t_float::e_lost_fraction
-t_float::right_shift (t_integer_part *dst, unsigned int parts,
+t_float::shift_right (t_integer_part *dst, unsigned int parts,
 		      unsigned int count)
 {
   e_lost_fraction lost_fraction;
@@ -507,7 +491,7 @@ t_float::right_shift (t_integer_part *dst, unsigned int parts,
       else
 	lost_fraction = lf_less_than_half;
 
-      APInt::tc_right_shift (dst, parts, count);
+      APInt::tc_shift_right (dst, parts, count);
     }
 
   return lost_fraction;
@@ -527,14 +511,30 @@ t_float::significand_lsb () const
 
 /* Note that a zero result is NOT normalized to fc_zero.  */
 t_float::e_lost_fraction
-t_float::rescale_significand_right (unsigned int bits)
+t_float::shift_significand_right (unsigned int bits)
 {
   /* Our exponent should not overflow.  */
   assert ((exponent_t) (exponent + bits) >= exponent);
 
   exponent += bits;
 
-  return right_shift (sig_parts_array (), part_count_for_kind (kind), bits);
+  return shift_right (sig_parts_array (), part_count_for_kind (kind), bits);
+}
+
+/* Shift the significand left BITS bits, subtract BITS from its exponent.  */
+void
+t_float::shift_significand_left (unsigned int bits)
+{
+  assert (bits < precision_for_kind (kind));
+
+  if (bits)
+    {
+      APInt::tc_shift_left (sig_parts_array (), part_count_for_kind (kind),
+			    bits);
+      exponent -= bits;
+
+      assert (!is_significand_zero ());
+    }
 }
 
 t_float::e_comparison
@@ -661,7 +661,7 @@ t_float::normalize (e_rounding_mode rounding_mode,
 	{
 	  assert (lost_fraction == lf_exactly_zero);
 
-	  logical_left_shift_significand (-exponent_change);
+	  shift_significand_left (-exponent_change);
 
 	  return fs_ok;
 	}
@@ -671,7 +671,7 @@ t_float::normalize (e_rounding_mode rounding_mode,
 	  e_lost_fraction lf;
 
 	  /* Shift right and capture any new lost fraction.  */
-	  lf = rescale_significand_right (exponent_change);
+	  lf = shift_significand_right (exponent_change);
 
 	  lost_fraction = combine_lost_fractions (lf, lost_fraction);
 
@@ -719,7 +719,7 @@ t_float::normalize (e_rounding_mode rounding_mode,
 	      return (e_status) (fs_overflow | fs_inexact);
 	    }
 
-	  rescale_significand_right (1);
+	  shift_significand_right (1);
 
 	  return fs_inexact;
 	}
@@ -818,12 +818,12 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
     {
       t_float temp_rhs (rhs);
 
-      lost_fraction = temp_rhs.rescale_significand_right (bits);
+      lost_fraction = temp_rhs.shift_significand_right (bits);
       carry = add_or_subtract_significands (temp_rhs, subtract);
     }
   else
     {
-      lost_fraction = rescale_significand_right (-bits);
+      lost_fraction = shift_significand_right (-bits);
       carry = add_or_subtract_significands (rhs, subtract);
     }
 
@@ -1192,10 +1192,10 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
   bits = (int) precision_for_kind (kind) - 1 - exponent;
 
   if (bits > 0)
-    lost_fraction = tmp.rescale_significand_right (bits);
+    lost_fraction = tmp.shift_significand_right (bits);
   else
     {
-      tmp.logical_left_shift_significand (-bits);
+      tmp.shift_significand_left (-bits);
       lost_fraction = lf_exactly_zero;
     }
 
@@ -1247,7 +1247,7 @@ t_float::convert_from_unsigned_integer (t_integer_part *parts,
   if (msb > precision)
     {
       exponent += (msb - precision);
-      lost_fraction = right_shift (parts, part_count, msb - precision);
+      lost_fraction = shift_right (parts, part_count, msb - precision);
       msb = precision;
     }
   else
@@ -1597,7 +1597,7 @@ read_decimal_significand (const c_number *number, t_float *flt,
 
       if (msb >= precision)
 	{
-	  lost_fraction = rescale_significand_right (flt, msb - precision);
+	  lost_fraction = shift_significand_right (flt, msb - precision);
 	  if (lost_fraction == lf_exactly_half && remainder_non_zero (p))
 	    lost_fraction = lf_more_than_half;
 	  else if (lost_fraction == lf_exactly_zero && remainder_non_zero (p))
