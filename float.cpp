@@ -329,10 +329,8 @@ t_float::logical_left_shift_significand (unsigned int bits)
 
   if (bits)
     {
-      t_integer_part *parts;
-
-      parts = sig_parts_array ();
-      APInt::tc_left_shift (parts, parts, part_count_for_kind (kind), bits);
+      APInt::tc_left_shift (sig_parts_array (), part_count_for_kind (kind),
+			    bits);
       exponent -= bits;
 
       assert (!is_significand_zero ());
@@ -352,8 +350,7 @@ t_float::add_or_subtract_significands (const t_float &rhs, bool subtract)
   assert (exponent == rhs.exponent);
 
   return (subtract ? APInt::tc_subtract: APInt::tc_add)
-    (parts, const_cast<const t_integer_part *>(parts),
-     rhs.sig_parts_array (), 0, part_count_for_kind (kind));
+    (parts, rhs.sig_parts_array (), 0, part_count_for_kind (kind));
 }
 
 /* Multiply the significand of the RHS.  Returns the lost fraction.  */
@@ -441,7 +438,7 @@ t_float::divide_significand (const t_float &rhs)
   if (bit)
     {
       exponent += bit;
-      APInt::tc_left_shift (divisor, divisor, parts_count, bit);
+      APInt::tc_left_shift (divisor, parts_count, bit);
     }
 
   /* Normalize the dividend.  */
@@ -449,7 +446,7 @@ t_float::divide_significand (const t_float &rhs)
   if (bit)
     {
       exponent -= bit;
-      APInt::tc_left_shift (dividend, dividend, parts_count, bit);
+      APInt::tc_left_shift (dividend, parts_count, bit);
     }
 
   /* Long division.  */
@@ -458,14 +455,14 @@ t_float::divide_significand (const t_float &rhs)
     {
       if (APInt::tc_compare (dividend, divisor, parts_count) >= 0)
 	{
-	  APInt::tc_subtract (dividend, dividend, divisor, 0, parts_count);
+	  APInt::tc_subtract (dividend, divisor, 0, parts_count);
 	  APInt::tc_set_bit (lhs_significand, bit);
 	  set = 1;
 	}
       else if (!set)
 	exponent--;
 
-      APInt::tc_left_shift (dividend, dividend, parts_count, 1);
+      APInt::tc_left_shift (dividend, parts_count, 1);
     }
 
   /* Figure out the lost fraction.  */
@@ -510,7 +507,7 @@ t_float::right_shift (t_integer_part *dst, unsigned int parts,
       else
 	lost_fraction = lf_less_than_half;
 
-      APInt::tc_right_shift (dst, dst, parts, count);
+      APInt::tc_right_shift (dst, parts, count);
     }
 
   return lost_fraction;
@@ -583,8 +580,9 @@ t_float::handle_overflow (e_rounding_mode rounding_mode)
 
   category = fc_normal;
   exponent = our_semantics.max_exponent;
-  APInt::tc_set_lsbs (sig_parts_array (), part_count_for_kind (kind),
-		      our_semantics.precision);
+  APInt::tc_set_least_significant_bits (sig_parts_array (),
+					part_count_for_kind (kind),
+					our_semantics.precision);
 
   return fs_inexact;
 }

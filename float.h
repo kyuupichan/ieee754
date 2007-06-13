@@ -51,16 +51,14 @@ class APInt {
   /* Negate a bignum in-place.  */
   static void tc_negate (t_integer_part *, unsigned int);
 
-  /* DST = LHS + RHS + CARRY where CARRY is zero or one.  Returns the
-     carry flag.  */
+  /* DST += RHS + CARRY where CARRY is zero or one.  Returns the carry
+     flag.  */
   static t_integer_part tc_add (t_integer_part *, const t_integer_part *,
-				const t_integer_part *, t_integer_part carry,
-				unsigned);
+				t_integer_part carry, unsigned);
 
-  /* DST = LHS - RHS - CARRY where CARRY is zero or one.  Returns the
-     carry flag.  */
+  /* DST -= RHS + CARRY where CARRY is zero or one.  Returns the carry
+     flag.  */
   static t_integer_part tc_subtract (t_integer_part *, const t_integer_part *,
-				     const t_integer_part *,
 				     t_integer_part carry, unsigned);
 
   /*  DST += SRC * MULTIPLIER + PART   if add is true
@@ -91,52 +89,45 @@ class APInt {
   static void tc_full_multiply (t_integer_part *, const t_integer_part *,
 				const t_integer_part *, unsigned);
 
-  /* If RHS is zero QUOTIENT and REMAINDER are left unchanged, return
-     one.  Otherwise set QUOTIENT to LHS / RHS with the fractional
-     part discarded, set REMAINDER to the remainder, return zero.
-     i.e.
-     
-       LHS = RHS * QUOTIENT + REMAINDER
+  /* If RHS is zero LHS and REMAINDER are left unchanged, return one.
+     Otherwise set LHS to LHS / RHS with the fractional part
+     discarded, set REMAINDER to the remainder, return zero.  i.e.
+
+       OLD_LHS = RHS * LHS + REMAINDER
 
      SCRATCH is a bignum of the same size as the operands and result
      for use by the routine; its contents need not be initialized and
-     are destroyed.  QUOTIENT, REMAINDER and SCRATCH must be distinct,
-     and additionally SCRATCH cannot equal LHS.
-  */
-  static int tc_divide (t_integer_part *quotient, t_integer_part *remainder,
-			const t_integer_part *lhs, const t_integer_part *rhs,
-			t_integer_part *scratch, unsigned int parts);
+     are destroyed.  LHS, REMAINDER and SCRATCH must be distinct.  */
+  static int tc_divide (t_integer_part *lhs, const t_integer_part *rhs,
+			t_integer_part *remainder, t_integer_part *scratch,
+			unsigned int parts);
 
   /* Shift a bignum left COUNT bits.  Shifted in bits are zero.  There
      are no restrictions on COUNT.  */
-  static void tc_left_shift (t_integer_part *, const t_integer_part *,
-			     unsigned int parts, unsigned int count);
+  static void tc_left_shift (t_integer_part *, unsigned int parts,
+			     unsigned int count);
 
   /* Shift a bignum right COUNT bits.  Shifted in bits are zero.
      There are no restrictions on COUNT.  */
-  static void tc_right_shift (t_integer_part *, const t_integer_part *,
-			      unsigned int parts, unsigned int count);
+  static void tc_right_shift (t_integer_part *, unsigned int parts,
+			      unsigned int count);
 
   /* The obvious AND, OR and XOR and complement operations.  */
-  static void tc_and (t_integer_part *, const t_integer_part *,
-		      const t_integer_part *, unsigned int);
-  static void tc_or (t_integer_part *, const t_integer_part *,
-		     const t_integer_part *, unsigned int);
-  static void tc_xor (t_integer_part *, const t_integer_part *,
-		      const t_integer_part *, unsigned int);
-  static void tc_complement (t_integer_part *, const t_integer_part *,
-			     unsigned int);
+  static void tc_and (t_integer_part *, const t_integer_part *, unsigned int);
+  static void tc_or (t_integer_part *, const t_integer_part *, unsigned int);
+  static void tc_xor (t_integer_part *, const t_integer_part *, unsigned int);
+  static void tc_complement (t_integer_part *, unsigned int);
   
   /* Comparison (unsigned) of two bignums.  */
   static int tc_compare (const t_integer_part *, const t_integer_part *,
 			 unsigned int);
 
-  /* Increment a bignum.  Return the carry flag.  */
+  /* Increment a bignum in-place.  Return the carry flag.  */
   static t_integer_part tc_increment (t_integer_part *, unsigned int);
 
   /* Set the least significant BITS and clear the rest.  */
-  static void tc_set_lsbs (t_integer_part *, unsigned int parts,
-			   unsigned int bits);
+  static void tc_set_least_significant_bits (t_integer_part *, unsigned int,
+					     unsigned int bits);
 };
 
 class t_float {

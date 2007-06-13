@@ -189,11 +189,10 @@ APInt::tc_msb (const t_integer_part *parts, unsigned int n)
   return 0;
 }
 
-/* DST = LHS + RHS + C where C is zero or one.  Returns the carry
-   flag.  */
+/* DST += RHS + C where C is zero or one.  Returns the carry flag.  */
 t_integer_part
-APInt::tc_add (t_integer_part *dst, const t_integer_part *lhs,
-	      const t_integer_part *rhs, t_integer_part c, unsigned int parts)
+APInt::tc_add (t_integer_part *dst, const t_integer_part *rhs,
+	       t_integer_part c, unsigned int parts)
 {
   unsigned int i;
 
@@ -203,15 +202,15 @@ APInt::tc_add (t_integer_part *dst, const t_integer_part *lhs,
     {
       t_integer_part l;
 
-      l = lhs[i];
+      l = dst[i];
       if (c)
 	{
-	  dst[i] = l + rhs[i] + 1;
+	  dst[i] += rhs[i] + 1;
 	  c = (dst[i] <= l);
 	}
       else
 	{
-	  dst[i] = l + rhs[i];
+	  dst[i] += rhs[i];
 	  c = (dst[i] < l);
 	}
     }
@@ -219,12 +218,10 @@ APInt::tc_add (t_integer_part *dst, const t_integer_part *lhs,
   return c;
 }
 
-/* DST = LHS - RHS - C where C is zero or one.  Returns the carry
-   flag.  */
+/* DST -= RHS + C where C is zero or one.  Returns the carry flag.  */
 t_integer_part
-APInt::tc_subtract (t_integer_part *dst, const t_integer_part *lhs,
-		   const t_integer_part *rhs, t_integer_part c,
-		   unsigned int parts)
+APInt::tc_subtract (t_integer_part *dst, const t_integer_part *rhs,
+		    t_integer_part c, unsigned int parts)
 {
   unsigned int i;
 
@@ -234,15 +231,15 @@ APInt::tc_subtract (t_integer_part *dst, const t_integer_part *lhs,
     {
       t_integer_part l;
 
-      l = lhs[i];
+      l = dst[i];
       if (c)
 	{
-	  dst[i] = l - rhs[i] - 1;
+	  dst[i] -= rhs[i] + 1;
 	  c = (dst[i] >= l);
 	}
       else
 	{
-	  dst[i] = l - rhs[i];
+	  dst[i] -= rhs[i];
 	  c = (dst[i] > l);
 	}
     }
@@ -254,7 +251,7 @@ APInt::tc_subtract (t_integer_part *dst, const t_integer_part *lhs,
 void
 APInt::tc_negate (t_integer_part *dst, unsigned int parts)
 {
-  tc_complement (dst, const_cast<const t_integer_part *>(dst), parts);
+  tc_complement (dst, parts);
   tc_increment (dst, parts);
 }
 
@@ -373,7 +370,7 @@ APInt::tc_multiply_part (t_integer_part *dst, const t_integer_part *src,
    from both operands.  */
 int
 APInt::tc_multiply (t_integer_part *dst, const t_integer_part *lhs,
-		   const t_integer_part *rhs, unsigned int parts)
+		    const t_integer_part *rhs, unsigned int parts)
 {
   unsigned int i;
   int overflow;
@@ -394,7 +391,7 @@ APInt::tc_multiply (t_integer_part *dst, const t_integer_part *lhs,
    overflow occurs.  DST must be disjoint from both operands.  */
 void
 APInt::tc_full_multiply (t_integer_part *dst, const t_integer_part *lhs,
-			const t_integer_part *rhs, unsigned int parts)
+			 const t_integer_part *rhs, unsigned int parts)
 {
   unsigned int i;
   int overflow;
@@ -411,27 +408,25 @@ APInt::tc_full_multiply (t_integer_part *dst, const t_integer_part *lhs,
   assert (!overflow);
 }
 
-/* If RHS is zero QUOTIENT and REMAINDER are left unchanged, return
-   one.  Otherwise set QUOTIENT to LHS / RHS with the fractional part
-   discarded, set REMAINDER to the remainder, return zero.  i.e.
+/* If RHS is zero LHS and REMAINDER are left unchanged, return one.
+   Otherwise set LHS to LHS / RHS with the fractional part discarded,
+   set REMAINDER to the remainder, return zero.  i.e.
 
-     LHS = RHS * QUOTIENT + REMAINDER
+     OLD_LHS = RHS * LHS + REMAINDER
 
    SCRATCH is a bignum of the same size as the operands and result for
    use by the routine; its contents need not be initialized and are
-   destroyed.  QUOTIENT, REMAINDER and SCRATCH must be distinct, and
-   additionally SCRATCH cannot equal LHS.
+   destroyed.  LHS, REMAINDER and SCRATCH must be distinct.
 */
 int
-APInt::tc_divide (t_integer_part *quotient, t_integer_part *remainder,
-		 const t_integer_part *lhs, const t_integer_part *rhs,
-		 t_integer_part *srhs, unsigned int parts)
+APInt::tc_divide (t_integer_part *lhs, const t_integer_part *rhs,
+		  t_integer_part *remainder, t_integer_part *srhs,
+		  unsigned int parts)
 {
   unsigned int n, shift_count;
   t_integer_part mask;
 
-  assert (quotient != remainder && quotient != srhs
-		&& remainder != srhs && srhs != lhs);
+  assert (lhs != remainder && lhs != srhs && remainder != srhs);
 
   shift_count = tc_msb (rhs, parts);
   if (shift_count == 0)
@@ -441,9 +436,10 @@ APInt::tc_divide (t_integer_part *quotient, t_integer_part *remainder,
   n = shift_count / t_integer_part_width;
   mask = (t_integer_part) 1 << (shift_count % t_integer_part_width);
 
-  tc_left_shift (srhs, rhs, parts, shift_count);
+  tc_assign (srhs, rhs, parts);
+  tc_left_shift (srhs, parts, shift_count);
   tc_assign (remainder, lhs, parts);
-  tc_set (quotient, 0, parts);
+  tc_set (lhs, 0, parts);
 
   /* Loop, subtracting SRHS if REMAINDER is greater and adding that to
      the total.  */
@@ -454,14 +450,14 @@ APInt::tc_divide (t_integer_part *quotient, t_integer_part *remainder,
       compare = tc_compare (remainder, srhs, parts);
       if (compare >= 0)
 	{
-	  tc_subtract (remainder, remainder, srhs, 0, parts);
-	  quotient[n] |= mask;
+	  tc_subtract (remainder, srhs, 0, parts);
+	  lhs[n] |= mask;
 	}
 
       if (shift_count == 0)
 	break;
       shift_count--;
-      tc_right_shift (srhs, srhs, parts, 1);
+      tc_right_shift (srhs, parts, 1);
       if ((mask >>= 1) == 0)
 	mask = (t_integer_part) 1 << (t_integer_part_width - 1), n--;
     }
@@ -469,11 +465,11 @@ APInt::tc_divide (t_integer_part *quotient, t_integer_part *remainder,
   return false;
 }
 
-/* Shift a bignum left COUNT bits.  Shifted in bits are zero.  There
-   are no restrictions on COUNT.  */
+/* Shift a bignum left COUNT bits in-place.  Shifted in bits are zero.
+   There are no restrictions on COUNT.  */
 void
-APInt::tc_left_shift (t_integer_part *dst, const t_integer_part *src,
-		     unsigned int parts, unsigned int count)
+APInt::tc_left_shift (t_integer_part *dst, unsigned int parts,
+		      unsigned int count)
 {
   unsigned int jump, shift;
 
@@ -489,12 +485,12 @@ APInt::tc_left_shift (t_integer_part *dst, const t_integer_part *src,
 
       /* dst[i] comes from the two parts src[i - jump] and, if we have
 	 an intra-part shift, src[i - jump - 1].  */
-      part = src[parts - jump];
+      part = dst[parts - jump];
       if (shift)
 	{
 	  part <<= shift;
 	  if (parts >= jump + 1)
-	    part |= src[parts - jump - 1] >> (t_integer_part_width - shift);
+	    part |= dst[parts - jump - 1] >> (t_integer_part_width - shift);
 	}
 
       dst[parts] = part;
@@ -504,11 +500,11 @@ APInt::tc_left_shift (t_integer_part *dst, const t_integer_part *src,
     dst[--parts] = 0;
 }
 
-/* Shift a bignum right COUNT bits.  Shifted in bits are zero.  There
-   are no restrictions on COUNT.  */
+/* Shift a bignum right COUNT bits in-place.  Shifted in bits are
+   zero.  There are no restrictions on COUNT.  */
 void
-APInt::tc_right_shift (t_integer_part *dst, const t_integer_part *src,
-		      unsigned int parts, unsigned int count)
+APInt::tc_right_shift (t_integer_part *dst, unsigned int parts,
+		       unsigned int count)
 {
   unsigned int i, jump, shift;
 
@@ -526,12 +522,12 @@ APInt::tc_right_shift (t_integer_part *dst, const t_integer_part *src,
 	part = 0;
       else
 	{
-	  part = src[i + jump];
+	  part = dst[i + jump];
 	  if (shift)
 	    {
 	      part >>= shift;
 	      if (i + jump + 1 < parts)
-		part |= src[i + jump + 1] << (t_integer_part_width - shift);
+		part |= dst[i + jump + 1] << (t_integer_part_width - shift);
 	    }
 	}
 
@@ -541,46 +537,45 @@ APInt::tc_right_shift (t_integer_part *dst, const t_integer_part *src,
 
 /* Bitwise and of two bignums.  */
 void
-APInt::tc_and (t_integer_part *dst, const t_integer_part *lhs,
-	      const t_integer_part *rhs, unsigned int parts)
+APInt::tc_and (t_integer_part *dst, const t_integer_part *rhs,
+	       unsigned int parts)
 {
   unsigned int i;
 
   for (i = 0; i < parts; i++)
-    dst[i] = lhs[i] & rhs[i];
+    dst[i] &= rhs[i];
 }
 
 /* Bitwise inclusive or of two bignums.  */
 void
-APInt::tc_or (t_integer_part *dst, const t_integer_part *lhs,
-	     const t_integer_part *rhs, unsigned int parts)
+APInt::tc_or (t_integer_part *dst, const t_integer_part *rhs,
+	      unsigned int parts)
 {
   unsigned int i;
 
   for (i = 0; i < parts; i++)
-    dst[i] = lhs[i] | rhs[i];
+    dst[i] |= rhs[i];
 }
 
 /* Bitwise exclusive or of two bignums.  */
 void
-APInt::tc_xor (t_integer_part *dst, const t_integer_part *lhs,
-	      const t_integer_part *rhs, unsigned int parts)
+APInt::tc_xor (t_integer_part *dst, const t_integer_part *rhs,
+	       unsigned int parts)
 {
   unsigned int i;
 
   for (i = 0; i < parts; i++)
-    dst[i] = lhs[i] ^ rhs[i];
+    dst[i] ^= rhs[i];
 }
 
-/* Complement of a bignum.  */
+/* Complement a bignum in-place.  */
 void
-APInt::tc_complement (t_integer_part *dst, const t_integer_part *rhs,
-		     unsigned int parts)
+APInt::tc_complement (t_integer_part *dst, unsigned int parts)
 {
   unsigned int i;
 
   for (i = 0; i < parts; i++)
-    dst[i] = ~rhs[i];
+    dst[i] = ~dst[i];
 }
 
 /* Comparison (unsigned) of two bignums.  */
@@ -603,9 +598,7 @@ APInt::tc_compare (const t_integer_part *lhs, const t_integer_part *rhs,
   return 0;
 }
 
-// Operations for soft-fp.
-
-/* Increment a bignum, return the carry flag.  */
+/* Increment a bignum in-place, return the carry flag.  */
 t_integer_part
 APInt::tc_increment (t_integer_part *dst, unsigned int parts)
 {
@@ -618,8 +611,11 @@ APInt::tc_increment (t_integer_part *dst, unsigned int parts)
   return i == parts;
 }
 
+/* Set the least significant BITS bits of a bignum, clear the
+   rest.  */
 void
-APInt::tc_set_lsbs (t_integer_part *dst, unsigned int parts, unsigned int bits)
+APInt::tc_set_least_significant_bits (t_integer_part *dst, unsigned int parts,
+				      unsigned int bits)
 {
   unsigned int i;
 
