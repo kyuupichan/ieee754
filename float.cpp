@@ -524,13 +524,6 @@ t_float::increment_significand ()
   assert (carry == 0);
 }
 
-/* Negate a floating point number's significand.  */
-void
-t_float::negate_significand ()
-{
-  APInt::tc_negate (sig_parts_array (), part_count_for_kind (kind));
-}
-
 /* Add the significand of the RHS.  Returns the carry flag.  */
 t_integer_part
 t_float::add_significand (const t_float &rhs)
@@ -566,7 +559,7 @@ t_float::subtract_significand (const t_float &rhs, t_integer_part borrow)
 e_lost_fraction
 t_float::multiply_significand (const t_float &rhs)
 {
-  unsigned int i, msb, parts_count, precision;
+  unsigned int msb, parts_count, precision;
   t_integer_part *lhs_significand;
   t_integer_part scratch[2], *full_significand;
   e_lost_fraction lost_fraction;
@@ -600,8 +593,7 @@ t_float::multiply_significand (const t_float &rhs)
   else
     lost_fraction = lf_exactly_zero;
 
-  for (i = 0; i < parts_count; i++)
-    lhs_significand[i] = full_significand[i];
+  APInt::tc_assign (lhs_significand, full_significand, parts_count);
 
   if (parts_count > 1)
     delete [] full_significand;
@@ -1008,6 +1000,7 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
   /* Are we bigger exponent-wise than the RHS?  */
   bits = exponent - rhs.exponent;
 
+  /* Subtraction is more subtle than one might naively expect.  */
   if (subtract)
     {
       t_float temp_rhs (rhs);

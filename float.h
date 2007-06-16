@@ -237,7 +237,6 @@ class t_float {
   bool is_significand_zero ();
   void shift_significand_left (unsigned int bits);
   e_lost_fraction shift_significand_right (unsigned int bits);
-  void negate_significand ();
   unsigned int significand_lsb () const;
   unsigned int significand_msb ();
   void zero_significand ();
