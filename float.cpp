@@ -40,6 +40,14 @@ struct llvm::flt_semantics
   { 16383, -16382, 64 },
 };
 
+struct llvm::decimal_number
+{
+  t_integer_part *parts;
+  unsigned int part_count;
+  int exponent;
+};
+
+/* Put a bunch of private, handy routines in an anonymous namespace.  */
 namespace {
 
   inline unsigned int
@@ -133,6 +141,7 @@ namespace {
   const char *
   skip_leading_zeroes_and_any_dot (const char *p, const char **dot)
   {
+    *dot = 0;
     while (*p == '0')
       p++;
 
@@ -145,7 +154,206 @@ namespace {
 
     return p;
   }
+
+  /* Reads the full significand and exponent of a decimal number,
+     converting them to binary.  Quite efficient.  If the significand
+     is zero, return TRUE without filling NUMBER.  Otherwise fill out
+     NUMBER with allocated memory and return FALSE.  */
+  static bool
+  read_decimal_number (const char *p, decimal_number *number)
+  {
+    unsigned int msb, part_count, parts_used;
+    const char *dot, *first_significant_digit;
+    t_integer_part *parts, val, max;
+    int exponent;
+
+    /* Skip leading zeroes and any decimal point.  */
+    p = skip_leading_zeroes_and_any_dot (p, &dot);
+    first_significant_digit = p;
+
+    /* Do single-part arithmetic for as long as we can.  */
+    max = (~ (t_integer_part) 0 - 9) / 10;
+    val = 0;
+
+    while (val <= max)
+      {
+	unsigned int value;
+
+	if (*p == '.')
+	  {
+	    assert (dot == 0);
+	    dot = p++;
+	    continue;
+	  }
+
+	value = digit_value (*p);
+	if (value == -1U)
+	  break;
+
+	val = val * 10 + value;
+      }
+
+    if (p == first_significant_digit)
+      return true;
+
+    /* Allocate space for 2 integer parts initially.  This will be
+       almost always be enough.  */
+    part_count = 2;
+    parts = new t_integer_part[part_count];
+    parts_used = 1;
+    APInt::tc_set (parts, val, part_count);
+
+    /* Now repeatedly do single-part arithmetic for as long as we can,
+       before having to do a long multiplication.  */
+    for (;;)
+      {
+	t_integer_part multiplier;
+	unsigned int value;
+
+	value = 0;
+	val = 0;
+	multiplier = 1;
+
+	while (multiplier <= max)
+	  {
+	    if (*p == '.')
+	      {
+		assert (dot == 0);
+		dot = p++;
+		continue;
+	      }
+
+	    value = digit_value (*p);
+	    if (value == -1U)
+	      break;
+
+	    multiplier *= 10;
+	    val = val * 10 + value;
+	  }
+
+	APInt::tc_multiply_part (parts, parts, multiplier, val,
+				 parts_used, parts_used + 1, false);
+
+	if (value == -1U)
+	  break;
+
+	/* Note this is a conservative estimate but very likely
+	   correct.  We calculate the correct value at the end.  */
+	parts_used++;
+
+	/* Allocate more space if necessary.  */
+	if (parts_used == part_count)
+	  {
+	    t_integer_part *tmp;
+
+	    part_count *= 2;
+	    tmp = new t_integer_part[part_count];
+	    APInt::tc_set (tmp, 0, part_count);
+	    APInt::tc_assign (tmp, parts, parts_used);
+	    delete [] parts;
+	    parts = tmp;
+	  }
+      }
+
+    /* Calculate the exponent adjustment implicit in the number of
+       significant digits.  */
+    if (!dot)
+      dot = p;
+
+    exponent = dot - first_significant_digit;
+    if (exponent < 0)
+      exponent++;
+    if (*p == 'e' || *p == 'E')
+      exponent = total_exponent (p, exponent);
+
+    /* Calculate exactly how many parts we actually used.  Shift the
+       significand left so the MSB is in the most significant bit.
+       This helps our caller.  */
+    msb = APInt::tc_msb (parts, parts_used);
+    parts_used = msb + (t_integer_part_width - 1) / t_integer_part_width;
+
+    if (msb %= t_integer_part_width)
+      {
+	msb = t_integer_part_width - msb;
+	exponent -= msb;
+	APInt::tc_shift_left (parts, parts_used, msb);
+      }
+
+    number->parts = parts;
+    number->part_count = parts_used;
+    number->exponent = exponent;
+
+    return false;
+  }
+
+  /* Return the trailing fraction of a hexadecimal number.
+     DIGIT_VALUE is the first hex digit of the fraction, P points to
+     the next digit.  */
+  e_lost_fraction
+  trailing_hexadecimal_fraction (const char *p, unsigned int digit_value)
+  {
+    unsigned int hex_digit;
+
+    /* If the first trailing digit isn't 0 or 8 we can work out the
+       fraction immediately.  */
+    if (digit_value > 8)
+      return lf_more_than_half;
+    else if (digit_value < 8 && digit_value > 0)
+      return lf_less_than_half;
+
+    /* Otherwise we need to find the first non-zero digit.  */
+    while (*p == '0')
+      p++;
+
+    hex_digit = hex_digit_value (*p);
+
+    /* If we ran off the end it is exactly zero or one-half, otherwise
+       a little more.  */
+    if (hex_digit == -1U)
+      return digit_value == 0 ? lf_exactly_zero: lf_exactly_half;
+    else
+      return digit_value == 0 ? lf_less_than_half: lf_more_than_half;
+  }
+
+  /* Return the fraction lost were a bignum truncated.  */
+  e_lost_fraction
+  lost_fraction_through_truncation (t_integer_part *parts,
+				    unsigned int part_count,
+				    unsigned int bits)
+  {
+    unsigned int lsb;
+
+    /* See if we would lose precision.  Fast-path two cases that would
+       fail the generic logic.  */
+    if (bits == 0 || (lsb = APInt::tc_lsb (parts, part_count)) == 0)
+      return lf_exactly_zero;
+
+    if (bits < lsb)
+      return lf_exactly_zero;
+    if (bits == lsb)
+      return lf_exactly_half;
+    if (bits <= part_count * t_integer_part_width
+	&& APInt::tc_extract_bit (parts, bits))
+      return lf_more_than_half;
+
+    return lf_less_than_half;
+  }
+
+  /* Shift DST right BITS bits noting lost fraction.  */
+  e_lost_fraction
+  shift_right (t_integer_part *dst, unsigned int parts, unsigned int bits)
+  {
+    e_lost_fraction lost_fraction;
+
+    lost_fraction = lost_fraction_through_truncation (dst, parts, bits);
+
+    APInt::tc_shift_right (dst, parts, bits);
+
+    return lost_fraction;
+  }
 }
+
+/* The members of the t_float class.  */
 
 const flt_semantics &
 t_float::semantics_for_kind (e_semantics_kind kind)
@@ -276,11 +484,15 @@ t_float::is_significand_zero ()
   return APInt::tc_is_zero (sig_parts_array (), part_count_for_kind (kind));
 }
 
+int llvm::hits[16]; 
+
 /* Combine the effect of two lost fractions.  */
-t_float::e_lost_fraction
+e_lost_fraction
 t_float::combine_lost_fractions (e_lost_fraction more_significant,
 				 e_lost_fraction less_significant)
 {
+  hits[(int) more_significant * 4 + less_significant] = 1;
+
   if (less_significant != lf_exactly_zero)
     {
       if (more_significant == lf_exactly_zero)
@@ -299,14 +511,11 @@ t_float::zero_significand ()
   APInt::tc_set (sig_parts_array (), 0, part_count_for_kind (kind));
 }
 
-/* Increment a floating point number's significand.  */
+/* Increment an fc_normal floating point number's significand.  */
 void
 t_float::increment_significand ()
 {
   t_integer_part carry;
-
-  if (category == fc_zero)
-    zero_significand ();
 
   carry = APInt::tc_increment (sig_parts_array (), part_count_for_kind (kind));
 
@@ -314,7 +523,7 @@ t_float::increment_significand ()
   assert (carry == 0);
 }
 
-/* Increment a floating point number's significand.  */
+/* Negate a floating point number's significand.  */
 void
 t_float::negate_significand ()
 {
@@ -338,7 +547,7 @@ t_float::add_or_subtract_significands (const t_float &rhs, bool subtract)
 }
 
 /* Multiply the significand of the RHS.  Returns the lost fraction.  */
-t_float::e_lost_fraction
+e_lost_fraction
 t_float::multiply_significand (const t_float &rhs)
 {
   unsigned int i, msb, parts_count, precision;
@@ -385,7 +594,7 @@ t_float::multiply_significand (const t_float &rhs)
 }
 
 /* Multiply the significands of LHS and RHS to DST.  */
-t_float::e_lost_fraction
+e_lost_fraction
 t_float::divide_significand (const t_float &rhs)
 {
   unsigned int bit, i, parts_count;
@@ -467,36 +676,6 @@ t_float::divide_significand (const t_float &rhs)
   return lost_fraction;
 }
 
-/* Shift DST right COUNT bits noting lost fraction.  */
-t_float::e_lost_fraction
-t_float::shift_right (t_integer_part *dst, unsigned int parts,
-		      unsigned int count)
-{
-  e_lost_fraction lost_fraction;
-  unsigned int lsb;
-
-  /* Before shifting see if we would lose precision.  Fast-path two
-     cases that would fail the generic logic.  */
-  if (count == 0 || (lsb = APInt::tc_lsb (dst, parts)) == 0)
-    lost_fraction = lf_exactly_zero;
-  else
-    {
-      if (lsb == 0 || count < lsb)
-	lost_fraction = lf_exactly_zero;
-      else if (count == lsb)
-	lost_fraction = lf_exactly_half;
-      else if (count <= parts * t_integer_part_width
-	       && APInt::tc_extract_bit (dst, count))
-	lost_fraction = lf_more_than_half;
-      else
-	lost_fraction = lf_less_than_half;
-
-      APInt::tc_shift_right (dst, parts, count);
-    }
-
-  return lost_fraction;
-}
-
 unsigned int
 t_float::significand_msb ()
 {
@@ -510,7 +689,7 @@ t_float::significand_lsb () const
 }
 
 /* Note that a zero result is NOT normalized to fc_zero.  */
-t_float::e_lost_fraction
+e_lost_fraction
 t_float::shift_significand_right (unsigned int bits)
 {
   /* Our exponent should not overflow.  */
@@ -842,7 +1021,7 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
 	  /* Correct the lost fraction - it was the result of the
 	     reverse subtraction.  */
 	  if (lost_fraction == lf_less_than_half)
-	    lost_fraction = lf_more_than_half;
+	    assert (0), lost_fraction = lf_more_than_half;
 	  else if (lost_fraction == lf_more_than_half)
 	    lost_fraction = lf_less_than_half;
 	}
@@ -989,7 +1168,6 @@ t_float::add (const t_float &rhs, e_rounding_mode rounding_mode)
   fs = unnormalized_add_or_subtract (rhs, false, rounding_mode,
 				     &lost_fraction);
 
-  /* We return normalized numbers.  */
   fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
 
   /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
@@ -1015,7 +1193,6 @@ t_float::subtract (const t_float &rhs, e_rounding_mode rounding_mode)
 
   fs = unnormalized_add_or_subtract (rhs, true, rounding_mode, &lost_fraction);
 
-  /* We return normalized numbers.  */
   fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
 
   /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
@@ -1041,7 +1218,6 @@ t_float::multiply (const t_float &rhs, e_rounding_mode rounding_mode)
 
   fs = unnormalized_multiply (rhs, &lost_fraction);
 
-  /* We return normalized numbers.  */
   fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
 
   return fs;
@@ -1056,7 +1232,6 @@ t_float::divide (const t_float &rhs, e_rounding_mode rounding_mode)
 
   fs = unnormalized_divide (rhs, &lost_fraction);
 
-  /* We return normalized numbers.  */
   fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
 
   return fs;
@@ -1287,33 +1462,6 @@ t_float::convert_from_integer (const t_integer_part *parts,
   return status;
 }
 
-t_float::e_lost_fraction
-t_float::trailing_hexadecimal_fraction (const char *p,
-					unsigned int digit_value)
-{
-  unsigned int hex_digit;
-
-  /* If the first trailing digit isn't 0 or 8 we can work out the
-     fraction immediately.  */
-  if (digit_value > 8)
-    return lf_more_than_half;
-  else if (digit_value < 8 && digit_value > 0)
-    return lf_less_than_half;
-
-  /* Otherwise we need to find the first non-zero digit.  */
-  while (*p == '0')
-    p++;
-
-  hex_digit = hex_digit_value (*p);
-
-  /* If we ran off the end it is exactly zero or one-half, otherwise
-     a little more.  */
-  if (hex_digit == -1U)
-    return digit_value == 0 ? lf_exactly_zero: lf_exactly_half;
-  else
-    return digit_value == 0 ? lf_less_than_half: lf_more_than_half;
-}
-
 t_float::e_status
 t_float::convert_from_hexadecimal_string (const char *p,
 					  e_rounding_mode rounding_mode)
@@ -1327,7 +1475,6 @@ t_float::convert_from_hexadecimal_string (const char *p,
   exponent = 0;
   category = fc_normal;
 
-  dot = 0;
   significand = sig_parts_array ();
   parts_count = part_count_for_kind (kind);
   bit_pos = parts_count * t_integer_part_width;
@@ -1403,6 +1550,91 @@ t_float::convert_from_hexadecimal_string (const char *p,
 }
 
 t_float::e_status
+t_float::attempt_decimal_to_binary_conversion (const decimal_number *number,
+					       unsigned int part_count,
+					       e_rounding_mode rounding_mode)
+{
+  t_integer_part *parts;
+  unsigned int half_ulps_error;
+
+  parts = new t_integer_part[part_count];
+  APInt::tc_set (parts, 0, part_count);
+
+  if (part_count > number->part_count)
+    {
+      APInt::tc_assign (parts, number->parts, number->part_count);
+      half_ulps_error = 0;
+    }
+  else
+    {
+      APInt::tc_assign (parts, number->parts, part_count);
+      half_ulps_error = 2;
+    }
+#if 0
+  if (exponent)
+    {
+      t_float tenth_power;
+      c_part exponent_half_ulps_error;
+      unsigned int absolute_exponent;
+
+      if (number->exponent < 0)
+	absolute_exponent = -number->exponent;
+      else
+	absolute_exponent = number->exponent;
+
+      exponent_half_ulps_error = power_of_ten (&tenth_power,
+					       absolute_exponent,
+					       &read_decimal_semantics);
+      if (exponent < 0)
+	as = t_float_div (flt, flt, &tenth_power, &read_decimal_semantics);
+      else
+	as = t_float_mul (flt, flt, &tenth_power, &read_decimal_semantics);
+
+      half_ulps_error = 2 * (exponent_half_ulps_error + half_ulps_error);
+      if (as & as_flt_inexact)
+	half_ulps_error++;
+
+      semantically_normalize (flt, &read_decimal_semantics, lf_exactly_zero);
+    }
+#endif
+
+
+  category = fc_zero;
+
+  return fs_ok;
+}
+
+t_float::e_status
+t_float::convert_from_decimal_string (const char *p,
+				      e_rounding_mode rounding_mode)
+{
+  e_status status;
+  decimal_number number;
+
+  if (read_decimal_number (p, &number))
+    {
+      category = fc_zero;
+      status = fs_ok;
+    }
+  else
+    {
+      category = fc_normal;
+
+      for (unsigned int count = part_count_for_kind (kind);; count++)
+	{
+	  status = attempt_decimal_to_binary_conversion (&number, count,
+							 rounding_mode);
+	  if (status != fs_invalid_op)
+	    break;
+	}
+
+      delete [] number.parts;
+    }
+
+  return status;
+}
+
+t_float::e_status
 t_float::convert_from_string (const char *p, e_rounding_mode rounding_mode)
 {
   /* Handle a leading minus sign.  */
@@ -1414,7 +1646,7 @@ t_float::convert_from_string (const char *p, e_rounding_mode rounding_mode)
   if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
     return convert_from_hexadecimal_string (p + 2, rounding_mode);
   else
-    assert (0);
+    return convert_from_decimal_string (p, rounding_mode);
 }
 
 #if 0
@@ -1483,129 +1715,6 @@ ulps_from_half (c_part *significand, unsigned int excess_precision)
     return part_ulps_from_half (significand[0], excess_precision);
   else
     return multi_part_ulps_from_half (significand, excess_precision);
-}
-
-/* Returns the number of digits P is to the left of the (possibly
-   implicit) first fraction digit, ignoring the decimal point.  In the
-   number 8.62, this returns 1 for the 8 and -1 for the 2.  */
-static int
-digits_left_of_fraction (const c_number *number, const char *p)
-{
-  int digits;
-
-  if (number->text.decimal_point)
-    {
-      digits = number->text.decimal_point - p;
-      if (digits < 0)
-	digits++;
-    }
-  else
-    {
-      assert_cheap (number->text.suffix != NULL);
-
-      /* Decimal floats may not have an exponent; hexadecimal ones are
-	 guaranteed to.  SUFFIX is always set.  */
-      if (number->text.exponent)
-	digits = number->text.exponent - p;
-      else
-	digits = number->text.suffix - p;
-
-      assert_cheap (digits >= 0);
-    }
-
-  return digits;
-}
-
-static bool
-remainder_non_zero (const char *p)
-{
-  unsigned int digit_value;
-
-  do
-    {
-      if (*p == '.')
-	p++;
-
-      digit_value = host_digit_value (*p);
-      p++;
-    }
-  while (digit_value == 0);
-
-  return digit_value != -1U;
-}
-
-static e_lost_fraction
-read_decimal_significand (const c_number *number, t_float *flt,
-			  unsigned int precision, int *p_exponent)
-{
-  const char *p;
-  c_part significand[tf_parts * 2];
-  unsigned int i, part_count;
-  unsigned int digit_value, msb;
-  int exponent;
-  e_lost_fraction lost_fraction;
-
-  part_count = (precision + (c_part_width - 1)) / c_part_width;
-  assert_cheap (part_count + 1 <= ARRAY_SIZE (significand));
-
-  tc_set (significand, 0, part_count + 1);
-  p = skip_leading_zeroes (number->pp_token->spelling);
-  msb = -1U;
-
-  /* Result is in SRC on exit.  */
-  for (;;)
-    {
-      if (*p == '.')
-	{
-	  p++;
-	  continue;
-	}
-
-      digit_value = host_digit_value (*p);
-      if (digit_value == -1U)
-	break;
-
-      p++;
-
-      /* FIXME: this is inefficient.  */
-      tc_multiply_part (significand, significand, 10, digit_value,
-			part_count, part_count + 1, false);
-
-      /* FIXME: and this.  */
-      msb = tc_msb (significand, part_count + 1);
-      if (msb >= precision)
-	break;
-    }
-
-  exponent = digits_left_of_fraction (number, p);
-  if (number->text.exponent)
-    exponent = total_exponent (number->text.exponent, exponent);
-  *p_exponent = exponent;
-
-  flt->sign = 0;
-  zero_significand (flt);
-  for (i = 0; i < part_count; i++)
-    flt->significand[i] = significand[i];
-
-  lost_fraction = lf_exactly_zero;
-  if (!zero_check_significand (flt))
-    {
-      flt->exponent = precision - 1;
-
-      /* Check MSB was set.  Setting it above quiets GCC.  */
-      assert_cheap (msb != -1U);
-
-      if (msb >= precision)
-	{
-	  lost_fraction = shift_significand_right (flt, msb - precision);
-	  if (lost_fraction == lf_exactly_half && remainder_non_zero (p))
-	    lost_fraction = lf_more_than_half;
-	  else if (lost_fraction == lf_exactly_zero && remainder_non_zero (p))
-	    lost_fraction = lf_less_than_half;
-	}
-    }
-
-  return lost_fraction;
 }
 
 static void
@@ -1746,6 +1855,12 @@ read_decimal_float (t_float *flt, const c_number *number,
   /* Exit early for zeroes; we don't care about exponent etc.  */
   if (flt->category == fc_zero)
     return as;
+
+  t_float tmp (fsk_ieee_quad, fc_zero, false);
+
+  tmp.convert_from_integer (const t_integer_part *, unsigned int, bool,
+			    e_rounding_mode);
+
 
   half_ulps_error = (as & as_flt_inexact) != 0;
 

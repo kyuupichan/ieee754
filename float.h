@@ -14,6 +14,8 @@
 
 namespace llvm {
 
+  extern int hits[16]; 
+
   /* The most convenient unsigned host type.  */
    __extension__ typedef unsigned long long t_integer_part;
 
@@ -21,6 +23,14 @@ namespace llvm {
   typedef signed short exponent_t;
 
   struct flt_semantics;
+  struct decimal_number;
+
+  enum e_lost_fraction {
+    lf_exactly_zero,
+    lf_less_than_half,
+    lf_exactly_half,
+    lf_more_than_half
+  };
 
 class APInt {
  public:
@@ -197,6 +207,9 @@ class t_float {
   e_status convert_from_integer (const t_integer_part *, unsigned int, bool,
 				 e_rounding_mode);
   e_status convert_from_string (const char *, e_rounding_mode);
+  e_status attempt_decimal_to_binary_conversion (const decimal_number *,
+						 unsigned int,
+						 e_rounding_mode);
 
   /* Comparison with another floating point number.  */
   e_comparison compare (const t_float &) const;
@@ -212,21 +225,16 @@ class t_float {
 
  private:
 
-  enum e_lost_fraction {
-    lf_exactly_zero,
-    lf_less_than_half,
-    lf_exactly_half,
-    lf_more_than_half
-  };
-
   /* Trivial queries.  */
   t_integer_part *sig_parts_array ();
   const t_integer_part *sig_parts_array () const;
 
   /* Significand operations.  */
-  t_integer_part add_or_subtract_significands (const t_float &, bool subtract);
-  e_lost_fraction divide_significand (const t_float &);
+  t_integer_part add_or_subtract_significands (const t_float &, bool);
+  t_integer_part add_significands (const t_float &);
+  t_integer_part subtract_significands (const t_float &);
   e_lost_fraction multiply_significand (const t_float &);
+  e_lost_fraction divide_significand (const t_float &);
   void increment_significand ();
   void initialize (e_semantics_kind);
   bool is_significand_zero ();
@@ -236,12 +244,6 @@ class t_float {
   unsigned int significand_lsb () const;
   unsigned int significand_msb ();
   void zero_significand ();
-
-  /* Right shift a bignum but return the lost fraction.  */
-  static e_lost_fraction shift_right (t_integer_part *, unsigned int parts,
-				      unsigned int bits);
-  static e_lost_fraction trailing_hexadecimal_fraction (const char *,
-							unsigned int);
 
   /* Non-normalized arithmetic.  */
   e_status unnormalized_add_or_subtract (const t_float &, bool,
@@ -263,6 +265,7 @@ class t_float {
   static const flt_semantics &semantics_for_kind (e_semantics_kind);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
   e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
+  e_status convert_from_decimal_string (const char *, e_rounding_mode);
   void assign (const t_float &);
   void free_significand ();
 
