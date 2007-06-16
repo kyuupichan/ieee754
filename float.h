@@ -14,8 +14,6 @@
 
 namespace llvm {
 
-  extern int hits[16]; 
-
   /* The most convenient unsigned host type.  */
    __extension__ typedef unsigned long long t_integer_part;
 
@@ -230,9 +228,8 @@ class t_float {
   const t_integer_part *sig_parts_array () const;
 
   /* Significand operations.  */
-  t_integer_part add_or_subtract_significands (const t_float &, bool);
-  t_integer_part add_significands (const t_float &);
-  t_integer_part subtract_significands (const t_float &);
+  t_integer_part add_significand (const t_float &);
+  t_integer_part subtract_significand (const t_float &, t_integer_part);
   e_lost_fraction multiply_significand (const t_float &);
   e_lost_fraction divide_significand (const t_float &);
   void increment_significand ();
@@ -267,6 +264,7 @@ class t_float {
   e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
   e_status convert_from_decimal_string (const char *, e_rounding_mode);
   void assign (const t_float &);
+  void copy_significand (const t_float &);
   void free_significand ();
 
   /* Significand - the fraction with an explicit integer bit.  Must be

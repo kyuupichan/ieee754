@@ -402,7 +402,12 @@ t_float::assign (const t_float &rhs)
   sign = rhs.sign;
   category = rhs.category;
   exponent = rhs.exponent;
+  copy_significand (rhs);
+}
 
+void
+t_float::copy_significand (const t_float &rhs)
+{
   if (category == fc_normal)
     APInt::tc_assign (sig_parts_array(), rhs.sig_parts_array(),
 		      part_count_for_kind (kind));
@@ -484,15 +489,11 @@ t_float::is_significand_zero ()
   return APInt::tc_is_zero (sig_parts_array (), part_count_for_kind (kind));
 }
 
-int llvm::hits[16]; 
-
 /* Combine the effect of two lost fractions.  */
 e_lost_fraction
 t_float::combine_lost_fractions (e_lost_fraction more_significant,
 				 e_lost_fraction less_significant)
 {
-  hits[(int) more_significant * 4 + less_significant] = 1;
-
   if (less_significant != lf_exactly_zero)
     {
       if (more_significant == lf_exactly_zero)
@@ -530,10 +531,9 @@ t_float::negate_significand ()
   APInt::tc_negate (sig_parts_array (), part_count_for_kind (kind));
 }
 
-/* Add or subtract the significand of the RHS.  Returns the carry /
-   borrow flag.  */
+/* Add the significand of the RHS.  Returns the carry flag.  */
 t_integer_part
-t_float::add_or_subtract_significands (const t_float &rhs, bool subtract)
+t_float::add_significand (const t_float &rhs)
 {
   t_integer_part *parts;
 
@@ -542,8 +542,24 @@ t_float::add_or_subtract_significands (const t_float &rhs, bool subtract)
   assert (kind == rhs.kind);
   assert (exponent == rhs.exponent);
 
-  return (subtract ? APInt::tc_subtract: APInt::tc_add)
-    (parts, rhs.sig_parts_array (), 0, part_count_for_kind (kind));
+  return APInt::tc_add (parts, rhs.sig_parts_array (),
+			0, part_count_for_kind (kind));
+}
+
+/* Subtract the significand of the RHS with a borrow flag.  Returns
+   the borrow flag.  */
+t_integer_part
+t_float::subtract_significand (const t_float &rhs, t_integer_part borrow)
+{
+  t_integer_part *parts;
+
+  parts = sig_parts_array ();
+
+  assert (kind == rhs.kind);
+  assert (exponent == rhs.exponent);
+
+  return APInt::tc_subtract (parts, rhs.sig_parts_array (),
+			     borrow, part_count_for_kind (kind));
 }
 
 /* Multiply the significand of the RHS.  Returns the lost fraction.  */
@@ -989,52 +1005,69 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
      an addition or subtraction.  */
   subtract ^= (sign ^ rhs.sign);
 
-  /* Shift the significand of one operand right, losing precision, so
-     they have same exponent.  Capture the lost fraction.  */
+  /* Are we bigger exponent-wise than the RHS?  */
   bits = exponent - rhs.exponent;
-
-  if (bits > 0)
-    {
-      t_float temp_rhs (rhs);
-
-      lost_fraction = temp_rhs.shift_significand_right (bits);
-      carry = add_or_subtract_significands (temp_rhs, subtract);
-    }
-  else
-    {
-      lost_fraction = shift_significand_right (-bits);
-      carry = add_or_subtract_significands (rhs, subtract);
-    }
 
   if (subtract)
     {
-      if (carry)
+      t_float temp_rhs (rhs);
+      bool reverse;
+
+      if (bits == 0)
 	{
-	  /* If bits > 0 we've right-shifted the RHS, and so to carry
-	     means we'd be denormal.  But then our exponent is
-	     minimal, so bits <= 0, a contradiction.  */
-	  assert (bits <= 0);
+	  reverse = compare_absolute_value (temp_rhs) == fcmp_less_than;
+	  lost_fraction = lf_exactly_zero;
+	}
+      else if (bits > 0)
+	{
+	  lost_fraction = temp_rhs.shift_significand_right (bits - 1);
+	  shift_significand_left (1);
+	  reverse = false;
+	}
+      else if (bits < 0)
+	{
+	  lost_fraction = shift_significand_right (-bits - 1);
+	  temp_rhs.shift_significand_left (1);
+	  reverse = true;
+	}
 
-	  negate_significand ();
+      if (reverse)
+	{
+	  carry = temp_rhs.subtract_significand
+	    (*this, lost_fraction != lf_exactly_zero);
+	  copy_significand (temp_rhs);
 	  sign = !sign;
-
-	  /* Correct the lost fraction - it was the result of the
-	     reverse subtraction.  */
-	  if (lost_fraction == lf_less_than_half)
-	    assert (0), lost_fraction = lf_more_than_half;
-	  else if (lost_fraction == lf_more_than_half)
-	    lost_fraction = lf_less_than_half;
 	}
       else
-	{
-	  /* If bits < 0, then we were shifted right, meaning we would
-	     generate a carry unless the RHS were denormal.  But if
-	     the RHS is denormal bits < 0 is impossible.  */
-	  assert (bits >= 0);
-	}
+	carry = subtract_significand
+	  (temp_rhs, lost_fraction != lf_exactly_zero);
+
+      /* Invert the lost fraction - it was on the RHS and
+	 subtracted.  */
+      if (lost_fraction == lf_less_than_half)
+	lost_fraction = lf_more_than_half;
+      else if (lost_fraction == lf_more_than_half)
+	lost_fraction = lf_less_than_half;
+
+      /* The code above is intended to ensure that no borrow is
+	 necessary.  */
+      assert (!carry);
     }
   else
     {
+      if (bits > 0)
+	{
+	  t_float temp_rhs (rhs);
+
+	  lost_fraction = temp_rhs.shift_significand_right (bits);
+	  carry = add_significand (temp_rhs);
+	}
+      else
+	{
+	  lost_fraction = shift_significand_right (-bits);
+	  carry = add_significand (rhs);
+	}
+
       /* We have a guard bit; generating a carry cannot happen.  */
       assert (!carry);
     }
