@@ -650,18 +650,21 @@ t_float::divide_significand (const t_float &rhs)
       APInt::tc_shift_left (dividend, parts_count, bit);
     }
 
+  if (APInt::tc_compare (dividend, divisor, parts_count) < 0)
+    {
+      exponent--;
+      APInt::tc_shift_left (dividend, parts_count, 1);
+      assert (APInt::tc_compare (dividend, divisor, parts_count) >= 0);
+    }
+
   /* Long division.  */
-  unsigned int set = 0;
-  for (bit = precision; bit; bit -= set)
+  for (bit = precision; bit; bit -= 1)
     {
       if (APInt::tc_compare (dividend, divisor, parts_count) >= 0)
 	{
 	  APInt::tc_subtract (dividend, divisor, 0, parts_count);
 	  APInt::tc_set_bit (lhs_significand, bit);
-	  set = 1;
 	}
-      else if (!set)
-	exponent--;
 
       APInt::tc_shift_left (dividend, parts_count, 1);
     }
