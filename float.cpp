@@ -15,37 +15,36 @@ using namespace llvm;
 /* Assumed in hexadecimal significand parsing.  */
 compile_time_assert (t_integer_part_width % 4 == 0);
 
-/* Represents floating point arithmetic semantics.  */
-struct llvm::flt_semantics
-{
-  /* The largest E such that 2^E is representable; this matches the
-     definition of IEEE 754.  */
-  exponent_t max_exponent;
+namespace llvm {
 
-  /* The smallest E such that 2^E is a normalized number; this
-     matches the definition of IEEE 754.  */
-  exponent_t min_exponent;
+  /* Represents floating point arithmetic semantics.  */
+  struct flt_semantics
+  {
+    /* The largest E such that 2^E is representable; this matches the
+       definition of IEEE 754.  */
+    exponent_t max_exponent;
 
-  /* Number of bits in the significand.  This includes the integer
-     bit.  */
-  unsigned char precision;
-} all_semantics [] = {
-  /* fsk_ieee_single */
-  { 127, -126, 24 },
-  /* fsk_ieee_double */
-  { 1023, -1022, 53 },
-  /* fsk_ieee_quad */
-  { 16383, -16382, 113 },
-  /* fsk_x87_double_extended */
-  { 16383, -16382, 64 },
-};
+    /* The smallest E such that 2^E is a normalized number; this
+       matches the definition of IEEE 754.  */
+    exponent_t min_exponent;
 
-struct llvm::decimal_number
-{
-  t_integer_part *parts;
-  unsigned int part_count;
-  int exponent;
-};
+    /* Number of bits in the significand.  This includes the integer
+       bit.  */
+    unsigned char precision;
+  };
+
+  struct decimal_number
+  {
+    t_integer_part *parts;
+    unsigned int part_count;
+    int exponent;
+  };
+
+  const flt_semantics t_float::ieee_single = { 127, -126, 24 };
+  const flt_semantics t_float::ieee_double = { 1023, -1022, 53 };
+  const flt_semantics t_float::ieee_quad = { 16383, -16382, 113 };
+  const flt_semantics t_float::x87_double_extended = { 16383, -16382, 64 };
+}
 
 /* Put a bunch of private, handy routines in an anonymous namespace.  */
 namespace {
@@ -353,51 +352,29 @@ namespace {
   }
 }
 
-/* The members of the t_float class.  */
-
-const flt_semantics &
-t_float::semantics_for_kind (e_semantics_kind kind)
-{
-  return all_semantics[(int) kind];
-}
-
-unsigned int
-t_float::precision_for_kind (e_semantics_kind kind)
-{
-  return semantics_for_kind (kind).precision;
-}
-
-unsigned int
-t_float::part_count_for_kind (e_semantics_kind kind)
-{
-  return part_count_for_bits (precision_for_kind (kind) + 1);
-}
-
 /* Constructors.  */
 void
-t_float::initialize (e_semantics_kind semantics_kind)
+t_float::initialize (const flt_semantics *our_semantics)
 {
   unsigned int count;
 
-  kind = semantics_kind;
-
-  count = part_count_for_kind (semantics_kind);
-  is_wide = (count > 1);
-  if (is_wide)
+  semantics = our_semantics;
+  count = part_count ();
+  if (count > 1)
     significand.parts = new t_integer_part[count];
 }
 
 void
 t_float::free_significand ()
 {
-  if (is_wide)
+  if (part_count () > 1)
     delete [] significand.parts;
 }
 
 void
 t_float::assign (const t_float &rhs)
 {
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
 
   sign = rhs.sign;
   category = rhs.category;
@@ -410,7 +387,7 @@ t_float::copy_significand (const t_float &rhs)
 {
   if (category == fc_normal)
     APInt::tc_assign (sig_parts_array(), rhs.sig_parts_array(),
-		      part_count_for_kind (kind));
+		      part_count ());
 }
 
 t_float &
@@ -418,10 +395,10 @@ t_float::operator= (const t_float &rhs)
 {
   if (this != &rhs)
     {
-      if (kind != rhs.kind)
+      if (semantics != rhs.semantics)
 	{
 	  free_significand ();
-	  initialize (kind);
+	  initialize (rhs.semantics);
 	}
 
       assign (rhs);
@@ -430,40 +407,53 @@ t_float::operator= (const t_float &rhs)
   return *this;
 }
 
-t_float::t_float (e_semantics_kind kind, t_integer_part value)
+t_float::t_float (const flt_semantics &our_semantics, t_integer_part value)
 {
-  initialize (kind);
+  initialize (&our_semantics);
   sign = 0;
   zero_significand ();
-  exponent = precision_for_kind (kind) - 1;
+  exponent = our_semantics.precision - 1;
   sig_parts_array ()[0] = value;
   normalize (frm_to_nearest, lf_exactly_zero);
 }
 
-t_float::t_float (e_semantics_kind kind, e_category c, bool negative)
+t_float::t_float (const flt_semantics &our_semantics,
+		  e_category our_category, bool negative)
 {
-  initialize (kind);
-  category = c;
+  initialize (&our_semantics);
+  category = our_category;
   sign = negative;
   if (category == fc_normal)
     category = fc_zero;
 }
 
-t_float::t_float (e_semantics_kind kind, const char *text)
+t_float::t_float (const flt_semantics &our_semantics, const char *text)
 {
-  initialize (kind);
+  initialize (&our_semantics);
   convert_from_string (text, frm_to_nearest);
 }
 
 t_float::t_float (const t_float &rhs)
 {
-  initialize (rhs.kind);
+  initialize (rhs.semantics);
   assign (rhs);
 }
 
 t_float::~t_float ()
 {
   free_significand ();
+}
+
+unsigned int
+t_float::part_count () const
+{
+  return part_count_for_bits (semantics->precision + 1);
+}
+
+unsigned int
+t_float::semantics_precision (const flt_semantics &semantics)
+{
+  return semantics.precision;
 }
 
 const t_integer_part *
@@ -477,16 +467,10 @@ t_float::sig_parts_array ()
 {
   assert (category == fc_normal);
 
-  if (is_wide)
+  if (part_count () > 1)
     return significand.parts;
   else
     return &significand.part;
-}
-
-bool
-t_float::is_significand_zero ()
-{
-  return APInt::tc_is_zero (sig_parts_array (), part_count_for_kind (kind));
 }
 
 /* Combine the effect of two lost fractions.  */
@@ -509,7 +493,7 @@ void
 t_float::zero_significand ()
 {
   category = fc_normal;
-  APInt::tc_set (sig_parts_array (), 0, part_count_for_kind (kind));
+  APInt::tc_set (sig_parts_array (), 0, part_count ());
 }
 
 /* Increment an fc_normal floating point number's significand.  */
@@ -518,7 +502,7 @@ t_float::increment_significand ()
 {
   t_integer_part carry;
 
-  carry = APInt::tc_increment (sig_parts_array (), part_count_for_kind (kind));
+  carry = APInt::tc_increment (sig_parts_array (), part_count ());
 
   /* Our callers should never cause us to overflow.  */
   assert (carry == 0);
@@ -532,11 +516,10 @@ t_float::add_significand (const t_float &rhs)
 
   parts = sig_parts_array ();
 
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
   assert (exponent == rhs.exponent);
 
-  return APInt::tc_add (parts, rhs.sig_parts_array (),
-			0, part_count_for_kind (kind));
+  return APInt::tc_add (parts, rhs.sig_parts_array (), 0, part_count ());
 }
 
 /* Subtract the significand of the RHS with a borrow flag.  Returns
@@ -548,11 +531,11 @@ t_float::subtract_significand (const t_float &rhs, t_integer_part borrow)
 
   parts = sig_parts_array ();
 
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
   assert (exponent == rhs.exponent);
 
-  return APInt::tc_subtract (parts, rhs.sig_parts_array (),
-			     borrow, part_count_for_kind (kind));
+  return APInt::tc_subtract (parts, rhs.sig_parts_array (), borrow,
+			     part_count ());
 }
 
 /* Multiply the significand of the RHS.  Returns the lost fraction.  */
@@ -564,10 +547,10 @@ t_float::multiply_significand (const t_float &rhs)
   t_integer_part scratch[2], *full_significand;
   e_lost_fraction lost_fraction;
 
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
 
   lhs_significand = sig_parts_array();
-  parts_count = part_count_for_kind (kind);
+  parts_count = part_count ();
 
   if (parts_count > 1)
     full_significand = new t_integer_part[parts_count * 2];
@@ -580,7 +563,7 @@ t_float::multiply_significand (const t_float &rhs)
   msb = APInt::tc_msb (full_significand, parts_count * 2);
   assert (msb != 0);
 
-  precision = precision_for_kind (kind);
+  precision = semantics->precision;
   if (msb > precision)
     {
       unsigned int bits, significant_parts;
@@ -611,11 +594,11 @@ t_float::divide_significand (const t_float &rhs)
   t_integer_part scratch[2];
   e_lost_fraction lost_fraction;
 
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
 
   lhs_significand = sig_parts_array();
   rhs_significand = rhs.sig_parts_array();
-  parts_count = part_count_for_kind (kind);
+  parts_count = part_count ();
 
   if (parts_count > 1)
     dividend = new t_integer_part[parts_count * 2];
@@ -632,7 +615,7 @@ t_float::divide_significand (const t_float &rhs)
       lhs_significand[i] = 0;
     }
 
-  unsigned int precision = precision_for_kind (kind);
+  unsigned int precision = semantics->precision;
 
   /* Normalize the divisor.  */
   bit = precision - APInt::tc_msb (divisor, parts_count);
@@ -688,15 +671,15 @@ t_float::divide_significand (const t_float &rhs)
 }
 
 unsigned int
-t_float::significand_msb ()
+t_float::significand_msb () const
 {
-  return APInt::tc_msb (sig_parts_array (), part_count_for_kind (kind));
+  return APInt::tc_msb (sig_parts_array (), part_count ());
 }
 
 unsigned int
 t_float::significand_lsb () const
 {
-  return APInt::tc_lsb (sig_parts_array (), part_count_for_kind (kind));
+  return APInt::tc_lsb (sig_parts_array (), part_count ());
 }
 
 /* Note that a zero result is NOT normalized to fc_zero.  */
@@ -708,22 +691,23 @@ t_float::shift_significand_right (unsigned int bits)
 
   exponent += bits;
 
-  return shift_right (sig_parts_array (), part_count_for_kind (kind), bits);
+  return shift_right (sig_parts_array (), part_count (), bits);
 }
 
 /* Shift the significand left BITS bits, subtract BITS from its exponent.  */
 void
 t_float::shift_significand_left (unsigned int bits)
 {
-  assert (bits < precision_for_kind (kind));
+  assert (bits < semantics->precision);
 
   if (bits)
     {
-      APInt::tc_shift_left (sig_parts_array (), part_count_for_kind (kind),
-			    bits);
+      unsigned int parts_count = part_count ();
+
+      APInt::tc_shift_left (sig_parts_array (), parts_count, bits);
       exponent -= bits;
 
-      assert (!is_significand_zero ());
+      assert (!APInt::tc_is_zero (sig_parts_array (), parts_count));
     }
 }
 
@@ -732,7 +716,7 @@ t_float::compare_absolute_value (const t_float &rhs) const
 {
   int compare;
 
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
   assert (category == fc_normal);
   assert (rhs.category == fc_normal);
 
@@ -742,7 +726,7 @@ t_float::compare_absolute_value (const t_float &rhs) const
      significands.  */
   if (compare == 0)
     compare = APInt::tc_compare (sig_parts_array (), rhs.sig_parts_array (),
-				 part_count_for_kind (kind));
+				 part_count ());
 
   if (compare > 0)
     return fcmp_greater_than;
@@ -766,13 +750,10 @@ t_float::handle_overflow (e_rounding_mode rounding_mode)
     }
 
   /* Otherwise we become the largest finite number.  */
-  const flt_semantics &our_semantics = semantics_for_kind (kind);
-
   category = fc_normal;
-  exponent = our_semantics.max_exponent;
-  APInt::tc_set_least_significant_bits (sig_parts_array (),
-					part_count_for_kind (kind),
-					our_semantics.precision);
+  exponent = semantics->max_exponent;
+  APInt::tc_set_least_significant_bits (sig_parts_array (), part_count (),
+					semantics->precision);
 
   return fs_inexact;
 }
@@ -819,7 +800,6 @@ t_float::e_status
 t_float::normalize (e_rounding_mode rounding_mode,
 		    e_lost_fraction lost_fraction)
 {
-  const flt_semantics &our_semantics = semantics_for_kind (kind);
   unsigned int msb;
   int exponent_change;
 
@@ -834,17 +814,17 @@ t_float::normalize (e_rounding_mode rounding_mode,
       /* The MSB is numbered from 1.  We want to place it in the integer
 	 bit numbered PRECISON if possible, with a compensating change in
 	 the exponent.  */
-      exponent_change = msb - our_semantics.precision;
+      exponent_change = msb - semantics->precision;
 
       /* If the resulting exponent is too high, overflow according to
 	 the rounding mode.  */
-      if (exponent + exponent_change > our_semantics.max_exponent)
+      if (exponent + exponent_change > semantics->max_exponent)
 	return handle_overflow (rounding_mode);
 
       /* Subnormal numbers have exponent min_exponent, and their MSB
 	 is forced based on that.  */
-      if (exponent + exponent_change < our_semantics.min_exponent)
-	exponent_change = our_semantics.min_exponent - exponent;
+      if (exponent + exponent_change < semantics->min_exponent)
+	exponent_change = semantics->min_exponent - exponent;
 
       /* Shifting left is easy as we don't lose precision.  */
       if (exponent_change < 0)
@@ -891,18 +871,18 @@ t_float::normalize (e_rounding_mode rounding_mode,
   if (round_away_from_zero (rounding_mode, lost_fraction))
     {
       if (msb == 0)
-	exponent = our_semantics.min_exponent;
+	exponent = semantics->min_exponent;
 
       increment_significand ();
       msb = significand_msb ();
 
       /* Did the significand increment overflow?  */
-      if (msb == our_semantics.precision + 1)
+      if (msb == semantics->precision + 1)
 	{
 	  /* Renormalize by incrementing the exponent and shifting our
 	     significand right one.  However if we already have the
 	     maximum exponent we overflow to infinity.  */
-	  if (exponent == our_semantics.max_exponent)
+	  if (exponent == semantics->max_exponent)
 	    {
 	      category = fc_infinity;
 
@@ -917,12 +897,12 @@ t_float::normalize (e_rounding_mode rounding_mode,
 
   /* The normal case - we were and are not denormal, and any
      significand increment above didn't overflow.  */
-  if (msb == our_semantics.precision)
+  if (msb == semantics->precision)
     return fs_inexact;
 
   /* We have a non-zero denormal.  */
-  assert (msb < our_semantics.precision);
-  assert (exponent == our_semantics.min_exponent);
+  assert (msb < semantics->precision);
+  assert (exponent == semantics->min_exponent);
 
   /* Canonicalize zeroes.  */
   if (msb == 0)
@@ -1116,7 +1096,7 @@ t_float::unnormalized_multiply (const t_float &rhs,
       break;
     }
 
-  exponent += rhs.exponent - (precision_for_kind (kind) - 1);
+  exponent += rhs.exponent - (semantics->precision - 1);
   *lost_fraction = multiply_significand (rhs);
 
   if (*lost_fraction == lf_exactly_zero)
@@ -1272,7 +1252,7 @@ t_float::compare (const t_float &rhs) const
 {
   e_comparison comparison;
 
-  assert (kind == rhs.kind);
+  assert (semantics == rhs.semantics);
 
   switch (convolve (category, rhs.category))
     {
@@ -1345,17 +1325,18 @@ t_float::compare (const t_float &rhs) const
 }
 
 t_float::e_status
-t_float::convert (e_semantics_kind to_kind, e_rounding_mode rounding_mode)
+t_float::convert (const flt_semantics &to_semantics,
+		  e_rounding_mode rounding_mode)
 {
   if (category != fc_normal)
     {
-      kind = to_kind;
+      semantics = &to_semantics;
       return fs_ok;
     }
 
   /* Reinterpret the bit pattern.  */
-  exponent += precision_for_kind (to_kind) - precision_for_kind (kind);
-  kind = to_kind;
+  exponent += to_semantics.precision - semantics->precision;
+  semantics = &to_semantics;
 
   return normalize (rounding_mode, lf_exactly_zero);
 }
@@ -1393,7 +1374,7 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
   /* Shift the bit pattern so the fraction is lost.  */
   t_float tmp (*this);
 
-  bits = (int) precision_for_kind (kind) - 1 - exponent;
+  bits = (int) semantics->precision - 1 - exponent;
 
   if (bits > 0)
     lost_fraction = tmp.shift_significand_right (bits);
@@ -1443,7 +1424,7 @@ t_float::convert_from_unsigned_integer (t_integer_part *parts,
   e_lost_fraction lost_fraction;
 
   msb = APInt::tc_msb (parts, part_count);
-  precision = precision_for_kind (kind);
+  precision = semantics->precision;
 
   category = fc_normal;
   exponent = precision - 1;
@@ -1505,7 +1486,7 @@ t_float::convert_from_hexadecimal_string (const char *p,
   category = fc_normal;
 
   significand = sig_parts_array ();
-  parts_count = part_count_for_kind (kind);
+  parts_count = part_count ();
   bit_pos = parts_count * t_integer_part_width;
 
   /* Skip leading zeroes and any (hexa)decimal point.  */
@@ -1568,7 +1549,7 @@ t_float::convert_from_hexadecimal_string (const char *p,
 
       /* Adjust for writing the significand starting at the most
 	 significant nibble.  */
-      exp_adjustment += precision_for_kind (kind);
+      exp_adjustment += semantics->precision;
       exp_adjustment -= parts_count * t_integer_part_width;
 
       /* Adjust for the given exponent.  */
@@ -1649,7 +1630,7 @@ t_float::convert_from_decimal_string (const char *p,
     {
       category = fc_normal;
 
-      for (unsigned int count = part_count_for_kind (kind);; count++)
+      for (unsigned int count = part_count ();; count++)
 	{
 	  status = attempt_decimal_to_binary_conversion (&number, count,
 							 rounding_mode);

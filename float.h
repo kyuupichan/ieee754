@@ -141,6 +141,14 @@ class APInt {
 class t_float {
  public:
 
+  /* We support the following floating point semantics.  */
+  static const flt_semantics ieee_single;
+  static const flt_semantics ieee_double;
+  static const flt_semantics ieee_quad;
+  static const flt_semantics x87_double_extended;
+
+  static unsigned int semantics_precision (const flt_semantics &);
+
   /* Floating point numbers have a four-state comparison relation.  */
   enum e_comparison {
     fcmp_less_than,
@@ -155,14 +163,6 @@ class t_float {
     frm_to_plus_infinity,
     frm_to_minus_infinity,
     frm_to_zero
-  };
-
-  /* We support the following floating point semantics.  */
-  enum e_semantics_kind {
-    fsk_ieee_single,
-    fsk_ieee_double,
-    fsk_ieee_quad,
-    fsk_x87_double_extended,
   };
 
   /* Operation status.  fs_underflow or fs_overflow are always
@@ -185,9 +185,9 @@ class t_float {
   };
 
   /* Constructors.  */
-  t_float (e_semantics_kind, const char *);
-  t_float (e_semantics_kind, t_integer_part);
-  t_float (e_semantics_kind, e_category, bool negative);
+  t_float (const flt_semantics &, const char *);
+  t_float (const flt_semantics &, t_integer_part);
+  t_float (const flt_semantics &, e_category, bool negative);
   t_float (const t_float &);
   ~t_float ();
 
@@ -199,7 +199,7 @@ class t_float {
   void change_sign ();
 
   /* Conversions.  */
-  e_status convert (e_semantics_kind, e_rounding_mode);
+  e_status convert (const flt_semantics &, e_rounding_mode);
   e_status convert_to_integer (t_integer_part *, unsigned int, bool,
 			       e_rounding_mode) const;
   e_status convert_from_integer (const t_integer_part *, unsigned int, bool,
@@ -217,7 +217,6 @@ class t_float {
   bool is_zero () const { return category == fc_zero; }
   bool is_non_zero () const { return category != fc_zero; }
   bool is_negative () const { return sign; }
-  static unsigned int precision_for_kind (e_semantics_kind);
 
   t_float& operator= (const t_float &);
 
@@ -226,6 +225,7 @@ class t_float {
   /* Trivial queries.  */
   t_integer_part *sig_parts_array ();
   const t_integer_part *sig_parts_array () const;
+  unsigned int part_count () const;
 
   /* Significand operations.  */
   t_integer_part add_significand (const t_float &);
@@ -233,12 +233,11 @@ class t_float {
   e_lost_fraction multiply_significand (const t_float &);
   e_lost_fraction divide_significand (const t_float &);
   void increment_significand ();
-  void initialize (e_semantics_kind);
-  bool is_significand_zero ();
-  void shift_significand_left (unsigned int bits);
-  e_lost_fraction shift_significand_right (unsigned int bits);
+  void initialize (const flt_semantics *);
+  void shift_significand_left (unsigned int);
+  e_lost_fraction shift_significand_right (unsigned int);
   unsigned int significand_lsb () const;
-  unsigned int significand_msb ();
+  unsigned int significand_msb () const;
   void zero_significand ();
 
   /* Non-normalized arithmetic.  */
@@ -257,14 +256,15 @@ class t_float {
   /* Miscellany.  */
   e_status convert_from_unsigned_integer (t_integer_part *, unsigned int,
 					  e_rounding_mode);
-  static unsigned int part_count_for_kind (e_semantics_kind);
-  static const flt_semantics &semantics_for_kind (e_semantics_kind);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
   e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
   e_status convert_from_decimal_string (const char *, e_rounding_mode);
   void assign (const t_float &);
   void copy_significand (const t_float &);
   void free_significand ();
+
+  /* What kind of semantics does this value obey?  */
+  const flt_semantics *semantics;
 
   /* Significand - the fraction with an explicit integer bit.  Must be
      at least one bit wider than the target precision.  */
@@ -277,17 +277,11 @@ class t_float {
   /* The exponent - a signed number.  */
   exponent_t exponent;
 
-  /* What kind of semantics does this value obey?  */
-  e_semantics_kind kind: 8;
-
   /* What kind of floating point number this is.  */
   e_category category: 2;
 
   /* The sign bit of this number.  */
   unsigned int sign: 1;
-
-  /* If the significand uses multiple parts.  */
-  unsigned int is_wide: 1;
 };
 
 }

@@ -76,15 +76,13 @@ sub (const t_float &lhs, const t_float &rhs, const t_float &result,
 
 int main (void)
 {
-  t_float f_pos_infinity (t_float::fsk_ieee_single, t_float::fc_infinity,
-			  false);
-  t_float f_neg_infinity (t_float::fsk_ieee_single, t_float::fc_infinity,
-			  true);
-  t_float f_pos_zero (t_float::fsk_ieee_single, t_float::fc_zero, false);
-  t_float f_neg_zero (t_float::fsk_ieee_single, t_float::fc_zero, true);
-  t_float f_nan (t_float::fsk_ieee_single, t_float::fc_nan, false);
-  t_float f_one (t_float::fsk_ieee_single, 1);
-  t_float f_two (t_float::fsk_ieee_single, 2);
+  t_float f_pos_infinity (t_float::ieee_single, t_float::fc_infinity, false);
+  t_float f_neg_infinity (t_float::ieee_single, t_float::fc_infinity, true);
+  t_float f_pos_zero (t_float::ieee_single, t_float::fc_zero, false);
+  t_float f_neg_zero (t_float::ieee_single, t_float::fc_zero, true);
+  t_float f_nan (t_float::ieee_single, t_float::fc_nan, false);
+  t_float f_one (t_float::ieee_single, 1);
+  t_float f_two (t_float::ieee_single, 2);
   t_float f_neg_one (f_one);
   t_float f_neg_two (f_two);
 

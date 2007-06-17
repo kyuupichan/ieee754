@@ -17,6 +17,13 @@ using namespace llvm;
 #define overflow (t_float::e_status) \
 	(t_float::fs_overflow | t_float::fs_inexact)
 
+const flt_semantics *all_semantics[] = {
+  &t_float::ieee_single,
+  &t_float::ieee_double,
+  &t_float::ieee_quad,
+  &t_float::x87_double_extended,
+};
+
 static bool
 compare (const t_float &lhs, const t_float &rhs)
 {
@@ -28,11 +35,11 @@ static bool
 convert_from_integer_parts (t_integer_part *value, unsigned int count,
 			    bool is_signed,
 			    t_float::e_rounding_mode rounding_mode,
-			    t_float::e_semantics_kind kind, const char *a,
+			    const flt_semantics &semantics, const char *a,
 			    t_float::e_status status)
 {
-  t_float number (kind, t_float::fc_zero);
-  t_float result (kind, a);
+  t_float number (semantics, t_float::fc_zero);
+  t_float result (semantics, a);
 
   if (number.convert_from_integer (value, count, is_signed, rounding_mode)
       != status)
@@ -45,11 +52,11 @@ static bool
 convert_from_integer_parts (t_integer_part *value, unsigned int count,
 			    bool is_signed,
 			    t_float::e_rounding_mode rounding_mode,
-			    t_float::e_semantics_kind kind,
+			    const flt_semantics &semantics,
 			    const t_float &result,
 			    t_float::e_status status)
 {
-  t_float number (kind, t_float::fc_zero);
+  t_float number (semantics, t_float::fc_zero);
 
   if (number.convert_from_integer (value, count, is_signed, rounding_mode)
       != status)
@@ -61,7 +68,7 @@ convert_from_integer_parts (t_integer_part *value, unsigned int count,
 static bool
 convert_from_integer (t_integer_part value, bool is_signed,
 		      t_float::e_rounding_mode rounding_mode,
-		      t_float::e_semantics_kind kind,
+		      const flt_semantics &kind,
 		      const char *a,
 		      t_float::e_status status)
 {
@@ -78,7 +85,7 @@ convert_from_integer (t_integer_part value, bool is_signed,
 static bool
 convert_to_integer (const char *a, unsigned int width, bool is_signed,
 		    t_float::e_rounding_mode rounding_mode,
-		    t_float::e_semantics_kind kind,
+		    const flt_semantics &kind,
 		    t_integer_part result, t_float::e_status status)
 {
   t_float number (kind, a);
@@ -94,7 +101,7 @@ convert_to_integer (const char *a, unsigned int width, bool is_signed,
 static bool
 add (const char *a, const char *b, const char *c,
      t_float::e_rounding_mode rounding_mode,
-     t_float::e_semantics_kind kind,
+     const flt_semantics &kind,
      t_float::e_status status)
 {
   t_float lhs (kind, a);
@@ -110,7 +117,7 @@ add (const char *a, const char *b, const char *c,
 static bool
 add (const char *a, const char *b, const t_float &result,
      t_float::e_rounding_mode rounding_mode,
-     t_float::e_semantics_kind kind,
+     const flt_semantics &kind,
      t_float::e_status status)
 {
   t_float lhs (kind, a);
@@ -125,7 +132,7 @@ add (const char *a, const char *b, const t_float &result,
 static bool
 subtract (const char *a, const char *b, const char *c,
 	  t_float::e_rounding_mode rounding_mode,
-	  t_float::e_semantics_kind kind,
+	  const flt_semantics &kind,
 	  t_float::e_status status)
 {
   t_float lhs (kind, a);
@@ -141,7 +148,7 @@ subtract (const char *a, const char *b, const char *c,
 static bool
 multiply (const char *a, const char *b, const char *c,
 	  t_float::e_rounding_mode rounding_mode,
-	  t_float::e_semantics_kind kind,
+	  const flt_semantics &kind,
 	  t_float::e_status status)
 {
   t_float lhs (kind, a);
@@ -157,7 +164,7 @@ multiply (const char *a, const char *b, const char *c,
 static bool
 divide (const char *a, const char *b, const char *c,
 	t_float::e_rounding_mode rounding_mode,
-	t_float::e_semantics_kind kind,
+	const flt_semantics &kind,
 	t_float::e_status status)
 {
   t_float lhs (kind, a);
@@ -172,13 +179,10 @@ divide (const char *a, const char *b, const char *c,
 
 int main (void)
 {
-  t_float d_nan (t_float::fsk_ieee_double, t_float::fc_nan, false);
-  t_float d_pos_infinity (t_float::fsk_ieee_double, t_float::fc_infinity,
-			  false);
-  t_float d_neg_infinity (t_float::fsk_ieee_double, t_float::fc_infinity,
-			  true);
-  t_float f_pos_infinity (t_float::fsk_ieee_single, t_float::fc_infinity,
-			  false);
+  t_float d_nan (t_float::ieee_double, t_float::fc_nan, false);
+  t_float d_pos_infinity (t_float::ieee_double, t_float::fc_infinity, false);
+  t_float d_neg_infinity (t_float::ieee_double, t_float::fc_infinity, true);
+  t_float f_pos_infinity (t_float::ieee_single, t_float::fc_infinity, false);
 
   /* Test floating-point exact divisions.  */
   for (int i = 0; i < 4; i++)
@@ -187,18 +191,18 @@ int main (void)
 
       for (int j = 0; j < 4; j++)
 	{
-	  t_float::e_semantics_kind kind ((t_float::e_semantics_kind) j);
+	  const flt_semantics &kind = *all_semantics[j];
 
 	  assert (divide ("0x1f865cp0", "0x944p0", "0x367p0",
 			  rm, kind, t_float::fs_ok));
 	  assert (divide ("0xFb320p-4", "-0xd9.4p2", "-0x25.0p1",
 			  rm, kind, t_float::fs_ok));
 
-	  if (t_float::precision_for_kind (kind) >= 53)
+	  if (t_float::semantics_precision (kind) >= 53)
 	    assert (divide ("0x0.8b6064570fa168p800", "0x0.badeadf1p500",
 			    "0x0.beefe8p300",rm, kind, t_float::fs_ok));
 
-	  if (t_float::precision_for_kind (kind) >= 62)
+	  if (t_float::semantics_precision (kind) >= 62)
 	    assert (divide ("-0x0.a84f5a4693e1a774p-2", "-0x0.badeadf1p-16000",
 			    "0x0.39a4beadp16000",rm, kind, t_float::fs_ok));
 	}
@@ -208,7 +212,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_single;
+      const flt_semantics &kind = t_float::ieee_single;
 
       if (rm == t_float::frm_to_nearest || rm == t_float::frm_to_plus_infinity)
 	assert (divide ("0x1.000006p-126", "0x2p0", "0x1.000008p-127",
@@ -222,7 +226,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_single;
+      const flt_semantics &kind = t_float::ieee_single;
 
       if (rm == t_float::frm_to_nearest
 	  || rm == t_float::frm_to_minus_infinity)
@@ -237,7 +241,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_single;
+      const flt_semantics &kind = t_float::ieee_single;
 
       if (rm != t_float::frm_to_plus_infinity)
 	assert (divide ("0x1.000002p-126", "0x2p0", "0x1.000000p-127",
@@ -251,7 +255,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_single;
+      const flt_semantics &kind = t_float::ieee_single;
 
       if (rm != t_float::frm_to_minus_infinity)
 	assert (divide ("-0x1.000002p-126", "0x2p0", "-0x1.000000p-127",
@@ -264,7 +268,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_double;
+      const flt_semantics &kind = t_float::ieee_double;
 
       bool up = (rm == t_float::frm_to_plus_infinity
 		 || rm == t_float::frm_to_nearest);
@@ -283,7 +287,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_single;
+      const flt_semantics &kind = t_float::ieee_single;
 
       if (rm == t_float::frm_to_plus_infinity)
 	assert (multiply ("0x1.0p-100", "0x1.0p-100", "0x1.0p-149f",
@@ -307,7 +311,7 @@ int main (void)
 
       for (int j = 0; j < 4; j++)
 	{
-	  t_float::e_semantics_kind kind ((t_float::e_semantics_kind) j);
+	  const flt_semantics &kind = *all_semantics[j];
 
 	  assert (add ("-0x4p0", "-0x4p0", "-0x8p0",
 		       rm, kind, t_float::fs_ok));
@@ -319,7 +323,7 @@ int main (void)
 		       rm, kind, t_float::fs_ok));
 
  	  /* This case is exact except for ieee_single.  */
-	  if (t_float::precision_for_kind (kind) > 24)
+	  if (t_float::semantics_precision (kind) > 24)
 	    {
 	      assert (add ("0x1.234562p0", "0x1.234562p-1", "0x1.b4e813p0",
 			   rm, kind, t_float::fs_ok));
@@ -349,7 +353,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_single;
+      const flt_semantics &kind = t_float::ieee_single;
 
       bool up = (rm == t_float::frm_to_plus_infinity
 		 || rm == t_float::frm_to_nearest);
@@ -433,7 +437,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_double;
+      const flt_semantics &kind = t_float::ieee_double;
 
       assert (add ("0x1.ffffffffffff0p1023", "0x0.fp975",
 		   "0x1.fffffffffffffp1023", rm, kind, t_float::fs_ok));
@@ -500,7 +504,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
-      t_float::e_semantics_kind kind = t_float::fsk_ieee_double;
+      const flt_semantics &kind = t_float::ieee_double;
 
       assert (add ("0x0.0000000000001p-1022", "0x0.0000000000001p-1022",
 		   "0x0.0000000000001p-1021", rm, kind, t_float::fs_ok));
@@ -541,7 +545,7 @@ int main (void)
 
       for (int j = 0; j < 4; j++)
 	{
-	  t_float::e_semantics_kind kind ((t_float::e_semantics_kind) j);
+	  const flt_semantics &kind = *all_semantics[j];
 
 	  assert (add ("-0x4p0", "0x5p0", "0x1p0",
 		       rm, kind, t_float::fs_ok));
@@ -588,7 +592,7 @@ int main (void)
 
       for (int j = 0; j < 4; j++)
 	{
-	  t_float::e_semantics_kind kind ((t_float::e_semantics_kind) j);
+	  const flt_semantics &kind = *all_semantics[j];
 
   	  if (rm == t_float::frm_to_minus_infinity)
 	    {
@@ -622,7 +626,7 @@ int main (void)
 
       for (int j = 0; j < 4; j++)
 	{
-	  t_float::e_semantics_kind kind ((t_float::e_semantics_kind) j);
+	  const flt_semantics &kind = *all_semantics[j];
 
 	  assert (convert_to_integer ("0x0p0", 5, false, rm, kind,
 				      0, t_float::fs_ok));
@@ -712,49 +716,49 @@ int main (void)
 
       for (int j = 0; j < 4; j++)
 	{
-	  t_float::e_semantics_kind kind ((t_float::e_semantics_kind) j);
+	  const flt_semantics &semantics = *all_semantics[j];
 
-	  assert (convert_from_integer (5, true, rm, kind, "0x5p0",
+	  assert (convert_from_integer (5, true, rm, semantics, "0x5p0",
 					t_float::fs_ok));
-	  assert (convert_from_integer (-1, true, rm, kind, "-0x1p0",
+	  assert (convert_from_integer (-1, true, rm, semantics, "-0x1p0",
 					t_float::fs_ok));
-	  assert (convert_from_integer_parts (flt_max, 2, false, rm, kind,
+	  assert (convert_from_integer_parts (flt_max, 2, false, rm, semantics,
 					      "0x1.fffffep127",
 					      t_float::fs_ok));
 	}
 
       if (rm == t_float::frm_to_plus_infinity)
 	assert (convert_from_integer_parts (flt_max2, 2, false, rm,
-					    t_float::fsk_ieee_single,
+					    t_float::ieee_single,
 					    f_pos_infinity, overflow));
       else
 	assert (convert_from_integer_parts (flt_max2, 2, false, rm,
-					    t_float::fsk_ieee_single,
+					    t_float::ieee_single,
 					    "0x1.fffffep127",
 					    t_float::fs_inexact));
 
       assert (convert_from_integer (0x1fffffe, false, rm,
-				    t_float::fsk_ieee_single, "0x1fffffep0",
+				    t_float::ieee_single, "0x1fffffep0",
 				    t_float::fs_ok));
 
       if (rm == t_float::frm_to_zero
 	  || rm == t_float::frm_to_minus_infinity)
 	assert (convert_from_integer (0x1ffffff, false, rm,
-				      t_float::fsk_ieee_single, "0x1fffffep0",
+				      t_float::ieee_single, "0x1fffffep0",
 				      t_float::fs_inexact));
       else
 	assert (convert_from_integer (0x1ffffff, false, rm,
-				      t_float::fsk_ieee_single, "0x2000000p0",
+				      t_float::ieee_single, "0x2000000p0",
 				      t_float::fs_inexact));
 
       if (rm == t_float::frm_to_zero
 	  || rm == t_float::frm_to_plus_infinity)
 	assert (convert_from_integer (-0x1ffffff, true, rm,
-				      t_float::fsk_ieee_single, "-0x1fffffep0",
+				      t_float::ieee_single, "-0x1fffffep0",
 				      t_float::fs_inexact));
       else
 	assert (convert_from_integer (-0x1ffffff, true, rm,
-				      t_float::fsk_ieee_single, "-0x2000000p0",
+				      t_float::ieee_single, "-0x2000000p0",
 				      t_float::fs_inexact));
 
       
