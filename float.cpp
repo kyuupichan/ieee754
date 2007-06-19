@@ -379,15 +379,18 @@ t_float::assign (const t_float &rhs)
   sign = rhs.sign;
   category = rhs.category;
   exponent = rhs.exponent;
-  copy_significand (rhs);
+  if (category == fc_normal)
+    copy_significand (rhs);
 }
 
 void
 t_float::copy_significand (const t_float &rhs)
 {
-  if (category == fc_normal)
-    APInt::tc_assign (sig_parts_array(), rhs.sig_parts_array(),
-		      part_count ());
+  assert (category == fc_normal);
+  assert (rhs.part_count () >= part_count ());
+
+  APInt::tc_assign (sig_parts_array(), rhs.sig_parts_array(),
+		    part_count ());
 }
 
 t_float &
@@ -400,7 +403,6 @@ t_float::operator= (const t_float &rhs)
 	  free_significand ();
 	  initialize (rhs.semantics);
 	}
-
       assign (rhs);
     }
 
@@ -1311,17 +1313,38 @@ t_float::e_status
 t_float::convert (const flt_semantics &to_semantics,
 		  e_rounding_mode rounding_mode)
 {
-  if (category != fc_normal)
+  unsigned int new_part_count;
+  e_status fs;
+
+  new_part_count = part_count_for_bits (to_semantics.precision + 1);
+
+  /* If our new form is wider, re-allocate our bit pattern into wider
+     storage.  */ 
+  if (new_part_count > part_count ())
     {
-      semantics = &to_semantics;
-      return fs_ok;
+      t_integer_part *new_parts;
+
+      new_parts = new t_integer_part[new_part_count];
+      APInt::tc_set (new_parts, 0, new_part_count);
+      APInt::tc_assign (new_parts, sig_parts_array (), part_count ());
+      free_significand ();
+      significand.parts = new_parts;
     }
 
-  /* Reinterpret the bit pattern.  */
-  exponent += to_semantics.precision - semantics->precision;
-  semantics = &to_semantics;
+  if (category == fc_normal)
+    {
+      /* Re-interpret our bit-pattern.  */
+      exponent += to_semantics.precision - semantics->precision;
+      semantics = &to_semantics;
+      fs = normalize (rounding_mode, lf_exactly_zero);
+    }
+  else
+    {
+      semantics = &to_semantics;
+      fs = fs_ok;
+    }
 
-  return normalize (rounding_mode, lf_exactly_zero);
+  return fs;
 }
 
 /* Convert a floating point number to an integer according to the
