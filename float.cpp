@@ -564,6 +564,7 @@ t_float::multiply_significand (const t_float &rhs)
   assert (msb != 0);
 
   precision = semantics->precision;
+  exponent += rhs.exponent - (precision - 1);
   if (msb > precision)
     {
       unsigned int bits, significant_parts;
@@ -614,6 +615,8 @@ t_float::divide_significand (const t_float &rhs)
       divisor[i] = rhs_significand[i];
       lhs_significand[i] = 0;
     }
+
+  exponent -= rhs.exponent;
 
   unsigned int precision = semantics->precision;
 
@@ -912,17 +915,9 @@ t_float::normalize (e_rounding_mode rounding_mode,
   return (e_status) (fs_underflow | fs_inexact);
 }
 
-/* Unfortunately for IEEE semantics a rounding mode is needed
-   here.  */
 t_float::e_status
-t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
-				       e_rounding_mode rounding_mode,
-				       e_lost_fraction *lost_fraction_ptr)
+t_float::add_or_subtract_specials (const t_float &rhs, bool subtract)
 {
-  t_integer_part carry;
-
-  *lost_fraction_ptr = lf_exactly_zero;
-
   switch (convolve (category, rhs.category))
     {
     default:
@@ -955,7 +950,7 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
       return fs_ok;
 
     case convolve (fc_zero, fc_zero):
-      /* Sign handled by caller.  */
+      /* Sign depends on rounding mode; handled by caller.  */
       return fs_ok;
 
     case convolve (fc_infinity, fc_infinity):
@@ -970,9 +965,15 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
       return fs_ok;
 
     case convolve (fc_normal, fc_normal):
-      break;
+      return fs_div_by_zero;
     }
+}
 
+/* Add or subtract two normal numbers.  */
+e_lost_fraction
+t_float::add_or_subtract_significand (const t_float &rhs, bool subtract)
+{
+  t_integer_part carry;
   e_lost_fraction lost_fraction;
   int bits;
 
@@ -1048,18 +1049,12 @@ t_float::unnormalized_add_or_subtract (const t_float &rhs, bool subtract,
       assert (!carry);
     }
 
-  *lost_fraction_ptr = lost_fraction;
-
-  return fs_ok;
+  return lost_fraction;
 }
 
 t_float::e_status
-t_float::unnormalized_multiply (const t_float &rhs,
-				e_lost_fraction *lost_fraction)
+t_float::multiply_specials (const t_float &rhs)
 {
-  sign ^= rhs.sign;
-  *lost_fraction = lf_exactly_zero;
-
   switch (convolve (category, rhs.category))
     {
     default:
@@ -1093,25 +1088,13 @@ t_float::unnormalized_multiply (const t_float &rhs,
       return fs_invalid_op;
 
     case convolve (fc_normal, fc_normal):
-      break;
+      return fs_ok;
     }
-
-  exponent += rhs.exponent - (semantics->precision - 1);
-  *lost_fraction = multiply_significand (rhs);
-
-  if (*lost_fraction == lf_exactly_zero)
-    return fs_ok;
-  else
-    return fs_inexact;
 }
 
 t_float::e_status
-t_float::unnormalized_divide (const t_float &rhs,
-			      e_lost_fraction *lost_fraction)
+t_float::divide_specials (const t_float &rhs)
 {
-  sign ^= rhs.sign;
-  *lost_fraction = lf_exactly_zero;
-
   switch (convolve (category, rhs.category))
     {
     default:
@@ -1147,16 +1130,8 @@ t_float::unnormalized_divide (const t_float &rhs,
       return fs_invalid_op;
 
     case convolve (fc_normal, fc_normal):
-      break;
+      return fs_ok;
     }
-
-  exponent -= rhs.exponent;
-  *lost_fraction = divide_significand (rhs);
-
-  if (*lost_fraction == lf_exactly_zero)
-    return fs_ok;
-  else
-    return fs_inexact;
 }
 
 /* Change sign.  */
@@ -1167,55 +1142,51 @@ t_float::change_sign ()
   sign = !sign;
 }
 
-/* Normalized addition.  */
+/* Normalized addition or subtraction.  */
 t_float::e_status
-t_float::add (const t_float &rhs, e_rounding_mode rounding_mode)
+t_float::add_or_subtract (const t_float &rhs, e_rounding_mode rounding_mode,
+			  bool subtract)
 {
   e_status fs;
-  e_lost_fraction lost_fraction;
 
-  fs = unnormalized_add_or_subtract (rhs, false, rounding_mode,
-				     &lost_fraction);
+  fs = add_or_subtract_specials (rhs, subtract);
 
-  fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
+  /* This return code means it was not a simple case.  */
+  if (fs == fs_div_by_zero)
+    {
+      e_lost_fraction lost_fraction;
+
+      lost_fraction = add_or_subtract_significand (rhs, subtract);
+      fs = normalize (rounding_mode, lost_fraction);
+
+      /* Can only be zero if we lost no fraction.  */
+      assert (category != fc_zero || lost_fraction == lf_exactly_zero);
+    }
 
   /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
      positive zero unless rounding to minus infinity, except that
      adding two like-signed zeroes gives that zero.  */
   if (category == fc_zero)
     {
-      assert (lost_fraction == lf_exactly_zero);
-
-      if (rhs.category != fc_zero || sign != rhs.sign)
+      if (rhs.category != fc_zero || (sign == rhs.sign) == subtract)
 	sign = (rounding_mode == frm_to_minus_infinity);
     }      
 
   return fs;
 }
 
+/* Normalized addition.  */
+t_float::e_status
+t_float::add (const t_float &rhs, e_rounding_mode rounding_mode)
+{
+  return add_or_subtract (rhs, rounding_mode, false);
+}
+
 /* Normalized subtraction.  */
 t_float::e_status
 t_float::subtract (const t_float &rhs, e_rounding_mode rounding_mode)
 {
-  e_status fs;
-  e_lost_fraction lost_fraction;
-
-  fs = unnormalized_add_or_subtract (rhs, true, rounding_mode, &lost_fraction);
-
-  fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
-
-  /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
-     positive zero unless rounding to minus infinity, except that
-     adding two like-signed zeroes gives that zero.  */
-  if (category == fc_zero)
-    {
-      assert (lost_fraction == lf_exactly_zero);
-
-      if (rhs.category != fc_zero || sign == rhs.sign)
-	sign = (rounding_mode == frm_to_minus_infinity);
-    }      
-
-  return fs;
+  return add_or_subtract (rhs, rounding_mode, true);
 }
 
 /* Normalized multiply.  */
@@ -1223,11 +1194,17 @@ t_float::e_status
 t_float::multiply (const t_float &rhs, e_rounding_mode rounding_mode)
 {
   e_status fs;
-  e_lost_fraction lost_fraction;
 
-  fs = unnormalized_multiply (rhs, &lost_fraction);
+  sign ^= rhs.sign;
+  fs = multiply_specials (rhs);
 
-  fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
+  if (category == fc_normal)
+    {
+      e_lost_fraction lost_fraction = multiply_significand (rhs);
+      fs = normalize (rounding_mode, lost_fraction);
+      if (lost_fraction != lf_exactly_zero)
+	fs = (e_status) (fs | fs_inexact);
+    }
 
   return fs;
 }
@@ -1237,11 +1214,17 @@ t_float::e_status
 t_float::divide (const t_float &rhs, e_rounding_mode rounding_mode)
 {
   e_status fs;
-  e_lost_fraction lost_fraction;
 
-  fs = unnormalized_divide (rhs, &lost_fraction);
+  sign ^= rhs.sign;
+  fs = divide_specials (rhs);
 
-  fs = (e_status) (fs | normalize (rounding_mode, lost_fraction));
+  if (category == fc_normal)
+    {
+      e_lost_fraction lost_fraction = divide_significand (rhs);
+      fs = normalize (rounding_mode, lost_fraction);
+      if (lost_fraction != lf_exactly_zero)
+	fs = (e_status) (fs | fs_inexact);
+    }
 
   return fs;
 }

@@ -230,6 +230,7 @@ class t_float {
   /* Significand operations.  */
   t_integer_part add_significand (const t_float &);
   t_integer_part subtract_significand (const t_float &, t_integer_part);
+  e_lost_fraction add_or_subtract_significand (const t_float &, bool subtract);
   e_lost_fraction multiply_significand (const t_float &);
   e_lost_fraction divide_significand (const t_float &);
   void increment_significand ();
@@ -240,20 +241,17 @@ class t_float {
   unsigned int significand_msb () const;
   void zero_significand ();
 
-  /* Non-normalized arithmetic.  */
-  e_status unnormalized_add_or_subtract (const t_float &, bool,
-					 e_rounding_mode, e_lost_fraction *);
-  e_status unnormalized_divide (const t_float &, e_lost_fraction *);
-  e_status unnormalized_multiply (const t_float &, e_lost_fraction *);
+  /* Arithmetic on special values.  */
+  e_status add_or_subtract_specials (const t_float &, bool subtract);
+  e_status divide_specials (const t_float &);
+  e_status multiply_specials (const t_float &);
 
-  /* Normalization.  */
+  /* Miscellany.  */
   e_status normalize (e_rounding_mode, e_lost_fraction);
-
+  e_status add_or_subtract (const t_float &, e_rounding_mode, bool subtract);
   e_comparison compare_absolute_value (const t_float &) const;
   e_status handle_overflow (e_rounding_mode);
   bool round_away_from_zero (e_rounding_mode, e_lost_fraction);
-
-  /* Miscellany.  */
   e_status convert_from_unsigned_integer (t_integer_part *, unsigned int,
 					  e_rounding_mode);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
