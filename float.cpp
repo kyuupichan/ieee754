@@ -1231,6 +1231,34 @@ t_float::divide (const t_float &rhs, e_rounding_mode rounding_mode)
   return fs;
 }
 
+/* Normalized fused-multiply-add.  */
+t_float::e_status
+t_float::fused_multiply_add (const t_float &multiplicand,
+			     const t_float &addend,
+			     e_rounding_mode rounding_mode)
+{
+  e_status fs;
+
+  sign ^= multiplicand.sign;
+  fs = multiply_specials (multiplicand);
+
+  /* FS can only be fs_ok or fs_invalid_op.  There is no more work to
+     do in the latter case.  The IEEE-754R standard says it is
+     implementation-defined in this case whether, if ADDEND is a quiet
+     NaN, we raise invalid op.  This implementation does.  */
+  if (fs != fs_invalid_op)
+    {
+      /* Unless both sides of the addition are normal, we can get an
+	 immediate result without extended precision.  */
+      if (category == fc_normal && addend.category == fc_normal)
+	assert (0);
+      else
+	fs = add_or_subtract (addend, rounding_mode, false);
+    }
+
+  return fs;
+}
+
 /* Comparison requires normalized numbers.  */
 t_float::e_comparison
 t_float::compare (const t_float &rhs) const

@@ -196,6 +196,8 @@ class t_float {
   e_status subtract (const t_float &, e_rounding_mode);
   e_status multiply (const t_float &, e_rounding_mode);
   e_status divide (const t_float &, e_rounding_mode);
+  e_status fused_multiply_add (const t_float &, const t_float &,
+			       e_rounding_mode);
   void change_sign ();
 
   /* Conversions.  */
