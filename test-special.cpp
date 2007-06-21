@@ -27,6 +27,18 @@ compare (const t_float &lhs, const t_float &rhs)
 }
 
 static bool
+convert (const t_float &lhs, const t_float &result,
+	t_float::e_rounding_mode rounding_mode, t_float::e_status status)
+{
+  t_float tmp (lhs);
+
+  if (tmp.convert (result.get_semantics (), rounding_mode) != status)
+    return false;
+
+  return good_compare (tmp, result);
+}
+
+static bool
 divide (const t_float &lhs, const t_float &rhs, const t_float &result,
 	t_float::e_rounding_mode rounding_mode, t_float::e_status status)
 {
@@ -95,12 +107,26 @@ int main (void)
   t_float f_neg_zero (t_float::ieee_single, t_float::fc_zero, true);
   t_float f_nan (t_float::ieee_single, t_float::fc_nan, false);
   t_float f_one (t_float::ieee_single, 1);
+  t_float d_one (t_float::ieee_double, 1);
   t_float f_two (t_float::ieee_single, 2);
   t_float f_neg_one (f_one);
   t_float f_neg_two (f_two);
+  t_float d_neg_one (f_one);
 
   f_neg_one.change_sign ();
   f_neg_two.change_sign ();
+  d_neg_one.change_sign ();
+
+  // Conversions.
+  for (int i = 0; i < 4; i++)
+    {
+      t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
+
+      assert (convert (f_one, d_one, rm, t_float::fs_ok));
+      assert (convert (f_neg_one, d_neg_one, rm, t_float::fs_ok));
+      assert (convert (d_one, f_one, rm, t_float::fs_ok));
+      assert (convert (d_neg_one, f_neg_one, rm, t_float::fs_ok));
+    }
 
   // Comparisons; pos_infinity lhs.
   assert (compare (f_pos_infinity, f_pos_infinity) == t_float::fcmp_equal);
@@ -1233,12 +1259,10 @@ int main (void)
 		   f_neg_one, rm, t_float::fs_ok));
       assert (fma (f_one, f_neg_one, f_neg_zero,
 		   f_neg_one, rm, t_float::fs_ok));
-#if 0
       assert (fma (f_one, f_neg_one, f_one,
 		   down ? f_neg_zero: f_pos_zero, rm, t_float::fs_ok));
       assert (fma (f_one, f_neg_one, f_neg_one,
 		   f_neg_two, rm, t_float::fs_ok));
-#endif
     }
 
   // FMA, non-NaN -one first.
@@ -1308,12 +1332,10 @@ int main (void)
 		   f_one, rm, t_float::fs_ok));
       assert (fma (f_neg_one, f_neg_one, f_neg_zero,
 		   f_one, rm, t_float::fs_ok));
-#if 0
       assert (fma (f_neg_one, f_neg_one, f_one,
 		   f_two, rm, t_float::fs_ok));
       assert (fma (f_neg_one, f_neg_one, f_neg_one,
 		   down ? f_neg_zero: f_pos_zero, rm, t_float::fs_ok));
-#endif
     }
 
   return 0;

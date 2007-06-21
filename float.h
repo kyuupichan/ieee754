@@ -216,6 +216,7 @@ class t_float {
 
   /* Simple queries.  */
   e_category get_category () const { return category; }
+  const flt_semantics &get_semantics () const { return *semantics; }
   bool is_zero () const { return category == fc_zero; }
   bool is_non_zero () const { return category != fc_zero; }
   bool is_negative () const { return sign; }
@@ -233,7 +234,7 @@ class t_float {
   t_integer_part add_significand (const t_float &);
   t_integer_part subtract_significand (const t_float &, t_integer_part);
   e_lost_fraction add_or_subtract_significand (const t_float &, bool subtract);
-  e_lost_fraction multiply_significand (const t_float &);
+  e_lost_fraction multiply_significand (const t_float &, const t_float *);
   e_lost_fraction divide_significand (const t_float &);
   void increment_significand ();
   void initialize (const flt_semantics *);
@@ -259,6 +260,7 @@ class t_float {
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
   e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
   e_status convert_from_decimal_string (const char *, e_rounding_mode);
+
   void assign (const t_float &);
   void copy_significand (const t_float &);
   void free_significand ();
@@ -268,7 +270,7 @@ class t_float {
 
   /* Significand - the fraction with an explicit integer bit.  Must be
      at least one bit wider than the target precision.  */
-  union
+  union Significand
   {
     t_integer_part part;
     t_integer_part *parts;

@@ -540,49 +540,87 @@ t_float::subtract_significand (const t_float &rhs, t_integer_part borrow)
 			     part_count ());
 }
 
-/* Multiply the significand of the RHS.  Returns the lost fraction.  */
+/* Multiply the significand of the RHS.  If ADDEND is non-NULL, add it
+   on to the full-precision result of the multiplication.  Returns the
+   lost fraction.  */
 e_lost_fraction
-t_float::multiply_significand (const t_float &rhs)
+t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 {
-  unsigned int msb, parts_count, precision;
+  unsigned int msb, parts_count, new_parts_count, precision;
   t_integer_part *lhs_significand;
-  t_integer_part scratch[2], *full_significand;
+  t_integer_part *full_significand;
   e_lost_fraction lost_fraction;
 
   assert (semantics == rhs.semantics);
 
+  precision = semantics->precision;
+  new_parts_count = part_count_for_bits (precision * 2);
+  full_significand = new t_integer_part[new_parts_count];
+
   lhs_significand = sig_parts_array();
   parts_count = part_count ();
-
-  if (parts_count > 1)
-    full_significand = new t_integer_part[parts_count * 2];
-  else
-    full_significand = scratch;
 
   APInt::tc_full_multiply (full_significand, lhs_significand,
 			   rhs.sig_parts_array (), parts_count);
 
-  msb = APInt::tc_msb (full_significand, parts_count * 2);
-  assert (msb != 0);
+  lost_fraction = lf_exactly_zero;
+  msb = APInt::tc_msb (full_significand, new_parts_count);
+  exponent += rhs.exponent;
 
-  precision = semantics->precision;
-  exponent += rhs.exponent - (precision - 1);
+  /* This must be true because our input was normalized.  We rely on
+     this if ADDEND is not NULL.  */
+  assert (msb >= precision);
+
+  if (addend)
+    {
+      Significand saved_significand = significand;
+      const flt_semantics *saved_semantics = semantics;
+      flt_semantics extended_semantics;
+      unsigned int new_msb;
+      e_status status;
+
+      /* Create new semantics with precision that of our MSB.  That
+	 way only ADDEND and not THIS needs to be normalized.  */
+      extended_semantics = *semantics;
+      extended_semantics.precision = msb;
+
+      if (new_parts_count == 1)
+	significand.part = full_significand[0];
+      else
+	significand.parts = full_significand;
+      semantics = &extended_semantics;
+
+      t_float extended_addend (*addend);
+      status = extended_addend.convert (extended_semantics, frm_to_zero);
+      assert (status == fs_ok);
+      lost_fraction = add_or_subtract_significand (extended_addend, false);
+
+      /* Restore our state.  */
+      if (new_parts_count == 1)
+	full_significand[0] = significand.part;
+      significand = saved_significand;
+      semantics = saved_semantics;
+
+      msb = APInt::tc_msb (full_significand, new_parts_count);
+    }
+
+  exponent -= (precision - 1);
+
   if (msb > precision)
     {
       unsigned int bits, significant_parts;
+      e_lost_fraction lf;
 
       bits = msb - precision;
       significant_parts = part_count_for_bits (msb);
-      lost_fraction = shift_right (full_significand, significant_parts, bits);
+      lf = shift_right (full_significand, significant_parts, bits);
+      lost_fraction = combine_lost_fractions (lf, lost_fraction);
       exponent += bits;
     }
-  else
-    lost_fraction = lf_exactly_zero;
 
   APInt::tc_assign (lhs_significand, full_significand, parts_count);
 
-  if (parts_count > 1)
-    delete [] full_significand;
+  delete [] full_significand;
 
   return lost_fraction;
 }
@@ -1202,7 +1240,7 @@ t_float::multiply (const t_float &rhs, e_rounding_mode rounding_mode)
 
   if (category == fc_normal)
     {
-      e_lost_fraction lost_fraction = multiply_significand (rhs);
+      e_lost_fraction lost_fraction = multiply_significand (rhs, 0);
       fs = normalize (rounding_mode, lost_fraction);
       if (lost_fraction != lf_exactly_zero)
 	fs = (e_status) (fs | fs_inexact);
@@ -1239,20 +1277,39 @@ t_float::fused_multiply_add (const t_float &multiplicand,
 {
   e_status fs;
 
+  /* Post-multiplication sign, before addition.  */
   sign ^= multiplicand.sign;
-  fs = multiply_specials (multiplicand);
 
-  /* FS can only be fs_ok or fs_invalid_op.  There is no more work to
-     do in the latter case.  The IEEE-754R standard says it is
-     implementation-defined in this case whether, if ADDEND is a quiet
-     NaN, we raise invalid op.  This implementation does.  */
-  if (fs != fs_invalid_op)
+  /* If and only if all arguments are normal do we need to do an
+     extended-precision calculation.  */
+  if (category == fc_normal && multiplicand.category == fc_normal
+      && addend.category == fc_normal)
     {
-      /* Unless both sides of the addition are normal, we can get an
-	 immediate result without extended precision.  */
-      if (category == fc_normal && addend.category == fc_normal)
-	assert (0);
-      else
+      e_lost_fraction lost_fraction;
+
+      lost_fraction = multiply_significand (multiplicand, &addend);
+      fs = normalize (rounding_mode, lost_fraction);
+      if (lost_fraction != lf_exactly_zero)
+	fs = (e_status) (fs | fs_inexact);
+
+      /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
+	 positive zero unless rounding to minus infinity, except that
+	 adding two like-signed zeroes gives that zero.  */
+      if (category == fc_zero && sign != addend.sign)
+	sign = (rounding_mode == frm_to_minus_infinity);
+    }
+  else
+    {
+      fs = multiply_specials (multiplicand);
+
+      /* FS can only be fs_ok or fs_invalid_op.  There is no more work
+	 to do in the latter case.  The IEEE-754R standard says it is
+	 implementation-defined in this case whether, if ADDEND is a
+	 quiet NaN, we raise invalid op; this implementation does so.
+	 
+	 If we need to do the addition we can do so with normal
+	 precision.  */
+      if (fs == fs_ok)
 	fs = add_or_subtract (addend, rounding_mode, false);
     }
 
