@@ -162,6 +162,22 @@ multiply (const char *a, const char *b, const char *c,
 }
 
 static bool
+fma (const char *a, const char *b, const char *c, const char *d,
+     t_float::e_rounding_mode rounding_mode, const flt_semantics &kind,
+     t_float::e_status status)
+{
+  t_float lhs (kind, a);
+  t_float multiplicand (kind, b);
+  t_float addend (kind, c);
+  t_float result (kind, d);
+
+  if (lhs.fused_multiply_add (multiplicand, addend, rounding_mode) != status)
+    return false;
+
+  return compare (lhs, result);
+}
+
+static bool
 divide (const char *a, const char *b, const char *c,
 	t_float::e_rounding_mode rounding_mode,
 	const flt_semantics &kind,
@@ -762,6 +778,36 @@ int main (void)
 				      t_float::fs_inexact));
 
       
+    }
+
+  /* Subtraction, exact.  */
+  for (int i = 0; i < 4; i++)
+    {
+      t_float::e_rounding_mode rm ((t_float::e_rounding_mode) i);
+
+      bool up = (rm == t_float::frm_to_plus_infinity
+		 || rm == t_float::frm_to_nearest);
+      bool inf = (rm == t_float::frm_to_plus_infinity);
+
+      const flt_semantics &kind = t_float::ieee_single;
+
+      assert (fma ("-0x4p0", "0x5p0", "0x5p0", "-0xfp0",
+		   rm, kind, t_float::fs_ok));
+      assert (fma ("0x3p0", "-0x2p0", "0x8p0", "0x2p0",
+		   rm, kind, t_float::fs_ok));
+      assert (fma ("0x4p0", "0x9p0", "0xfp0", "0x33p0",
+		   rm, kind, t_float::fs_ok));
+
+      assert( fma ("0x1.7e5p0", "0x1.3bbp0", "0x1.0p-24",
+		   "0x1.d77348p0", rm, kind, t_float::fs_ok));
+      assert( fma ("0x1.7e5p0", "0x1.3bbp0", "-0x1.0p-24",
+		   "0x1.d77346p0", rm, kind, t_float::fs_ok));
+      assert( fma ("0x1.7e5p0", "0x1.3bbp0", "-0x1.0p-25",
+		   inf ? "0x1.d77348p0" : "0x1.d77346p0",
+		   rm, kind, t_float::fs_inexact));
+      assert( fma ("0x1.7e5p0", "0x1.3bbp0", "0x1.0p-25",
+		   up ? "0x1.d77348p0" : "0x1.d77346p0",
+		   rm, kind, t_float::fs_inexact));
     }
 
   return 0;

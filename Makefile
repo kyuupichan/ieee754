@@ -10,4 +10,8 @@ test-normal: float.o integer.o test-normal.o
 	g++ -g  -c $< -o $@
 
 clean:
-	rm -f test-special test-normal *.o *~ *.core
+	rm -f test-special test-normal *.o *~ *.core *.orig
+
+git:	clean
+	git commit -a
+	make all

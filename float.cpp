@@ -31,6 +31,9 @@ namespace llvm {
     /* Number of bits in the significand.  This includes the integer
        bit.  */
     unsigned char precision;
+
+    /* If the target format has an implicit integer bit.  */
+    bool implicit_integer_bit;
   };
 
   struct decimal_number
@@ -40,10 +43,11 @@ namespace llvm {
     int exponent;
   };
 
-  const flt_semantics t_float::ieee_single = { 127, -126, 24 };
-  const flt_semantics t_float::ieee_double = { 1023, -1022, 53 };
-  const flt_semantics t_float::ieee_quad = { 16383, -16382, 113 };
-  const flt_semantics t_float::x87_double_extended = { 16383, -16382, 64 };
+  const flt_semantics t_float::ieee_single = { 127, -126, 24, true };
+  const flt_semantics t_float::ieee_double = { 1023, -1022, 53, true };
+  const flt_semantics t_float::ieee_quad = { 16383, -16382, 113, true };
+  const flt_semantics t_float::x87_double_extended = { 16383, -16382, 64,
+						       false };
 }
 
 /* Put a bunch of private, handy routines in an anonymous namespace.  */
@@ -154,137 +158,6 @@ namespace {
     return p;
   }
 
-  /* Reads the full significand and exponent of a decimal number,
-     converting them to binary.  Quite efficient.  If the significand
-     is zero, return TRUE without filling NUMBER.  Otherwise fill out
-     NUMBER with allocated memory and return FALSE.  */
-  static bool
-  read_decimal_number (const char *p, decimal_number *number)
-  {
-    unsigned int msb, part_count, parts_used;
-    const char *dot, *first_significant_digit;
-    t_integer_part *parts, val, max;
-    int exponent;
-
-    /* Skip leading zeroes and any decimal point.  */
-    p = skip_leading_zeroes_and_any_dot (p, &dot);
-    first_significant_digit = p;
-
-    /* Do single-part arithmetic for as long as we can.  */
-    max = (~ (t_integer_part) 0 - 9) / 10;
-    val = 0;
-
-    while (val <= max)
-      {
-	unsigned int value;
-
-	if (*p == '.')
-	  {
-	    assert (dot == 0);
-	    dot = p++;
-	    continue;
-	  }
-
-	value = digit_value (*p);
-	if (value == -1U)
-	  break;
-
-	val = val * 10 + value;
-      }
-
-    if (p == first_significant_digit)
-      return true;
-
-    /* Allocate space for 2 integer parts initially.  This will be
-       almost always be enough.  */
-    part_count = 2;
-    parts = new t_integer_part[part_count];
-    parts_used = 1;
-    APInt::tc_set (parts, val, part_count);
-
-    /* Now repeatedly do single-part arithmetic for as long as we can,
-       before having to do a long multiplication.  */
-    for (;;)
-      {
-	t_integer_part multiplier;
-	unsigned int value;
-
-	value = 0;
-	val = 0;
-	multiplier = 1;
-
-	while (multiplier <= max)
-	  {
-	    if (*p == '.')
-	      {
-		assert (dot == 0);
-		dot = p++;
-		continue;
-	      }
-
-	    value = digit_value (*p);
-	    if (value == -1U)
-	      break;
-
-	    multiplier *= 10;
-	    val = val * 10 + value;
-	  }
-
-	APInt::tc_multiply_part (parts, parts, multiplier, val,
-				 parts_used, parts_used + 1, false);
-
-	if (value == -1U)
-	  break;
-
-	/* Note this is a conservative estimate but very likely
-	   correct.  We calculate the correct value at the end.  */
-	parts_used++;
-
-	/* Allocate more space if necessary.  */
-	if (parts_used == part_count)
-	  {
-	    t_integer_part *tmp;
-
-	    part_count *= 2;
-	    tmp = new t_integer_part[part_count];
-	    APInt::tc_set (tmp, 0, part_count);
-	    APInt::tc_assign (tmp, parts, parts_used);
-	    delete [] parts;
-	    parts = tmp;
-	  }
-      }
-
-    /* Calculate the exponent adjustment implicit in the number of
-       significant digits.  */
-    if (!dot)
-      dot = p;
-
-    exponent = dot - first_significant_digit;
-    if (exponent < 0)
-      exponent++;
-    if (*p == 'e' || *p == 'E')
-      exponent = total_exponent (p, exponent);
-
-    /* Calculate exactly how many parts we actually used.  Shift the
-       significand left so the MSB is in the most significant bit.
-       This helps our caller.  */
-    msb = APInt::tc_msb (parts, parts_used);
-    parts_used = msb + (t_integer_part_width - 1) / t_integer_part_width;
-
-    if (msb %= t_integer_part_width)
-      {
-	msb = t_integer_part_width - msb;
-	exponent -= msb;
-	APInt::tc_shift_left (parts, parts_used, msb);
-      }
-
-    number->parts = parts;
-    number->part_count = parts_used;
-    number->exponent = exponent;
-
-    return false;
-  }
-
   /* Return the trailing fraction of a hexadecimal number.
      DIGIT_VALUE is the first hex digit of the fraction, P points to
      the next digit.  */
@@ -322,8 +195,7 @@ namespace {
   {
     unsigned int lsb;
 
-    /* See if we would lose precision.  Fast-path two cases that would
-       fail the generic logic.  */
+    /* Fast-path two cases that would fail the generic logic.  */
     if (bits == 0 || (lsb = APInt::tc_lsb (parts, part_count)) == 0)
       return lf_exactly_zero;
 
@@ -548,6 +420,7 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 {
   unsigned int msb, parts_count, new_parts_count, precision;
   t_integer_part *lhs_significand;
+  t_integer_part scratch[4];
   t_integer_part *full_significand;
   e_lost_fraction lost_fraction;
 
@@ -555,7 +428,11 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 
   precision = semantics->precision;
   new_parts_count = part_count_for_bits (precision * 2);
-  full_significand = new t_integer_part[new_parts_count];
+
+  if (new_parts_count > 4)
+    full_significand = new t_integer_part[new_parts_count];
+  else
+    full_significand = scratch;
 
   lhs_significand = sig_parts_array();
   parts_count = part_count ();
@@ -620,7 +497,8 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 
   APInt::tc_assign (lhs_significand, full_significand, parts_count);
 
-  delete [] full_significand;
+  if (new_parts_count > 4)
+    delete [] full_significand;
 
   return lost_fraction;
 }
@@ -632,7 +510,7 @@ t_float::divide_significand (const t_float &rhs)
   unsigned int bit, i, parts_count;
   const t_integer_part *rhs_significand;
   t_integer_part *lhs_significand, *dividend, *divisor;
-  t_integer_part scratch[2];
+  t_integer_part scratch[4];
   e_lost_fraction lost_fraction;
 
   assert (semantics == rhs.semantics);
@@ -641,7 +519,7 @@ t_float::divide_significand (const t_float &rhs)
   rhs_significand = rhs.sig_parts_array();
   parts_count = part_count ();
 
-  if (parts_count > 1)
+  if (parts_count > 2)
     dividend = new t_integer_part[parts_count * 2];
   else
     dividend = scratch;
@@ -707,7 +585,7 @@ t_float::divide_significand (const t_float &rhs)
   else
     lost_fraction = lf_less_than_half;
 
-  if (parts_count > 1)
+  if (parts_count > 2)
     delete [] dividend;
 
   return lost_fraction;
@@ -1651,91 +1529,6 @@ t_float::convert_from_hexadecimal_string (const char *p,
 }
 
 t_float::e_status
-t_float::attempt_decimal_to_binary_conversion (const decimal_number *number,
-					       unsigned int part_count,
-					       e_rounding_mode rounding_mode)
-{
-  t_integer_part *parts;
-  unsigned int half_ulps_error;
-
-  parts = new t_integer_part[part_count];
-  APInt::tc_set (parts, 0, part_count);
-
-  if (part_count > number->part_count)
-    {
-      APInt::tc_assign (parts, number->parts, number->part_count);
-      half_ulps_error = 0;
-    }
-  else
-    {
-      APInt::tc_assign (parts, number->parts, part_count);
-      half_ulps_error = 2;
-    }
-#if 0
-  if (exponent)
-    {
-      t_float tenth_power;
-      c_part exponent_half_ulps_error;
-      unsigned int absolute_exponent;
-
-      if (number->exponent < 0)
-	absolute_exponent = -number->exponent;
-      else
-	absolute_exponent = number->exponent;
-
-      exponent_half_ulps_error = power_of_ten (&tenth_power,
-					       absolute_exponent,
-					       &read_decimal_semantics);
-      if (exponent < 0)
-	as = t_float_div (flt, flt, &tenth_power, &read_decimal_semantics);
-      else
-	as = t_float_mul (flt, flt, &tenth_power, &read_decimal_semantics);
-
-      half_ulps_error = 2 * (exponent_half_ulps_error + half_ulps_error);
-      if (as & as_flt_inexact)
-	half_ulps_error++;
-
-      semantically_normalize (flt, &read_decimal_semantics, lf_exactly_zero);
-    }
-#endif
-
-
-  category = fc_zero;
-
-  return fs_ok;
-}
-
-t_float::e_status
-t_float::convert_from_decimal_string (const char *p,
-				      e_rounding_mode rounding_mode)
-{
-  e_status status;
-  decimal_number number;
-
-  if (read_decimal_number (p, &number))
-    {
-      category = fc_zero;
-      status = fs_ok;
-    }
-  else
-    {
-      category = fc_normal;
-
-      for (unsigned int count = part_count ();; count++)
-	{
-	  status = attempt_decimal_to_binary_conversion (&number, count,
-							 rounding_mode);
-	  if (status != fs_invalid_op)
-	    break;
-	}
-
-      delete [] number.parts;
-    }
-
-  return status;
-}
-
-t_float::e_status
 t_float::convert_from_string (const char *p, e_rounding_mode rounding_mode)
 {
   /* Handle a leading minus sign.  */
@@ -1747,271 +1540,5 @@ t_float::convert_from_string (const char *p, e_rounding_mode rounding_mode)
   if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
     return convert_from_hexadecimal_string (p + 2, rounding_mode);
   else
-    return convert_from_decimal_string (p, rounding_mode);
+    assert (0);
 }
-
-#if 0
-static c_part power_of_ten (t_float *dst, unsigned int exponent,
-			    const c_float_semantics *semantics);
-static unsigned int first_exponent_losing_precision = -1U;
-
-static c_part
-part_ulps_from_half (c_part part, unsigned int bits)
-{
-  c_part half;
-
-  assert_cheap (bits != 0 && bits <= c_part_width);
-
-  part &= ~(c_part) 0 >> (c_part_width - bits);
-  half = (c_part) 1 << (bits - 1);
-
-  if (part >= half)
-    return part - half;
-  else
-    return half - part;
-}
-
-static c_part
-multi_part_ulps_from_half (c_part *significand, unsigned int excess_precision)
-{
-  unsigned int part_precision;
-  unsigned int index;
-  c_part part, half;
-
-  index = (excess_precision - 1) / c_part_width;
-  part_precision = (excess_precision - 1) % c_part_width + 1;
-
-  part = significand[index];
-  if (part_precision != c_part_width)
-    part &= ~(c_part) 0 >> (c_part_width - part_precision);
-  half = (c_part) 1 << (part_precision - 1);
-
-  if (part > half || part < half - 1)
-    return ~(c_part) 0;
-
-  /* The difference is significand[0] or -significand[0] unless there
-     are non-zero parts in-between.  */
-  if (part == half)
-    {
-      while (--index)
-	if (significand[index])
-	  return ~(c_part) 0;
-
-      return significand[0];
-    }
-  else
-    {
-      while (--index)
-	if (~significand[index])
-	  return ~(c_part) 0;
-
-      return -significand[0];
-    }
-}
-
-static c_part
-ulps_from_half (c_part *significand, unsigned int excess_precision)
-{
-  if (excess_precision <= c_part_width)
-    return part_ulps_from_half (significand[0], excess_precision);
-  else
-    return multi_part_ulps_from_half (significand, excess_precision);
-}
-
-static void
-calc_power_of_ten (t_float *dst, unsigned int exponent,
-		   const c_float_semantics *semantics)
-{
-  static c_part tens[10] = { 0, 10, 100, 1000, 10000, 100000, 1000000,
-			     10000000, 100000000, 1000000000 };
-
-  t_float tmp;
-  e_arith_status as;
-
-  if (exponent <= 9)
-    float_from_part (dst, tens[exponent], semantics);
-  else if (exponent <= 15)
-    {
-      power_of_ten (dst, 8, semantics);
-      power_of_ten (&tmp, exponent - 8, semantics);
-      as = t_float_mul (dst, dst, &tmp, semantics);
-      assert_cheap (as == 0);
-    }
-  else
-    {
-      c_part half_ulps_error, ulps_room;
-      unsigned int excess_precision;
-
-      assert_cheap ((exponent & (exponent - 1)) == 0);
-      power_of_ten (&tmp, exponent / 2, semantics);
-      t_float_convert (&tmp, semantics, &power_of_ten_semantics);
-
-      as = t_float_mul (dst, &tmp, &tmp, &power_of_ten_semantics);
-
-      half_ulps_error = 2 * 2 * (exponent > first_exponent_losing_precision);
-      if (as & as_flt_inexact)
-	{
-	  if (first_exponent_losing_precision == -1U)
-	    first_exponent_losing_precision = exponent;
-	  half_ulps_error++;
-	}
-
-      excess_precision = (power_of_ten_semantics.precision
-			  - semantics->precision);
-      ulps_room = ulps_from_half (dst->significand, excess_precision);
-
-      if (half_ulps_error > ulps_room)
-	{
-	  ulps_room <<= 1;
-	  assert_cheap (half_ulps_error < ulps_room);
-	}
-
-      t_float_convert (dst, &power_of_ten_semantics, semantics);
-    }
-}
-
-static c_part
-power_of_ten (t_float *dst, unsigned int exponent,
-	      const c_float_semantics *semantics)
-{
-  /* 10 to the powers 1, 2, ..., 15.  */
-  static t_float unit_tens[15];
-
-  /* 10 to the powers 16, 32, 64, 128, 256, 512, 1024, 2048, 4096.  */
-  static t_float higher_tens[9];
-
-  t_float *ten;
-  c_part half_ulps_error;
-  unsigned int power;
-  bool store;
-
-  assert_cheap (exponent != 0);
-
-  if (exponent >= 4952)
-    {
-      dst->category = fc_infinity;
-      dst->sign = false;
-      return 0;
-    }
-
-  power = exponent & 15;
-  if (power)
-    {
-      ten = &unit_tens[power];
-      if (ten->category != fc_normal)
-	calc_power_of_ten (ten, power, semantics);
-      *dst = *ten;
-      store = false;
-    }
-  else
-    store = true;
-
-  half_ulps_error = 0;
-  power = 16;
-  ten = higher_tens;
-  for (exponent >>= 4; exponent; exponent >>= 1, ten++, power <<= 1)
-    {
-      if (! (exponent & 1))
-	continue;
-
-      if (ten->category != fc_normal)
-	calc_power_of_ten (ten, power, semantics);
-
-      if (store)
-	{
-	  store = false;
-	  *dst = *ten;
-	  half_ulps_error = power >= first_exponent_losing_precision;
-	}
-      else
-	{
-	  e_arith_status as;
-
-	  as = t_float_mul (dst, dst, ten, semantics);
-	  half_ulps_error = 2 * (half_ulps_error + 1);
-	  if (as & as_flt_inexact)
-	    half_ulps_error++;
-	}
-    }
-
-  return half_ulps_error;
-}
-
-static e_arith_status
-read_decimal_float (t_float *flt, const c_number *number,
-		    const c_float_semantics *semantics)
-{
-  e_lost_fraction lost_fraction;
-  e_arith_status as;
-  c_part half_ulps_error, ulps_room;
-  unsigned int excess_precision;
-  int exponent;
-
-  lost_fraction = read_decimal_significand (number, flt,
-					    read_decimal_semantics.precision,
-					    &exponent);
-
-  as = semantically_normalize (flt, &read_decimal_semantics, lost_fraction);
-
-  /* Exit early for zeroes; we don't care about exponent etc.  */
-  if (flt->category == fc_zero)
-    return as;
-
-  t_float tmp (fsk_ieee_quad, fc_zero, false);
-
-  tmp.convert_from_integer (const t_integer_part *, unsigned int, bool,
-			    e_rounding_mode);
-
-
-  half_ulps_error = (as & as_flt_inexact) != 0;
-
-  if (exponent)
-    {
-      t_float tenth_power;
-      c_part exponent_half_ulps_error;
-      unsigned int absolute_exponent;
-
-      if (exponent < 0)
-	absolute_exponent = -exponent;
-      else
-	absolute_exponent = exponent;
-
-      exponent_half_ulps_error = power_of_ten (&tenth_power,
-					       absolute_exponent,
-					       &read_decimal_semantics);
-      if (exponent < 0)
-	as = t_float_div (flt, flt, &tenth_power, &read_decimal_semantics);
-      else
-	as = t_float_mul (flt, flt, &tenth_power, &read_decimal_semantics);
-
-      half_ulps_error = 2 * (exponent_half_ulps_error + half_ulps_error);
-      if (as & as_flt_inexact)
-	half_ulps_error++;
-
-      semantically_normalize (flt, &read_decimal_semantics, lf_exactly_zero);
-    }
-
-  excess_precision = read_decimal_semantics.precision - semantics->precision;
-
-  if (half_ulps_error)
-    {
-      as = as_flt_inexact;
-      ulps_room = ulps_from_half (flt->significand, excess_precision);
-
-      if (half_ulps_error > ulps_room)
-	{
-	  ulps_room <<= 1;
-	  if (half_ulps_error >= ulps_room)
-	    as |= as_flt_cst_rounding;
-	}
-    }
-  else
-    as = as_ok;
-
-  flt->exponent -= excess_precision;
-
-  as |= semantically_normalize (flt, semantics, lf_exactly_zero);
-
-  return as;
-}
-#endif

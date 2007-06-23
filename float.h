@@ -207,9 +207,9 @@ class t_float {
   e_status convert_from_integer (const t_integer_part *, unsigned int, bool,
 				 e_rounding_mode);
   e_status convert_from_string (const char *, e_rounding_mode);
-  e_status attempt_decimal_to_binary_conversion (const decimal_number *,
-						 unsigned int,
-						 e_rounding_mode);
+
+  /* Return the value as an IEEE double.  */
+  double getAsDouble () const;
 
   /* Comparison with another floating point number.  */
   e_comparison compare (const t_float &) const;
@@ -259,7 +259,6 @@ class t_float {
 					  e_rounding_mode);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
   e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
-  e_status convert_from_decimal_string (const char *, e_rounding_mode);
 
   void assign (const t_float &);
   void copy_significand (const t_float &);
