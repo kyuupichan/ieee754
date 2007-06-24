@@ -18,10 +18,10 @@ using namespace llvm;
 	(APFloat::opOverflow | APFloat::opInexact)
 
 const fltSemantics *all_semantics[] = {
-  &APFloat::ieee_single,
-  &APFloat::ieee_double,
-  &APFloat::ieee_quad,
-  &APFloat::x87_double_extended,
+  &APFloat::IEEEsingle,
+  &APFloat::IEEEdouble,
+  &APFloat::IEEEquad,
+  &APFloat::x87DoubleExtended,
 };
 
 static bool
@@ -195,10 +195,10 @@ divide (const char *a, const char *b, const char *c,
 
 int main (void)
 {
-  APFloat d_nan (APFloat::ieee_double, APFloat::fcQNaN, false);
-  APFloat d_pos_infinity (APFloat::ieee_double, APFloat::fcInfinity, false);
-  APFloat d_neg_infinity (APFloat::ieee_double, APFloat::fcInfinity, true);
-  APFloat f_pos_infinity (APFloat::ieee_single, APFloat::fcInfinity, false);
+  APFloat d_nan (APFloat::IEEEdouble, APFloat::fcQNaN, false);
+  APFloat d_pos_infinity (APFloat::IEEEdouble, APFloat::fcInfinity, false);
+  APFloat d_neg_infinity (APFloat::IEEEdouble, APFloat::fcInfinity, true);
+  APFloat f_pos_infinity (APFloat::IEEEsingle, APFloat::fcInfinity, false);
 
   /* Test floating-point exact divisions.  */
   for (int i = 0; i < 4; i++)
@@ -228,7 +228,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       if (rm == APFloat::rmNearestTiesToEven || rm == APFloat::rmTowardPositive)
 	assert (divide ("0x1.000006p-126", "0x2p0", "0x1.000008p-127",
@@ -242,7 +242,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       if (rm == APFloat::rmNearestTiesToEven
 	  || rm == APFloat::rmTowardNegative)
@@ -257,7 +257,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       if (rm != APFloat::rmTowardPositive)
 	assert (divide ("0x1.000002p-126", "0x2p0", "0x1.000000p-127",
@@ -271,7 +271,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       if (rm != APFloat::rmTowardNegative)
 	assert (divide ("-0x1.000002p-126", "0x2p0", "-0x1.000000p-127",
@@ -284,7 +284,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_double;
+      const fltSemantics &kind = APFloat::IEEEdouble;
 
       bool up = (rm == APFloat::rmTowardPositive
 		 || rm == APFloat::rmNearestTiesToEven);
@@ -303,7 +303,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       if (rm == APFloat::rmTowardPositive)
 	assert (multiply ("0x1.0p-100", "0x1.0p-100", "0x1.0p-149f",
@@ -338,7 +338,7 @@ int main (void)
 	  assert (add ("0x1.000002p0", "0x0.000002p0", "0x1.000004p0",
 		       rm, kind, APFloat::opOK));
 
- 	  /* This case is exact except for ieee_single.  */
+ 	  /* This case is exact except for IEEEsingle.  */
 	  if (APFloat::semanticsPrecision (kind) > 24)
 	    {
 	      assert (add ("0x1.234562p0", "0x1.234562p-1", "0x1.b4e813p0",
@@ -369,7 +369,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       bool up = (rm == APFloat::rmTowardPositive
 		 || rm == APFloat::rmNearestTiesToEven);
@@ -453,7 +453,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_double;
+      const fltSemantics &kind = APFloat::IEEEdouble;
 
       assert (add ("0x1.ffffffffffff0p1023", "0x0.fp975",
 		   "0x1.fffffffffffffp1023", rm, kind, APFloat::opOK));
@@ -520,7 +520,7 @@ int main (void)
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
-      const fltSemantics &kind = APFloat::ieee_double;
+      const fltSemantics &kind = APFloat::IEEEdouble;
 
       assert (add ("0x0.0000000000001p-1022", "0x0.0000000000001p-1022",
 		   "0x0.0000000000001p-1021", rm, kind, APFloat::opOK));
@@ -745,36 +745,36 @@ int main (void)
 
       if (rm == APFloat::rmTowardPositive)
 	assert (convertFromInteger_parts (flt_max2, 2, false, rm,
-					    APFloat::ieee_single,
+					    APFloat::IEEEsingle,
 					    f_pos_infinity, overflow));
       else
 	assert (convertFromInteger_parts (flt_max2, 2, false, rm,
-					    APFloat::ieee_single,
+					    APFloat::IEEEsingle,
 					    "0x1.fffffep127",
 					    APFloat::opInexact));
 
       assert (convertFromInteger (0x1fffffe, false, rm,
-				    APFloat::ieee_single, "0x1fffffep0",
+				    APFloat::IEEEsingle, "0x1fffffep0",
 				    APFloat::opOK));
 
       if (rm == APFloat::rmTowardZero
 	  || rm == APFloat::rmTowardNegative)
 	assert (convertFromInteger (0x1ffffff, false, rm,
-				      APFloat::ieee_single, "0x1fffffep0",
+				      APFloat::IEEEsingle, "0x1fffffep0",
 				      APFloat::opInexact));
       else
 	assert (convertFromInteger (0x1ffffff, false, rm,
-				      APFloat::ieee_single, "0x2000000p0",
+				      APFloat::IEEEsingle, "0x2000000p0",
 				      APFloat::opInexact));
 
       if (rm == APFloat::rmTowardZero
 	  || rm == APFloat::rmTowardPositive)
 	assert (convertFromInteger (-0x1ffffff, true, rm,
-				      APFloat::ieee_single, "-0x1fffffep0",
+				      APFloat::IEEEsingle, "-0x1fffffep0",
 				      APFloat::opInexact));
       else
 	assert (convertFromInteger (-0x1ffffff, true, rm,
-				      APFloat::ieee_single, "-0x2000000p0",
+				      APFloat::IEEEsingle, "-0x2000000p0",
 				      APFloat::opInexact));
 
       
@@ -789,7 +789,7 @@ int main (void)
 		 || rm == APFloat::rmNearestTiesToEven);
       bool inf = (rm == APFloat::rmTowardPositive);
 
-      const fltSemantics &kind = APFloat::ieee_single;
+      const fltSemantics &kind = APFloat::IEEEsingle;
 
       assert (fma ("-0x4p0", "0x5p0", "0x5p0", "-0xfp0",
 		   rm, kind, APFloat::opOK));

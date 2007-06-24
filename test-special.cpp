@@ -101,14 +101,14 @@ fma (const APFloat &lhs, const APFloat &m, const APFloat &a,
 
 int main (void)
 {
-  APFloat f_pos_infinity (APFloat::ieee_single, APFloat::fcInfinity, false);
-  APFloat f_neg_infinity (APFloat::ieee_single, APFloat::fcInfinity, true);
-  APFloat f_pos_zero (APFloat::ieee_single, APFloat::fcZero, false);
-  APFloat f_neg_zero (APFloat::ieee_single, APFloat::fcZero, true);
-  APFloat f_nan (APFloat::ieee_single, APFloat::fcQNaN, false);
-  APFloat f_one (APFloat::ieee_single, 1);
-  APFloat d_one (APFloat::ieee_double, 1);
-  APFloat f_two (APFloat::ieee_single, 2);
+  APFloat f_pos_infinity (APFloat::IEEEsingle, APFloat::fcInfinity, false);
+  APFloat f_neg_infinity (APFloat::IEEEsingle, APFloat::fcInfinity, true);
+  APFloat f_pos_zero (APFloat::IEEEsingle, APFloat::fcZero, false);
+  APFloat f_neg_zero (APFloat::IEEEsingle, APFloat::fcZero, true);
+  APFloat f_nan (APFloat::IEEEsingle, APFloat::fcQNaN, false);
+  APFloat f_one (APFloat::IEEEsingle, 1);
+  APFloat d_one (APFloat::IEEEdouble, 1);
+  APFloat f_two (APFloat::IEEEsingle, 2);
   APFloat f_neg_one (f_one);
   APFloat f_neg_two (f_two);
   APFloat d_neg_one (f_one);
