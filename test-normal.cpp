@@ -808,6 +808,9 @@ int main (void)
       assert( fma ("0x1.7e5p0", "0x1.3bbp0", "0x1.0p-25",
 		   up ? "0x1.d77348p0" : "0x1.d77346p0",
 		   rm, kind, APFloat::opInexact));
+      assert( fma ("0x1p-128", "0x1p-128", "0x1p0",
+		   inf ? "0x1.000002p0" : "0x1.0p0",
+		   rm, kind, APFloat::opInexact));
     }
 
   return 0;
