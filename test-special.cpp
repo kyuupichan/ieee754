@@ -13,11 +13,11 @@ using namespace llvm;
 static bool
 good_compare (const APFloat &lhs, const APFloat &rhs)
 {
-  if (lhs.get_category () == APFloat::fc_nan)
-    return rhs.get_category () == APFloat::fc_nan;
+  if (lhs.getCategory () == APFloat::fcNaN)
+    return rhs.getCategory () == APFloat::fcNaN;
 
   return (lhs.compare (rhs) == APFloat::cmpEqual
-	  && lhs.is_negative() == rhs.is_negative());
+	  && lhs.isNegative() == rhs.isNegative());
 }
 
 static APFloat::cmpResult
@@ -28,11 +28,11 @@ compare (const APFloat &lhs, const APFloat &rhs)
 
 static bool
 convert (const APFloat &lhs, const APFloat &result,
-	APFloat::roundingMode rounding_mode, APFloat::e_status status)
+	APFloat::roundingMode rounding_mode, APFloat::opStatus status)
 {
   APFloat tmp (lhs);
 
-  if (tmp.convert (result.get_semantics (), rounding_mode) != status)
+  if (tmp.convert (result.getSemantics (), rounding_mode) != status)
     return false;
 
   return good_compare (tmp, result);
@@ -40,7 +40,7 @@ convert (const APFloat &lhs, const APFloat &result,
 
 static bool
 divide (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
-	APFloat::roundingMode rounding_mode, APFloat::e_status status)
+	APFloat::roundingMode rounding_mode, APFloat::opStatus status)
 {
   APFloat tmp (lhs);
 
@@ -52,7 +52,7 @@ divide (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
 
 static bool
 mult (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
-      APFloat::roundingMode rounding_mode, APFloat::e_status status)
+      APFloat::roundingMode rounding_mode, APFloat::opStatus status)
 {
   APFloat tmp (lhs);
 
@@ -64,7 +64,7 @@ mult (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
 
 static bool
 add (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
-     APFloat::roundingMode rounding_mode, APFloat::e_status status)
+     APFloat::roundingMode rounding_mode, APFloat::opStatus status)
 {
   APFloat tmp (lhs);
 
@@ -76,7 +76,7 @@ add (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
 
 static bool
 sub (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
-     APFloat::roundingMode rounding_mode, APFloat::e_status status)
+     APFloat::roundingMode rounding_mode, APFloat::opStatus status)
 {
   APFloat tmp (lhs);
 
@@ -89,11 +89,11 @@ sub (const APFloat &lhs, const APFloat &rhs, const APFloat &result,
 static bool
 fma (const APFloat &lhs, const APFloat &m, const APFloat &a,
      const APFloat &result, APFloat::roundingMode rounding_mode,
-     APFloat::e_status status)
+     APFloat::opStatus status)
 {
   APFloat tmp (lhs);
 
-  if (tmp.fused_multiply_add (m, a, rounding_mode) != status)
+  if (tmp.fusedMultiplyAdd (m, a, rounding_mode) != status)
     return false;
 
   return good_compare (tmp, result);
@@ -101,11 +101,11 @@ fma (const APFloat &lhs, const APFloat &m, const APFloat &a,
 
 int main (void)
 {
-  APFloat f_pos_infinity (APFloat::ieee_single, APFloat::fc_infinity, false);
-  APFloat f_neg_infinity (APFloat::ieee_single, APFloat::fc_infinity, true);
-  APFloat f_pos_zero (APFloat::ieee_single, APFloat::fc_zero, false);
-  APFloat f_neg_zero (APFloat::ieee_single, APFloat::fc_zero, true);
-  APFloat f_nan (APFloat::ieee_single, APFloat::fc_nan, false);
+  APFloat f_pos_infinity (APFloat::ieee_single, APFloat::fcInfinity, false);
+  APFloat f_neg_infinity (APFloat::ieee_single, APFloat::fcInfinity, true);
+  APFloat f_pos_zero (APFloat::ieee_single, APFloat::fcZero, false);
+  APFloat f_neg_zero (APFloat::ieee_single, APFloat::fcZero, true);
+  APFloat f_nan (APFloat::ieee_single, APFloat::fcNaN, false);
   APFloat f_one (APFloat::ieee_single, 1);
   APFloat d_one (APFloat::ieee_double, 1);
   APFloat f_two (APFloat::ieee_single, 2);
@@ -113,19 +113,19 @@ int main (void)
   APFloat f_neg_two (f_two);
   APFloat d_neg_one (f_one);
 
-  f_neg_one.change_sign ();
-  f_neg_two.change_sign ();
-  d_neg_one.change_sign ();
+  f_neg_one.changeSign ();
+  f_neg_two.changeSign ();
+  d_neg_one.changeSign ();
 
   // Conversions.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
-      assert (convert (f_one, d_one, rm, APFloat::fs_ok));
-      assert (convert (f_neg_one, d_neg_one, rm, APFloat::fs_ok));
-      assert (convert (d_one, f_one, rm, APFloat::fs_ok));
-      assert (convert (d_neg_one, f_neg_one, rm, APFloat::fs_ok));
+      assert (convert (f_one, d_one, rm, APFloat::opOK));
+      assert (convert (f_neg_one, d_neg_one, rm, APFloat::opOK));
+      assert (convert (d_one, f_one, rm, APFloat::opOK));
+      assert (convert (d_neg_one, f_neg_one, rm, APFloat::opOK));
     }
 
   // Comparisons; pos_infinity lhs.
@@ -200,19 +200,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_pos_infinity, f_pos_infinity, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_pos_infinity, f_neg_infinity, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_pos_infinity, f_pos_zero, f_pos_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_infinity, f_neg_zero, f_neg_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_infinity, f_one, f_pos_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_infinity, f_neg_one, f_neg_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_infinity, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
   // Divisions; neg_infinity lhs.
@@ -221,19 +221,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_neg_infinity, f_pos_infinity, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_neg_infinity, f_neg_infinity, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_neg_infinity, f_pos_zero, f_neg_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_infinity, f_neg_zero, f_pos_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_infinity, f_one, f_neg_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_infinity, f_neg_one, f_pos_infinity, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_infinity, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
   // Divisions; pos_zero lhs.
@@ -242,19 +242,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_pos_zero, f_pos_infinity, f_pos_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_zero, f_neg_infinity, f_neg_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_zero, f_pos_zero, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_pos_zero, f_neg_zero, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_pos_zero, f_one, f_pos_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_zero, f_neg_one, f_neg_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_pos_zero, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
   // Divisions; neg_zero lhs.
@@ -263,19 +263,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_neg_zero, f_pos_infinity, f_neg_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_zero, f_neg_infinity, f_pos_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_zero, f_pos_zero, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_neg_zero, f_neg_zero, f_nan, rm,
-		      APFloat::fs_invalid_op));
+		      APFloat::opInvalidOp));
       assert (divide (f_neg_zero, f_one, f_neg_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_zero, f_neg_one, f_pos_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_zero, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
   // Divisions; nan lhs.
@@ -284,19 +284,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_nan, f_pos_infinity, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_nan, f_neg_infinity, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_nan, f_pos_zero, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_nan, f_neg_zero, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_nan, f_one, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_nan, f_neg_one, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_nan, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
   // Divisions; one lhs.
@@ -305,19 +305,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_one, f_pos_infinity, f_pos_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_one, f_neg_infinity, f_neg_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_one, f_pos_zero, f_pos_infinity, rm,
-		      APFloat::fs_div_by_zero));
+		      APFloat::opDivByZero));
       assert (divide (f_one, f_neg_zero, f_neg_infinity, rm,
-		      APFloat::fs_div_by_zero));
+		      APFloat::opDivByZero));
       assert (divide (f_one, f_one, f_one, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_one, f_neg_one, f_neg_one, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_one, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
   // Divisions; neg_one lhs.
@@ -326,19 +326,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (divide (f_neg_one, f_pos_infinity, f_neg_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_one, f_neg_infinity, f_pos_zero, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_one, f_pos_zero, f_neg_infinity, rm,
-		      APFloat::fs_div_by_zero));
+		      APFloat::opDivByZero));
       assert (divide (f_neg_one, f_neg_zero, f_pos_infinity, rm,
-		      APFloat::fs_div_by_zero));
+		      APFloat::opDivByZero));
       assert (divide (f_neg_one, f_one, f_neg_one, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_one, f_neg_one, f_one, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
       assert (divide (f_neg_one, f_nan, f_nan, rm,
-		      APFloat::fs_ok));
+		      APFloat::opOK));
     }
 
 
@@ -349,19 +349,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_pos_infinity, f_pos_infinity, f_pos_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_infinity, f_neg_infinity, f_neg_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_infinity, f_pos_zero, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_pos_infinity, f_neg_zero, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_pos_infinity, f_one, f_pos_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_infinity, f_neg_one, f_neg_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_infinity, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
   // Multiplications; neg_infinity lhs.
@@ -370,19 +370,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_neg_infinity, f_pos_infinity, f_neg_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_infinity, f_neg_infinity, f_pos_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_infinity, f_pos_zero, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_neg_infinity, f_neg_zero, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_neg_infinity, f_one, f_neg_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_infinity, f_neg_one, f_pos_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_infinity, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
   // Multiplications; pos_zero lhs.
@@ -391,19 +391,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_pos_zero, f_pos_infinity, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_pos_zero, f_neg_infinity, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_pos_zero, f_pos_zero, f_pos_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_zero, f_neg_zero, f_neg_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_zero, f_one, f_pos_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_zero, f_neg_one, f_neg_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_pos_zero, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
   // Multiplications; neg_zero lhs.
@@ -412,19 +412,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_neg_zero, f_pos_infinity, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_neg_zero, f_neg_infinity, f_nan, rm,
-		    APFloat::fs_invalid_op));
+		    APFloat::opInvalidOp));
       assert (mult (f_neg_zero, f_pos_zero, f_neg_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_zero, f_neg_zero, f_pos_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_zero, f_one, f_neg_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_zero, f_neg_one, f_pos_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_zero, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
   // Multiplications; nan lhs.
@@ -433,19 +433,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_nan, f_pos_infinity, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_nan, f_neg_infinity, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_nan, f_pos_zero, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_nan, f_neg_zero, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_nan, f_one, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_nan, f_neg_one, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_nan, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
   // Multiplications; one lhs.
@@ -454,19 +454,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_one, f_pos_infinity, f_pos_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_one, f_neg_infinity, f_neg_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_one, f_pos_zero, f_pos_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_one, f_neg_zero, f_neg_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_one, f_one, f_one, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_one, f_neg_one, f_neg_one, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_one, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
   // Multiplications; neg_one lhs.
@@ -475,19 +475,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (mult (f_neg_one, f_pos_infinity, f_neg_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_one, f_neg_infinity, f_pos_infinity, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_one, f_pos_zero, f_neg_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_one, f_neg_zero, f_pos_zero, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_one, f_one, f_neg_one, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_one, f_neg_one, f_one, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
       assert (mult (f_neg_one, f_nan, f_nan, rm,
-		    APFloat::fs_ok));
+		    APFloat::opOK));
     }
 
 
@@ -498,19 +498,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_pos_infinity, f_pos_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_infinity, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (add (f_pos_infinity, f_pos_zero, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_infinity, f_neg_zero, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_infinity, f_one, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_infinity, f_neg_one, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Additions; neg_infinity lhs.
@@ -519,19 +519,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_neg_infinity, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (add (f_neg_infinity, f_neg_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_infinity, f_pos_zero, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_infinity, f_neg_zero, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_infinity, f_one, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_infinity, f_neg_one, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Additions; pos_zero lhs.
@@ -540,19 +540,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_pos_zero, f_pos_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_zero, f_neg_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_zero, f_pos_zero, f_pos_zero, rm,
-		   APFloat::fs_ok));
-      assert (add (f_pos_zero, f_neg_zero, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (add (f_pos_zero, f_neg_zero, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (add (f_pos_zero, f_one, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_zero, f_neg_one, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_pos_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Additions; neg_zero lhs.
@@ -561,19 +561,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_neg_zero, f_pos_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_zero, f_neg_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
-      assert (add (f_neg_zero, f_pos_zero, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (add (f_neg_zero, f_pos_zero, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (add (f_neg_zero, f_neg_zero, f_neg_zero, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_zero, f_one, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_zero, f_neg_one, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Additions; nan lhs.
@@ -582,19 +582,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_nan, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_nan, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_nan, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_nan, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_nan, f_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_nan, f_neg_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_nan, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Additions; one lhs.
@@ -603,19 +603,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_one, f_pos_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_one, f_neg_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_one, f_pos_zero, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_one, f_neg_zero, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_one, f_one, f_two, rm,
-		   APFloat::fs_ok));
-      assert (add (f_one, f_neg_one, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (add (f_one, f_neg_one, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (add (f_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Additions; neg_one lhs.
@@ -624,19 +624,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (add (f_neg_one, f_pos_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_one, f_neg_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_one, f_pos_zero, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_one, f_neg_zero, f_neg_one, rm,
-		   APFloat::fs_ok));
-      assert (add (f_neg_one, f_one, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (add (f_neg_one, f_one, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (add (f_neg_one, f_neg_one, f_neg_two, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (add (f_neg_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
 
@@ -647,19 +647,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_pos_infinity, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (sub (f_pos_infinity, f_neg_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_infinity, f_pos_zero, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_infinity, f_neg_zero, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_infinity, f_one, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_infinity, f_neg_one, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Subtractions; neg_infinity lhs.
@@ -668,19 +668,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_neg_infinity, f_pos_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_infinity, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (sub (f_neg_infinity, f_pos_zero, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_infinity, f_neg_zero, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_infinity, f_one, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_infinity, f_neg_one, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Subtractions; pos_zero lhs.
@@ -689,19 +689,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_pos_zero, f_pos_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_zero, f_neg_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
-      assert (sub (f_pos_zero, f_pos_zero, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (sub (f_pos_zero, f_pos_zero, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (sub (f_pos_zero, f_neg_zero, f_pos_zero, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_zero, f_one, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_zero, f_neg_one, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_pos_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Subtractions; neg_zero lhs.
@@ -710,19 +710,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_neg_zero, f_pos_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_zero, f_neg_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_zero, f_pos_zero, f_neg_zero, rm,
-		   APFloat::fs_ok));
-      assert (sub (f_neg_zero, f_neg_zero, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (sub (f_neg_zero, f_neg_zero, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (sub (f_neg_zero, f_one, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_zero, f_neg_one, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Subtractions; nan lhs.
@@ -731,19 +731,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_nan, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_nan, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_nan, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_nan, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_nan, f_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_nan, f_neg_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_nan, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Subtractions; one lhs.
@@ -752,19 +752,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_one, f_pos_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_one, f_neg_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_one, f_pos_zero, f_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_one, f_neg_zero, f_one, rm,
-		   APFloat::fs_ok));
-      assert (sub (f_one, f_one, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (sub (f_one, f_one, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (sub (f_one, f_neg_one, f_two, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // Subtractions; neg_one lhs.
@@ -773,19 +773,19 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (sub (f_neg_one, f_pos_infinity, f_neg_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_one, f_neg_infinity, f_pos_infinity, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_one, f_pos_zero, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_one, f_neg_zero, f_neg_one, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (sub (f_neg_one, f_one, f_neg_two, rm,
-		   APFloat::fs_ok));
-      assert (sub (f_neg_one, f_neg_one, rm == APFloat::frm_to_minus_infinity
-		   ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   APFloat::opOK));
+      assert (sub (f_neg_one, f_neg_one, rm == APFloat::rmTowardNegative
+		   ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (sub (f_neg_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // FMA, NaN somewhere.
@@ -794,114 +794,114 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (fma (f_pos_infinity, f_pos_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_infinity, f_pos_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_nan, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_infinity, f_nan, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_infinity, f_nan, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_infinity, f_nan, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_nan, f_pos_infinity, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_pos_infinity, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_infinity, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_infinity, f_neg_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_zero, f_pos_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_zero, f_pos_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_zero, f_nan, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_zero, f_nan, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_zero, f_nan, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_zero, f_nan, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_nan, f_pos_zero, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_pos_zero, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_zero, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_zero, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_pos_zero, f_nan, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_zero, f_nan, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_pos_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_invalid_op));
+		   APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_zero, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_nan, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_infinity, f_nan, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_zero, f_nan, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_zero, f_nan, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_nan, f_pos_infinity, f_pos_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_pos_infinity, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_zero, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_zero, f_neg_zero, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_one, f_pos_infinity, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_one, f_neg_one, f_nan, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_nan, f_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_pos_infinity, f_nan, f_neg_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_one, f_nan, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_neg_one, f_nan, f_neg_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
 
       assert (fma (f_nan, f_pos_infinity, f_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_pos_infinity, f_neg_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_one, f_pos_infinity, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
       assert (fma (f_nan, f_neg_one, f_neg_one, f_nan, rm,
-		   APFloat::fs_ok));
+		   APFloat::opOK));
     }
 
   // FMA, non-NaN +inf first.
@@ -910,69 +910,69 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (fma (f_pos_infinity, f_pos_infinity, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_pos_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_pos_infinity, f_pos_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_pos_infinity, f_neg_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_pos_infinity, f_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_pos_infinity, f_neg_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_neg_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_infinity, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_infinity, f_pos_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_infinity, f_neg_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_infinity, f_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_infinity, f_neg_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
 
       assert (fma (f_pos_infinity, f_pos_zero, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_pos_zero, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_pos_zero, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_pos_zero, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_pos_zero, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_pos_zero, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_pos_infinity, f_neg_zero, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_zero, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_zero, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_zero, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_zero, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_zero, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_pos_infinity, f_neg_one, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_infinity, f_neg_one, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_one, f_pos_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_one, f_neg_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_one, f_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_infinity, f_neg_one, f_neg_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
     }
 
   // FMA, non-NaN -inf first.
@@ -981,69 +981,69 @@ int main (void)
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       assert (fma (f_neg_infinity, f_pos_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_pos_infinity, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_pos_infinity, f_pos_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_pos_infinity, f_neg_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_pos_infinity, f_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_pos_infinity, f_neg_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
 
       assert (fma (f_neg_infinity, f_neg_infinity, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_infinity, f_pos_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_infinity, f_neg_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_infinity, f_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_infinity, f_neg_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
 
       assert (fma (f_neg_infinity, f_pos_zero, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_pos_zero, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_pos_zero, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_pos_zero, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_pos_zero, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_pos_zero, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_neg_infinity, f_neg_zero, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_zero, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_zero, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_zero, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_zero, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_zero, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_neg_infinity, f_neg_one, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_one, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_infinity, f_neg_one, f_pos_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_one, f_neg_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_one, f_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_infinity, f_neg_one, f_neg_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
     }
 
   // FMA, non-NaN +zero first.
@@ -1051,72 +1051,72 @@ int main (void)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
-      bool down = rm == APFloat::frm_to_minus_infinity;
+      bool down = rm == APFloat::rmTowardNegative;
 
       assert (fma (f_pos_zero, f_pos_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_pos_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_pos_infinity, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_pos_infinity, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_pos_infinity, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_pos_infinity, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_pos_zero, f_neg_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_neg_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_neg_infinity, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_neg_infinity, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_neg_infinity, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_pos_zero, f_neg_infinity, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_pos_zero, f_pos_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_pos_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_pos_zero, f_pos_zero,
-		   f_pos_zero, rm, APFloat::fs_ok));
+		   f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_pos_zero, f_neg_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_pos_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_pos_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_pos_zero, f_neg_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_zero, f_pos_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_zero, f_neg_zero,
-		   f_neg_zero, rm, APFloat::fs_ok));
+		   f_neg_zero, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_pos_zero, f_neg_one, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_one, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_one, f_pos_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_one, f_neg_zero,
-		   f_neg_zero, rm, APFloat::fs_ok));
+		   f_neg_zero, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_one, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_pos_zero, f_neg_one, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
     }
 
   // FMA, non-NaN -zero first.
@@ -1124,72 +1124,72 @@ int main (void)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
-      bool down = rm == APFloat::frm_to_minus_infinity;
+      bool down = rm == APFloat::rmTowardNegative;
 
       assert (fma (f_neg_zero, f_pos_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_pos_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_pos_infinity, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_pos_infinity, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_pos_infinity, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_pos_infinity, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_neg_zero, f_neg_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_infinity, f_pos_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_infinity, f_neg_zero,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_infinity, f_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_zero, f_neg_infinity, f_neg_one,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
 
       assert (fma (f_neg_zero, f_pos_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_pos_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_pos_zero, f_pos_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_pos_zero, f_neg_zero,
-		   f_neg_zero, rm, APFloat::fs_ok));
+		   f_neg_zero, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_pos_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_pos_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_neg_zero, f_neg_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_zero, f_pos_zero,
-		   f_pos_zero, rm, APFloat::fs_ok));
+		   f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_zero, f_neg_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_neg_zero, f_neg_one, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_one, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_one, f_pos_zero,
-		   f_pos_zero, rm, APFloat::fs_ok));
+		   f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_one, f_neg_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_one, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_zero, f_neg_one, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
     }
 
   // FMA, non-NaN +one first.
@@ -1197,72 +1197,72 @@ int main (void)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
-      bool down = rm == APFloat::frm_to_minus_infinity;
+      bool down = rm == APFloat::rmTowardNegative;
 
       assert (fma (f_one, f_pos_infinity, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_one, f_pos_infinity, f_pos_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_infinity, f_neg_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_infinity, f_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_infinity, f_neg_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
 
       assert (fma (f_one, f_neg_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_one, f_neg_infinity, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_infinity, f_pos_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_infinity, f_neg_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_infinity, f_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_infinity, f_neg_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
 
       assert (fma (f_one, f_pos_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_zero, f_pos_zero,
-		   f_pos_zero, rm, APFloat::fs_ok));
+		   f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_zero, f_neg_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_one, f_pos_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_one, f_neg_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_zero, f_pos_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_zero, f_neg_zero,
-		   f_neg_zero, rm, APFloat::fs_ok));
+		   f_neg_zero, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_one, f_neg_one, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_one, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_one, f_pos_zero,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_one, f_neg_zero,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_one, f_one,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_one, f_neg_one, f_neg_one,
-		   f_neg_two, rm, APFloat::fs_ok));
+		   f_neg_two, rm, APFloat::opOK));
     }
 
   // FMA, non-NaN -one first.
@@ -1270,72 +1270,72 @@ int main (void)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
-      bool down = rm == APFloat::frm_to_minus_infinity;
+      bool down = rm == APFloat::rmTowardNegative;
 
       assert (fma (f_neg_one, f_pos_infinity, f_pos_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_one, f_pos_infinity, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_infinity, f_pos_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_infinity, f_neg_zero,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_infinity, f_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_infinity, f_neg_one,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
 
       assert (fma (f_neg_one, f_neg_infinity, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_infinity, f_neg_infinity,
-		   f_nan, rm, APFloat::fs_invalid_op));
+		   f_nan, rm, APFloat::opInvalidOp));
       assert (fma (f_neg_one, f_neg_infinity, f_pos_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_infinity, f_neg_zero,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_infinity, f_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_infinity, f_neg_one,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
 
       assert (fma (f_neg_one, f_pos_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_zero, f_pos_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_zero, f_neg_zero,
-		   f_neg_zero, rm, APFloat::fs_ok));
+		   f_neg_zero, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_pos_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_neg_one, f_neg_zero, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_zero, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_zero, f_pos_zero,
-		   f_pos_zero, rm, APFloat::fs_ok));
+		   f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_zero, f_neg_zero,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_zero, f_one,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_zero, f_neg_one,
-		   f_neg_one, rm, APFloat::fs_ok));
+		   f_neg_one, rm, APFloat::opOK));
 
       assert (fma (f_neg_one, f_neg_one, f_pos_infinity,
-		   f_pos_infinity, rm, APFloat::fs_ok));
+		   f_pos_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_one, f_neg_infinity,
-		   f_neg_infinity, rm, APFloat::fs_ok));
+		   f_neg_infinity, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_one, f_pos_zero,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_one, f_neg_zero,
-		   f_one, rm, APFloat::fs_ok));
+		   f_one, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_one, f_one,
-		   f_two, rm, APFloat::fs_ok));
+		   f_two, rm, APFloat::opOK));
       assert (fma (f_neg_one, f_neg_one, f_neg_one,
-		   down ? f_neg_zero: f_pos_zero, rm, APFloat::fs_ok));
+		   down ? f_neg_zero: f_pos_zero, rm, APFloat::opOK));
     }
 
   return 0;

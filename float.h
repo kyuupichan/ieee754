@@ -146,7 +146,7 @@ class APFloat {
   static const fltSemantics ieee_quad;
   static const fltSemantics x87_double_extended;
 
-  static unsigned int semantics_precision (const fltSemantics &);
+  static unsigned int semanticsPrecision (const fltSemantics &);
 
   /* Floating point numbers have a four-state comparison relation.  */
   enum cmpResult {
@@ -156,112 +156,109 @@ class APFloat {
     cmpUnordered
   };
 
-  /* IEEE gives four possible rounding modes.  */
+  /* IEEE-754R gives five rounding modes.  */
   enum roundingMode {
-    frm_to_nearest,
-    frm_to_plus_infinity,
-    frm_to_minus_infinity,
-    frm_to_zero
+    rmNearestTiesToEven,
+    rmTowardPositive,
+    rmTowardNegative,
+    rmTowardZero,
+    rmNearestTiesToAway
   };
 
-  /* Operation status.  fs_underflow or fs_overflow are always
-     returned or-ed with fs_inexact.  */
-  enum e_status {
-    fs_ok             = 0x00,
-    fs_invalid_op     = 0x01,
-    fs_div_by_zero    = 0x02,
-    fs_overflow       = 0x04,
-    fs_underflow      = 0x08,
-    fs_inexact        = 0x10
+  /* Operation status.  opUnderflow or opOverflow are always returned
+     or-ed with opInexact.  */
+  enum opStatus {
+    opOK          = 0x00,
+    opInvalidOp   = 0x01,
+    opDivByZero   = 0x02,
+    opOverflow    = 0x04,
+    opUnderflow   = 0x08,
+    opInexact     = 0x10
   };
 
   /* Category of internally-represented number.  */
-  enum e_category {
-    fc_infinity,
-    fc_nan,
-    fc_normal,
-    fc_zero
+  enum fltCategory {
+    fcInfinity,
+    fcNaN,
+    fcNormal,
+    fcZero
   };
 
   /* Constructors.  */
   APFloat (const fltSemantics &, const char *);
   APFloat (const fltSemantics &, integerPart);
-  APFloat (const fltSemantics &, e_category, bool negative);
+  APFloat (const fltSemantics &, fltCategory, bool negative);
   APFloat (const APFloat &);
   ~APFloat ();
 
   /* Arithmetic.  */
-  e_status add (const APFloat &, roundingMode);
-  e_status subtract (const APFloat &, roundingMode);
-  e_status multiply (const APFloat &, roundingMode);
-  e_status divide (const APFloat &, roundingMode);
-  e_status fused_multiply_add (const APFloat &, const APFloat &,
-			       roundingMode);
-  void change_sign ();
+  opStatus add (const APFloat &, roundingMode);
+  opStatus subtract (const APFloat &, roundingMode);
+  opStatus multiply (const APFloat &, roundingMode);
+  opStatus divide (const APFloat &, roundingMode);
+  opStatus fusedMultiplyAdd (const APFloat &, const APFloat &, roundingMode);
+  void changeSign ();
 
   /* Conversions.  */
-  e_status convert (const fltSemantics &, roundingMode);
-  e_status convert_to_integer (integerPart *, unsigned int, bool,
-			       roundingMode) const;
-  e_status convert_from_integer (const integerPart *, unsigned int, bool,
-				 roundingMode);
-  e_status convert_from_string (const char *, roundingMode);
-
-  /* Return the value as an IEEE double.  */
-  double getAsDouble () const;
+  opStatus convert (const fltSemantics &, roundingMode);
+  opStatus convertToInteger (integerPart *, unsigned int, bool,
+			     roundingMode) const;
+  opStatus convertFromInteger (const integerPart *, unsigned int, bool,
+			       roundingMode);
+  opStatus convertFromString (const char *, roundingMode);
 
   /* Comparison with another floating point number.  */
   cmpResult compare (const APFloat &) const;
 
   /* Simple queries.  */
-  e_category get_category () const { return category; }
-  const fltSemantics &get_semantics () const { return *semantics; }
-  bool is_zero () const { return category == fc_zero; }
-  bool is_non_zero () const { return category != fc_zero; }
-  bool is_negative () const { return sign; }
+  fltCategory getCategory () const { return category; }
+  const fltSemantics &getSemantics () const { return *semantics; }
+  bool isZero () const { return category == fcZero; }
+  bool isNonZero () const { return category != fcZero; }
+  bool isNegative () const { return sign; }
 
   APFloat& operator= (const APFloat &);
 
  private:
 
   /* Trivial queries.  */
-  integerPart *sig_parts_array ();
-  const integerPart *sig_parts_array () const;
-  unsigned int part_count () const;
+  integerPart *significandParts ();
+  const integerPart *significandParts () const;
+  unsigned int partCount () const;
 
   /* Significand operations.  */
-  integerPart add_significand (const APFloat &);
-  integerPart subtract_significand (const APFloat &, integerPart);
-  e_lost_fraction add_or_subtract_significand (const APFloat &, bool subtract);
-  e_lost_fraction multiply_significand (const APFloat &, const APFloat *);
-  e_lost_fraction divide_significand (const APFloat &);
-  void increment_significand ();
+  integerPart addSignificand (const APFloat &);
+  integerPart subtractSignificand (const APFloat &, integerPart);
+  e_lost_fraction addOrSubtractSignificand (const APFloat &, bool subtract);
+  e_lost_fraction multiplySignificand (const APFloat &, const APFloat *);
+  e_lost_fraction divideSignificand (const APFloat &);
+  void incrementSignificand ();
   void initialize (const fltSemantics *);
-  void shift_significand_left (unsigned int);
-  e_lost_fraction shift_significand_right (unsigned int);
-  unsigned int significand_lsb () const;
-  unsigned int significand_msb () const;
-  void zero_significand ();
+  void shiftSignificandLeft (unsigned int);
+  e_lost_fraction shiftSignificandRight (unsigned int);
+  unsigned int significandLSB () const;
+  unsigned int significandMSB () const;
+  void zeroSignificand ();
 
   /* Arithmetic on special values.  */
-  e_status add_or_subtract_specials (const APFloat &, bool subtract);
-  e_status divide_specials (const APFloat &);
-  e_status multiply_specials (const APFloat &);
+  opStatus addOrSubtractSpecials (const APFloat &, bool subtract);
+  opStatus divideSpecials (const APFloat &);
+  opStatus multiplySpecials (const APFloat &);
 
   /* Miscellany.  */
-  e_status normalize (roundingMode, e_lost_fraction);
-  e_status add_or_subtract (const APFloat &, roundingMode, bool subtract);
-  cmpResult compare_absolute_value (const APFloat &) const;
-  e_status handle_overflow (roundingMode);
-  bool round_away_from_zero (roundingMode, e_lost_fraction);
-  e_status convert_from_unsigned_integer (integerPart *, unsigned int,
-					  roundingMode);
-  e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
-  e_status convert_from_hexadecimal_string (const char *, roundingMode);
+  opStatus normalize (roundingMode, e_lost_fraction);
+  opStatus addOrSubtract (const APFloat &, roundingMode, bool subtract);
+  cmpResult compareAbsoluteValue (const APFloat &) const;
+  opStatus handleOverflow (roundingMode);
+  bool roundAwayFromZero (roundingMode, e_lost_fraction);
+  opStatus convertFromUnsignedInteger (integerPart *, unsigned int,
+				       roundingMode);
+  e_lost_fraction combineLostFractions (e_lost_fraction, e_lost_fraction);
+  opStatus convertFromHexadecimalString (const char *, roundingMode);
 
   void assign (const APFloat &);
-  void copy_significand (const APFloat &);
-  void free_significand ();
+  void copySignificand (const APFloat &);
+  void freeSignificand ();
 
   /* What kind of semantics does this value obey?  */
   const fltSemantics *semantics;
@@ -278,7 +275,7 @@ class APFloat {
   exponent_t exponent;
 
   /* What kind of floating point number this is.  */
-  e_category category: 2;
+  fltCategory category: 2;
 
   /* The sign bit of this number.  */
   unsigned int sign: 1;
