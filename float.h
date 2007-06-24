@@ -9,13 +9,13 @@
 #define LLVM_FLOAT_H
 
 #define HOST_CHAR_BIT 8
-#define compile_time_assert(cond) extern int CTAssert[(cond) ? 1 : -1]
-#define t_integer_part_width (HOST_CHAR_BIT * sizeof (llvm::t_integer_part))
+#define compileTimeAssert(cond) extern int CTAssert[(cond) ? 1 : -1]
+#define integerPartWidth (HOST_CHAR_BIT * sizeof (llvm::integerPart))
 
 namespace llvm {
 
   /* The most convenient unsigned host type.  */
-   __extension__ typedef unsigned long long t_integer_part;
+   __extension__ typedef unsigned long long integerPart;
 
   /* Exponents are stored as signed numbers.  */
   typedef signed short exponent_t;
@@ -34,68 +34,67 @@ class APInt {
  public:
   /* Sets the least significant part of a bignum to the input value,
      and zeroes out higher parts.  */
-  static void tc_set (t_integer_part *, t_integer_part, unsigned int);
+  static void tcSet (integerPart *, integerPart, unsigned int);
 
   /* Assign one bignum to another.  */
-  static void tc_assign (t_integer_part *, const t_integer_part *,
-			 unsigned int);
+  static void tcAssign (integerPart *, const integerPart *, unsigned int);
 
   /* Returns true if a bignum is zero, false otherwise.  */
-  static bool tc_is_zero (const t_integer_part *, unsigned int);
+  static bool tcIsZero (const integerPart *, unsigned int);
 
   /* Extract the given bit of a bignum; returns 0 or 1.  BIT cannot be
      zero.  */
-  static int tc_extract_bit (const t_integer_part *, unsigned int bit);
+  static int tcExtractBit (const integerPart *, unsigned int bit);
 
   /* Set the given bit of a bignum.  BIT cannot be zero.  */
-  static void tc_set_bit (t_integer_part *, unsigned int bit);
+  static void tcSetBit (integerPart *, unsigned int bit);
 
   /* Returns the bit  number of the least or  most significant set bit
      of  a number.   If  the input  number  has no  bits  set zero  is
      returned.  */
-  static unsigned int tc_lsb (const t_integer_part *, unsigned int);
-  static unsigned int tc_msb (const t_integer_part *, unsigned int);
+  static unsigned int tcLSB (const integerPart *, unsigned int);
+  static unsigned int tcMSB (const integerPart *, unsigned int);
 
   /* Negate a bignum in-place.  */
-  static void tc_negate (t_integer_part *, unsigned int);
+  static void tcNegate (integerPart *, unsigned int);
 
   /* DST += RHS + CARRY where CARRY is zero or one.  Returns the carry
      flag.  */
-  static t_integer_part tc_add (t_integer_part *, const t_integer_part *,
-				t_integer_part carry, unsigned);
+  static integerPart tcAdd (integerPart *, const integerPart *,
+			    integerPart carry, unsigned);
 
   /* DST -= RHS + CARRY where CARRY is zero or one.  Returns the carry
      flag.  */
-  static t_integer_part tc_subtract (t_integer_part *, const t_integer_part *,
-				     t_integer_part carry, unsigned);
+  static integerPart tcSubtract (integerPart *, const integerPart *,
+				 integerPart carry, unsigned);
 
   /*  DST += SRC * MULTIPLIER + PART   if add is true
       DST  = SRC * MULTIPLIER + PART   if add is false
 
-      Requires 0 <= DST_PARTS <= SRC_PARTS + 1.  If DST overlaps SRC
+      Requires 0 <= DSTPARTS <= SRCPARTS + 1.  If DST overlaps SRC
       they must start at the same point, i.e. DST == SRC.
 
-      If DST_PARTS == SRC_PARTS + 1 no overflow occurs and zero is
+      If DSTPARTS == SRC_PARTS + 1 no overflow occurs and zero is
       returned.  Otherwise DST is filled with the least significant
-      DST_PARTS parts of the result, and if all of the omitted higher
+      DSTPARTS parts of the result, and if all of the omitted higher
       parts were zero return zero, otherwise overflow occurred and
       return one.  */
-  static int tc_multiply_part (t_integer_part *dst, const t_integer_part *src,
-			       t_integer_part multiplier, t_integer_part carry,
-			       unsigned int src_parts, unsigned int dst_parts,
-			       bool add);
+  static int tcMultiplyPart (integerPart *dst, const integerPart *src,
+			     integerPart multiplier, integerPart carry,
+			     unsigned int srcParts, unsigned int dstParts,
+			     bool add);
 
   /* DST = LHS * RHS, where DST has the same width as the operands and
      is filled with the least significant parts of the result.
      Returns one if overflow occurred, otherwise zero.  DST must be
      disjoint from both operands.  */
-  static int tc_multiply (t_integer_part *, const t_integer_part *,
-			  const t_integer_part *, unsigned);
+  static int tcMultiply (integerPart *, const integerPart *,
+			 const integerPart *, unsigned);
 
   /* DST = LHS * RHS, where DST has twice the width as the operands.  No
      overflow occurs.  DST must be disjoint from both operands.  */
-  static void tc_full_multiply (t_integer_part *, const t_integer_part *,
-				const t_integer_part *, unsigned);
+  static void tcFullMultiply (integerPart *, const integerPart *,
+			      const integerPart *, unsigned);
 
   /* If RHS is zero LHS and REMAINDER are left unchanged, return one.
      Otherwise set LHS to LHS / RHS with the fractional part
@@ -106,36 +105,36 @@ class APInt {
      SCRATCH is a bignum of the same size as the operands and result
      for use by the routine; its contents need not be initialized and
      are destroyed.  LHS, REMAINDER and SCRATCH must be distinct.  */
-  static int tc_divide (t_integer_part *lhs, const t_integer_part *rhs,
-			t_integer_part *remainder, t_integer_part *scratch,
-			unsigned int parts);
+  static int tcDivide (integerPart *lhs, const integerPart *rhs,
+		       integerPart *remainder, integerPart *scratch,
+		       unsigned int parts);
 
   /* Shift a bignum left COUNT bits.  Shifted in bits are zero.  There
      are no restrictions on COUNT.  */
-  static void tc_shift_left (t_integer_part *, unsigned int parts,
-			     unsigned int count);
+  static void tcShiftLeft (integerPart *, unsigned int parts,
+			   unsigned int count);
 
   /* Shift a bignum right COUNT bits.  Shifted in bits are zero.
      There are no restrictions on COUNT.  */
-  static void tc_shift_right (t_integer_part *, unsigned int parts,
-			      unsigned int count);
+  static void tcShiftRight (integerPart *, unsigned int parts,
+			    unsigned int count);
 
   /* The obvious AND, OR and XOR and complement operations.  */
-  static void tc_and (t_integer_part *, const t_integer_part *, unsigned int);
-  static void tc_or (t_integer_part *, const t_integer_part *, unsigned int);
-  static void tc_xor (t_integer_part *, const t_integer_part *, unsigned int);
-  static void tc_complement (t_integer_part *, unsigned int);
+  static void tcAnd (integerPart *, const integerPart *, unsigned int);
+  static void tcOr (integerPart *, const integerPart *, unsigned int);
+  static void tcXor (integerPart *, const integerPart *, unsigned int);
+  static void tcComplement (integerPart *, unsigned int);
   
   /* Comparison (unsigned) of two bignums.  */
-  static int tc_compare (const t_integer_part *, const t_integer_part *,
-			 unsigned int);
+  static int tcCompare (const integerPart *, const integerPart *,
+			unsigned int);
 
   /* Increment a bignum in-place.  Return the carry flag.  */
-  static t_integer_part tc_increment (t_integer_part *, unsigned int);
+  static integerPart tcIncrement (integerPart *, unsigned int);
 
   /* Set the least significant BITS and clear the rest.  */
-  static void tc_set_least_significant_bits (t_integer_part *, unsigned int,
-					     unsigned int bits);
+  static void tcSetLeastSignificantBits (integerPart *, unsigned int,
+					 unsigned int bits);
 };
 
 class t_float {
@@ -186,7 +185,7 @@ class t_float {
 
   /* Constructors.  */
   t_float (const flt_semantics &, const char *);
-  t_float (const flt_semantics &, t_integer_part);
+  t_float (const flt_semantics &, integerPart);
   t_float (const flt_semantics &, e_category, bool negative);
   t_float (const t_float &);
   ~t_float ();
@@ -202,9 +201,9 @@ class t_float {
 
   /* Conversions.  */
   e_status convert (const flt_semantics &, e_rounding_mode);
-  e_status convert_to_integer (t_integer_part *, unsigned int, bool,
+  e_status convert_to_integer (integerPart *, unsigned int, bool,
 			       e_rounding_mode) const;
-  e_status convert_from_integer (const t_integer_part *, unsigned int, bool,
+  e_status convert_from_integer (const integerPart *, unsigned int, bool,
 				 e_rounding_mode);
   e_status convert_from_string (const char *, e_rounding_mode);
 
@@ -226,13 +225,13 @@ class t_float {
  private:
 
   /* Trivial queries.  */
-  t_integer_part *sig_parts_array ();
-  const t_integer_part *sig_parts_array () const;
+  integerPart *sig_parts_array ();
+  const integerPart *sig_parts_array () const;
   unsigned int part_count () const;
 
   /* Significand operations.  */
-  t_integer_part add_significand (const t_float &);
-  t_integer_part subtract_significand (const t_float &, t_integer_part);
+  integerPart add_significand (const t_float &);
+  integerPart subtract_significand (const t_float &, integerPart);
   e_lost_fraction add_or_subtract_significand (const t_float &, bool subtract);
   e_lost_fraction multiply_significand (const t_float &, const t_float *);
   e_lost_fraction divide_significand (const t_float &);
@@ -255,7 +254,7 @@ class t_float {
   e_comparison compare_absolute_value (const t_float &) const;
   e_status handle_overflow (e_rounding_mode);
   bool round_away_from_zero (e_rounding_mode, e_lost_fraction);
-  e_status convert_from_unsigned_integer (t_integer_part *, unsigned int,
+  e_status convert_from_unsigned_integer (integerPart *, unsigned int,
 					  e_rounding_mode);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
   e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
@@ -271,8 +270,8 @@ class t_float {
      at least one bit wider than the target precision.  */
   union Significand
   {
-    t_integer_part part;
-    t_integer_part *parts;
+    integerPart part;
+    integerPart *parts;
   } significand;
 
   /* The exponent - a signed number.  */

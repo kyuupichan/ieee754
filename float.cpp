@@ -13,7 +13,7 @@ using namespace llvm;
 #define convolve(lhs, rhs) ((lhs) * 4 + (rhs))
 
 /* Assumed in hexadecimal significand parsing.  */
-compile_time_assert (t_integer_part_width % 4 == 0);
+compileTimeAssert (integerPartWidth % 4 == 0);
 
 namespace llvm {
 
@@ -38,7 +38,7 @@ namespace llvm {
 
   struct decimal_number
   {
-    t_integer_part *parts;
+    integerPart *parts;
     unsigned int part_count;
     int exponent;
   };
@@ -56,7 +56,7 @@ namespace {
   inline unsigned int
   part_count_for_bits (unsigned int bits)
   {
-    return ((bits) + t_integer_part_width - 1) / t_integer_part_width;
+    return ((bits) + integerPartWidth - 1) / integerPartWidth;
   }
 
   unsigned int
@@ -96,7 +96,7 @@ namespace {
   static int
   total_exponent (const char *p, int exponent_adjustment)
   {
-    t_integer_part unsigned_exponent;
+    integerPart unsigned_exponent;
     bool negative, overflow;
     long exponent;
 
@@ -189,22 +189,22 @@ namespace {
 
   /* Return the fraction lost were a bignum truncated.  */
   e_lost_fraction
-  lost_fraction_through_truncation (t_integer_part *parts,
+  lost_fraction_through_truncation (integerPart *parts,
 				    unsigned int part_count,
 				    unsigned int bits)
   {
     unsigned int lsb;
 
     /* Fast-path two cases that would fail the generic logic.  */
-    if (bits == 0 || (lsb = APInt::tc_lsb (parts, part_count)) == 0)
+    if (bits == 0 || (lsb = APInt::tcLSB (parts, part_count)) == 0)
       return lf_exactly_zero;
 
     if (bits < lsb)
       return lf_exactly_zero;
     if (bits == lsb)
       return lf_exactly_half;
-    if (bits <= part_count * t_integer_part_width
-	&& APInt::tc_extract_bit (parts, bits))
+    if (bits <= part_count * integerPartWidth
+	&& APInt::tcExtractBit (parts, bits))
       return lf_more_than_half;
 
     return lf_less_than_half;
@@ -212,13 +212,13 @@ namespace {
 
   /* Shift DST right BITS bits noting lost fraction.  */
   e_lost_fraction
-  shift_right (t_integer_part *dst, unsigned int parts, unsigned int bits)
+  shift_right (integerPart *dst, unsigned int parts, unsigned int bits)
   {
     e_lost_fraction lost_fraction;
 
     lost_fraction = lost_fraction_through_truncation (dst, parts, bits);
 
-    APInt::tc_shift_right (dst, parts, bits);
+    APInt::tcShiftRight (dst, parts, bits);
 
     return lost_fraction;
   }
@@ -233,7 +233,7 @@ t_float::initialize (const flt_semantics *our_semantics)
   semantics = our_semantics;
   count = part_count ();
   if (count > 1)
-    significand.parts = new t_integer_part[count];
+    significand.parts = new integerPart[count];
 }
 
 void
@@ -261,7 +261,7 @@ t_float::copy_significand (const t_float &rhs)
   assert (category == fc_normal);
   assert (rhs.part_count () >= part_count ());
 
-  APInt::tc_assign (sig_parts_array(), rhs.sig_parts_array(),
+  APInt::tcAssign (sig_parts_array(), rhs.sig_parts_array(),
 		    part_count ());
 }
 
@@ -281,7 +281,7 @@ t_float::operator= (const t_float &rhs)
   return *this;
 }
 
-t_float::t_float (const flt_semantics &our_semantics, t_integer_part value)
+t_float::t_float (const flt_semantics &our_semantics, integerPart value)
 {
   initialize (&our_semantics);
   sign = 0;
@@ -330,13 +330,13 @@ t_float::semantics_precision (const flt_semantics &semantics)
   return semantics.precision;
 }
 
-const t_integer_part *
+const integerPart *
 t_float::sig_parts_array () const
 {
   return const_cast<t_float *>(this)->sig_parts_array ();
 }
 
-t_integer_part *
+integerPart *
 t_float::sig_parts_array ()
 {
   assert (category == fc_normal);
@@ -367,48 +367,48 @@ void
 t_float::zero_significand ()
 {
   category = fc_normal;
-  APInt::tc_set (sig_parts_array (), 0, part_count ());
+  APInt::tcSet (sig_parts_array (), 0, part_count ());
 }
 
 /* Increment an fc_normal floating point number's significand.  */
 void
 t_float::increment_significand ()
 {
-  t_integer_part carry;
+  integerPart carry;
 
-  carry = APInt::tc_increment (sig_parts_array (), part_count ());
+  carry = APInt::tcIncrement (sig_parts_array (), part_count ());
 
   /* Our callers should never cause us to overflow.  */
   assert (carry == 0);
 }
 
 /* Add the significand of the RHS.  Returns the carry flag.  */
-t_integer_part
+integerPart
 t_float::add_significand (const t_float &rhs)
 {
-  t_integer_part *parts;
+  integerPart *parts;
 
   parts = sig_parts_array ();
 
   assert (semantics == rhs.semantics);
   assert (exponent == rhs.exponent);
 
-  return APInt::tc_add (parts, rhs.sig_parts_array (), 0, part_count ());
+  return APInt::tcAdd (parts, rhs.sig_parts_array (), 0, part_count ());
 }
 
 /* Subtract the significand of the RHS with a borrow flag.  Returns
    the borrow flag.  */
-t_integer_part
-t_float::subtract_significand (const t_float &rhs, t_integer_part borrow)
+integerPart
+t_float::subtract_significand (const t_float &rhs, integerPart borrow)
 {
-  t_integer_part *parts;
+  integerPart *parts;
 
   parts = sig_parts_array ();
 
   assert (semantics == rhs.semantics);
   assert (exponent == rhs.exponent);
 
-  return APInt::tc_subtract (parts, rhs.sig_parts_array (), borrow,
+  return APInt::tcSubtract (parts, rhs.sig_parts_array (), borrow,
 			     part_count ());
 }
 
@@ -419,9 +419,9 @@ e_lost_fraction
 t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 {
   unsigned int msb, parts_count, new_parts_count, precision;
-  t_integer_part *lhs_significand;
-  t_integer_part scratch[4];
-  t_integer_part *full_significand;
+  integerPart *lhs_significand;
+  integerPart scratch[4];
+  integerPart *full_significand;
   e_lost_fraction lost_fraction;
 
   assert (semantics == rhs.semantics);
@@ -430,18 +430,18 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
   new_parts_count = part_count_for_bits (precision * 2);
 
   if (new_parts_count > 4)
-    full_significand = new t_integer_part[new_parts_count];
+    full_significand = new integerPart[new_parts_count];
   else
     full_significand = scratch;
 
   lhs_significand = sig_parts_array();
   parts_count = part_count ();
 
-  APInt::tc_full_multiply (full_significand, lhs_significand,
-			   rhs.sig_parts_array (), parts_count);
+  APInt::tcFullMultiply (full_significand, lhs_significand,
+			 rhs.sig_parts_array (), parts_count);
 
   lost_fraction = lf_exactly_zero;
-  msb = APInt::tc_msb (full_significand, new_parts_count);
+  msb = APInt::tcMSB (full_significand, new_parts_count);
   exponent += rhs.exponent;
 
   /* This must be true because our input was normalized.  We rely on
@@ -478,7 +478,7 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
       significand = saved_significand;
       semantics = saved_semantics;
 
-      msb = APInt::tc_msb (full_significand, new_parts_count);
+      msb = APInt::tcMSB (full_significand, new_parts_count);
     }
 
   exponent -= (precision - 1);
@@ -495,7 +495,7 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
       exponent += bits;
     }
 
-  APInt::tc_assign (lhs_significand, full_significand, parts_count);
+  APInt::tcAssign (lhs_significand, full_significand, parts_count);
 
   if (new_parts_count > 4)
     delete [] full_significand;
@@ -508,9 +508,9 @@ e_lost_fraction
 t_float::divide_significand (const t_float &rhs)
 {
   unsigned int bit, i, parts_count;
-  const t_integer_part *rhs_significand;
-  t_integer_part *lhs_significand, *dividend, *divisor;
-  t_integer_part scratch[4];
+  const integerPart *rhs_significand;
+  integerPart *lhs_significand, *dividend, *divisor;
+  integerPart scratch[4];
   e_lost_fraction lost_fraction;
 
   assert (semantics == rhs.semantics);
@@ -520,7 +520,7 @@ t_float::divide_significand (const t_float &rhs)
   parts_count = part_count ();
 
   if (parts_count > 2)
-    dividend = new t_integer_part[parts_count * 2];
+    dividend = new integerPart[parts_count * 2];
   else
     dividend = scratch;
 
@@ -539,48 +539,48 @@ t_float::divide_significand (const t_float &rhs)
   unsigned int precision = semantics->precision;
 
   /* Normalize the divisor.  */
-  bit = precision - APInt::tc_msb (divisor, parts_count);
+  bit = precision - APInt::tcMSB (divisor, parts_count);
   if (bit)
     {
       exponent += bit;
-      APInt::tc_shift_left (divisor, parts_count, bit);
+      APInt::tcShiftLeft (divisor, parts_count, bit);
     }
 
   /* Normalize the dividend.  */
-  bit = precision - APInt::tc_msb (dividend, parts_count);
+  bit = precision - APInt::tcMSB (dividend, parts_count);
   if (bit)
     {
       exponent -= bit;
-      APInt::tc_shift_left (dividend, parts_count, bit);
+      APInt::tcShiftLeft (dividend, parts_count, bit);
     }
 
-  if (APInt::tc_compare (dividend, divisor, parts_count) < 0)
+  if (APInt::tcCompare (dividend, divisor, parts_count) < 0)
     {
       exponent--;
-      APInt::tc_shift_left (dividend, parts_count, 1);
-      assert (APInt::tc_compare (dividend, divisor, parts_count) >= 0);
+      APInt::tcShiftLeft (dividend, parts_count, 1);
+      assert (APInt::tcCompare (dividend, divisor, parts_count) >= 0);
     }
 
   /* Long division.  */
   for (bit = precision; bit; bit -= 1)
     {
-      if (APInt::tc_compare (dividend, divisor, parts_count) >= 0)
+      if (APInt::tcCompare (dividend, divisor, parts_count) >= 0)
 	{
-	  APInt::tc_subtract (dividend, divisor, 0, parts_count);
-	  APInt::tc_set_bit (lhs_significand, bit);
+	  APInt::tcSubtract (dividend, divisor, 0, parts_count);
+	  APInt::tcSetBit (lhs_significand, bit);
 	}
 
-      APInt::tc_shift_left (dividend, parts_count, 1);
+      APInt::tcShiftLeft (dividend, parts_count, 1);
     }
 
   /* Figure out the lost fraction.  */
-  int cmp = APInt::tc_compare (dividend, divisor, parts_count);
+  int cmp = APInt::tcCompare (dividend, divisor, parts_count);
 
   if (cmp > 0)
     lost_fraction = lf_more_than_half;
   else if (cmp == 0)
     lost_fraction = lf_exactly_half;
-  else if (APInt::tc_is_zero (dividend, parts_count))
+  else if (APInt::tcIsZero (dividend, parts_count))
     lost_fraction = lf_exactly_zero;
   else
     lost_fraction = lf_less_than_half;
@@ -594,13 +594,13 @@ t_float::divide_significand (const t_float &rhs)
 unsigned int
 t_float::significand_msb () const
 {
-  return APInt::tc_msb (sig_parts_array (), part_count ());
+  return APInt::tcMSB (sig_parts_array (), part_count ());
 }
 
 unsigned int
 t_float::significand_lsb () const
 {
-  return APInt::tc_lsb (sig_parts_array (), part_count ());
+  return APInt::tcLSB (sig_parts_array (), part_count ());
 }
 
 /* Note that a zero result is NOT normalized to fc_zero.  */
@@ -625,10 +625,10 @@ t_float::shift_significand_left (unsigned int bits)
     {
       unsigned int parts_count = part_count ();
 
-      APInt::tc_shift_left (sig_parts_array (), parts_count, bits);
+      APInt::tcShiftLeft (sig_parts_array (), parts_count, bits);
       exponent -= bits;
 
-      assert (!APInt::tc_is_zero (sig_parts_array (), parts_count));
+      assert (!APInt::tcIsZero (sig_parts_array (), parts_count));
     }
 }
 
@@ -646,8 +646,8 @@ t_float::compare_absolute_value (const t_float &rhs) const
   /* If exponents are equal, do an unsigned bignum comparison of the
      significands.  */
   if (compare == 0)
-    compare = APInt::tc_compare (sig_parts_array (), rhs.sig_parts_array (),
-				 part_count ());
+    compare = APInt::tcCompare (sig_parts_array (), rhs.sig_parts_array (),
+				part_count ());
 
   if (compare > 0)
     return fcmp_greater_than;
@@ -673,8 +673,8 @@ t_float::handle_overflow (e_rounding_mode rounding_mode)
   /* Otherwise we become the largest finite number.  */
   category = fc_normal;
   exponent = semantics->max_exponent;
-  APInt::tc_set_least_significant_bits (sig_parts_array (), part_count (),
-					semantics->precision);
+  APInt::tcSetLeastSignificantBits (sig_parts_array (), part_count (),
+				    semantics->precision);
 
   return fs_inexact;
 }
@@ -891,7 +891,7 @@ t_float::add_or_subtract_specials (const t_float &rhs, bool subtract)
 e_lost_fraction
 t_float::add_or_subtract_significand (const t_float &rhs, bool subtract)
 {
-  t_integer_part carry;
+  integerPart carry;
   e_lost_fraction lost_fraction;
   int bits;
 
@@ -1285,11 +1285,11 @@ t_float::convert (const flt_semantics &to_semantics,
      storage.  */ 
   if (new_part_count > part_count ())
     {
-      t_integer_part *new_parts;
+      integerPart *new_parts;
 
-      new_parts = new t_integer_part[new_part_count];
-      APInt::tc_set (new_parts, 0, new_part_count);
-      APInt::tc_assign (new_parts, sig_parts_array (), part_count ());
+      new_parts = new integerPart[new_part_count];
+      APInt::tcSet (new_parts, 0, new_part_count);
+      APInt::tcAssign (new_parts, sig_parts_array (), part_count ());
       free_significand ();
       significand.parts = new_parts;
     }
@@ -1320,7 +1320,7 @@ t_float::convert (const flt_semantics &to_semantics,
    Note that for conversions to integer type the C standard requires
    round-to-zero to always be used.  */
 t_float::e_status
-t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
+t_float::convert_to_integer (integerPart *parts, unsigned int width,
 			     bool is_signed,
 			     e_rounding_mode rounding_mode) const
 {
@@ -1336,7 +1336,7 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
 
   if (category == fc_zero)
     {
-      APInt::tc_set (parts, 0, parts_count);
+      APInt::tcSet (parts, 0, parts_count);
       return fs_ok;
     }
 
@@ -1373,10 +1373,10 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
       && (!tmp.sign || tmp.significand_lsb () != msb))
     return fs_invalid_op;
 
-  APInt::tc_assign (parts, tmp.sig_parts_array (), parts_count);
+  APInt::tcAssign (parts, tmp.sig_parts_array (), parts_count);
 
   if (tmp.sign)
-    APInt::tc_negate (parts, parts_count);
+    APInt::tcNegate (parts, parts_count);
 
   if (lost_fraction == lf_exactly_zero)
     return fs_ok;
@@ -1385,14 +1385,14 @@ t_float::convert_to_integer (t_integer_part *parts, unsigned int width,
 }
 
 t_float::e_status
-t_float::convert_from_unsigned_integer (t_integer_part *parts,
+t_float::convert_from_unsigned_integer (integerPart *parts,
 					unsigned int part_count,
 					e_rounding_mode rounding_mode)
 {
   unsigned int msb, precision;
   e_lost_fraction lost_fraction;
 
-  msb = APInt::tc_msb (parts, part_count);
+  msb = APInt::tcMSB (parts, part_count);
   precision = semantics->precision;
 
   category = fc_normal;
@@ -1409,30 +1409,30 @@ t_float::convert_from_unsigned_integer (t_integer_part *parts,
 
   /* Copy the bit image.  */
   zero_significand ();
-  APInt::tc_assign (sig_parts_array (), parts, part_count_for_bits (msb));
+  APInt::tcAssign (sig_parts_array (), parts, part_count_for_bits (msb));
 
   return normalize (rounding_mode, lost_fraction);
 }
 
 t_float::e_status
-t_float::convert_from_integer (const t_integer_part *parts,
+t_float::convert_from_integer (const integerPart *parts,
 			       unsigned int part_count, bool is_signed,
 			       e_rounding_mode rounding_mode)
 {
   unsigned int width;
   e_status status;
-  t_integer_part *copy;
+  integerPart *copy;
 
-  copy = new t_integer_part[part_count];
-  APInt::tc_assign (copy, parts, part_count);
+  copy = new integerPart[part_count];
+  APInt::tcAssign (copy, parts, part_count);
 
-  width = part_count * t_integer_part_width;
+  width = part_count * integerPartWidth;
 
   sign = false;
-  if (is_signed && APInt::tc_extract_bit (parts, width))
+  if (is_signed && APInt::tcExtractBit (parts, width))
     {
       sign = true;
-      APInt::tc_negate (copy, part_count);
+      APInt::tcNegate (copy, part_count);
     }
 
   status = convert_from_unsigned_integer (copy, part_count, rounding_mode);
@@ -1446,7 +1446,7 @@ t_float::convert_from_hexadecimal_string (const char *p,
 					  e_rounding_mode rounding_mode)
 {
   e_lost_fraction lost_fraction;
-  t_integer_part *significand;
+  integerPart *significand;
   unsigned int bit_pos, parts_count;
   const char *dot, *first_significant_digit;
 
@@ -1456,7 +1456,7 @@ t_float::convert_from_hexadecimal_string (const char *p,
 
   significand = sig_parts_array ();
   parts_count = part_count ();
-  bit_pos = parts_count * t_integer_part_width;
+  bit_pos = parts_count * integerPartWidth;
 
   /* Skip leading zeroes and any (hexa)decimal point.  */
   p = skip_leading_zeroes_and_any_dot (p, &dot);
@@ -1464,7 +1464,7 @@ t_float::convert_from_hexadecimal_string (const char *p,
 
   for (;;)
     {
-      t_integer_part hex_value;
+      integerPart hex_value;
 
       if (*p == '.')
 	{
@@ -1485,8 +1485,8 @@ t_float::convert_from_hexadecimal_string (const char *p,
       if (bit_pos)
 	{
 	  bit_pos -= 4;
-	  hex_value <<= bit_pos % t_integer_part_width;
-	  significand[bit_pos / t_integer_part_width] |= hex_value;
+	  hex_value <<= bit_pos % integerPartWidth;
+	  significand[bit_pos / integerPartWidth] |= hex_value;
 	}
       else
 	{
@@ -1519,7 +1519,7 @@ t_float::convert_from_hexadecimal_string (const char *p,
       /* Adjust for writing the significand starting at the most
 	 significant nibble.  */
       exp_adjustment += semantics->precision;
-      exp_adjustment -= parts_count * t_integer_part_width;
+      exp_adjustment -= parts_count * integerPartWidth;
 
       /* Adjust for the given exponent.  */
       exponent = total_exponent (p, exp_adjustment);
