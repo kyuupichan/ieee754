@@ -13,8 +13,8 @@ using namespace llvm;
 static bool
 good_compare (const APFloat &lhs, const APFloat &rhs)
 {
-  if (lhs.getCategory () == APFloat::fcNaN)
-    return rhs.getCategory () == APFloat::fcNaN;
+  if (lhs.getCategory () == APFloat::fcQNaN)
+    return rhs.getCategory () == APFloat::fcQNaN;
 
   return (lhs.compare (rhs) == APFloat::cmpEqual
 	  && lhs.isNegative() == rhs.isNegative());
@@ -105,7 +105,7 @@ int main (void)
   APFloat f_neg_infinity (APFloat::ieee_single, APFloat::fcInfinity, true);
   APFloat f_pos_zero (APFloat::ieee_single, APFloat::fcZero, false);
   APFloat f_neg_zero (APFloat::ieee_single, APFloat::fcZero, true);
-  APFloat f_nan (APFloat::ieee_single, APFloat::fcNaN, false);
+  APFloat f_nan (APFloat::ieee_single, APFloat::fcQNaN, false);
   APFloat f_one (APFloat::ieee_single, 1);
   APFloat d_one (APFloat::ieee_double, 1);
   APFloat f_two (APFloat::ieee_single, 2);
@@ -788,7 +788,7 @@ int main (void)
 		   APFloat::opOK));
     }
 
-  // FMA, NaN somewhere.
+  // FMA, QNaN somewhere.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -904,7 +904,7 @@ int main (void)
 		   APFloat::opOK));
     }
 
-  // FMA, non-NaN +inf first.
+  // FMA, non-QNaN +inf first.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -975,7 +975,7 @@ int main (void)
 		   f_neg_infinity, rm, APFloat::opOK));
     }
 
-  // FMA, non-NaN -inf first.
+  // FMA, non-QNaN -inf first.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -1046,7 +1046,7 @@ int main (void)
 		   f_pos_infinity, rm, APFloat::opOK));
     }
 
-  // FMA, non-NaN +zero first.
+  // FMA, non-QNaN +zero first.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -1119,7 +1119,7 @@ int main (void)
 		   f_neg_one, rm, APFloat::opOK));
     }
 
-  // FMA, non-NaN -zero first.
+  // FMA, non-QNaN -zero first.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -1192,7 +1192,7 @@ int main (void)
 		   f_neg_one, rm, APFloat::opOK));
     }
 
-  // FMA, non-NaN +one first.
+  // FMA, non-QNaN +one first.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -1265,7 +1265,7 @@ int main (void)
 		   f_neg_two, rm, APFloat::opOK));
     }
 
-  // FMA, non-NaN -one first.
+  // FMA, non-QNaN -one first.
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);

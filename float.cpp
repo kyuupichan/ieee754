@@ -161,7 +161,7 @@ namespace {
   /* Return the trailing fraction of a hexadecimal number.
      DIGIT_VALUE is the first hex digit of the fraction, P points to
      the next digit.  */
-  e_lost_fraction
+  lostFraction
   trailing_hexadecimal_fraction (const char *p, unsigned int digit_value)
   {
     unsigned int hex_digit;
@@ -169,9 +169,9 @@ namespace {
     /* If the first trailing digit isn't 0 or 8 we can work out the
        fraction immediately.  */
     if (digit_value > 8)
-      return lf_more_than_half;
+      return lfMoreThanHalf;
     else if (digit_value < 8 && digit_value > 0)
-      return lf_less_than_half;
+      return lfLessThanHalf;
 
     /* Otherwise we need to find the first non-zero digit.  */
     while (*p == '0')
@@ -182,13 +182,13 @@ namespace {
     /* If we ran off the end it is exactly zero or one-half, otherwise
        a little more.  */
     if (hex_digit == -1U)
-      return digit_value == 0 ? lf_exactly_zero: lf_exactly_half;
+      return digit_value == 0 ? lfExactlyZero: lfExactlyHalf;
     else
-      return digit_value == 0 ? lf_less_than_half: lf_more_than_half;
+      return digit_value == 0 ? lfLessThanHalf: lfMoreThanHalf;
   }
 
   /* Return the fraction lost were a bignum truncated.  */
-  e_lost_fraction
+  lostFraction
   lost_fraction_through_truncation (integerPart *parts,
 				    unsigned int part_count,
 				    unsigned int bits)
@@ -197,24 +197,24 @@ namespace {
 
     /* Fast-path two cases that would fail the generic logic.  */
     if (bits == 0 || (lsb = APInt::tcLSB (parts, part_count)) == 0)
-      return lf_exactly_zero;
+      return lfExactlyZero;
 
     if (bits < lsb)
-      return lf_exactly_zero;
+      return lfExactlyZero;
     if (bits == lsb)
-      return lf_exactly_half;
+      return lfExactlyHalf;
     if (bits <= part_count * integerPartWidth
 	&& APInt::tcExtractBit (parts, bits))
-      return lf_more_than_half;
+      return lfMoreThanHalf;
 
-    return lf_less_than_half;
+    return lfLessThanHalf;
   }
 
   /* Shift DST right BITS bits noting lost fraction.  */
-  e_lost_fraction
+  lostFraction
   shift_right (integerPart *dst, unsigned int parts, unsigned int bits)
   {
-    e_lost_fraction lost_fraction;
+    lostFraction lost_fraction;
 
     lost_fraction = lost_fraction_through_truncation (dst, parts, bits);
 
@@ -288,7 +288,7 @@ APFloat::APFloat (const fltSemantics &our_semantics, integerPart value)
   zeroSignificand ();
   exponent = our_semantics.precision - 1;
   significandParts ()[0] = value;
-  normalize (rmNearestTiesToEven, lf_exactly_zero);
+  normalize (rmNearestTiesToEven, lfExactlyZero);
 }
 
 APFloat::APFloat (const fltSemantics &our_semantics,
@@ -348,16 +348,16 @@ APFloat::significandParts ()
 }
 
 /* Combine the effect of two lost fractions.  */
-e_lost_fraction
-APFloat::combineLostFractions (e_lost_fraction more_significant,
-			       e_lost_fraction less_significant)
+lostFraction
+APFloat::combineLostFractions (lostFraction more_significant,
+			       lostFraction less_significant)
 {
-  if (less_significant != lf_exactly_zero)
+  if (less_significant != lfExactlyZero)
     {
-      if (more_significant == lf_exactly_zero)
-	more_significant = lf_less_than_half;
-      else if (more_significant == lf_exactly_half)
-	more_significant = lf_more_than_half;
+      if (more_significant == lfExactlyZero)
+	more_significant = lfLessThanHalf;
+      else if (more_significant == lfExactlyHalf)
+	more_significant = lfMoreThanHalf;
     }
 
   return more_significant;
@@ -415,14 +415,14 @@ APFloat::subtractSignificand (const APFloat &rhs, integerPart borrow)
 /* Multiply the significand of the RHS.  If ADDEND is non-NULL, add it
    on to the full-precision result of the multiplication.  Returns the
    lost fraction.  */
-e_lost_fraction
+lostFraction
 APFloat::multiplySignificand (const APFloat &rhs, const APFloat *addend)
 {
   unsigned int msb, parts_count, new_parts_count, precision;
   integerPart *lhs_significand;
   integerPart scratch[4];
   integerPart *full_significand;
-  e_lost_fraction lost_fraction;
+  lostFraction lost_fraction;
 
   assert (semantics == rhs.semantics);
 
@@ -440,7 +440,7 @@ APFloat::multiplySignificand (const APFloat &rhs, const APFloat *addend)
   APInt::tcFullMultiply (full_significand, lhs_significand,
 			 rhs.significandParts (), parts_count);
 
-  lost_fraction = lf_exactly_zero;
+  lost_fraction = lfExactlyZero;
   msb = APInt::tcMSB (full_significand, new_parts_count);
   exponent += rhs.exponent;
 
@@ -486,7 +486,7 @@ APFloat::multiplySignificand (const APFloat &rhs, const APFloat *addend)
   if (msb > precision)
     {
       unsigned int bits, significant_parts;
-      e_lost_fraction lf;
+      lostFraction lf;
 
       bits = msb - precision;
       significant_parts = part_count_for_bits (msb);
@@ -504,14 +504,14 @@ APFloat::multiplySignificand (const APFloat &rhs, const APFloat *addend)
 }
 
 /* Multiply the significands of LHS and RHS to DST.  */
-e_lost_fraction
+lostFraction
 APFloat::divideSignificand (const APFloat &rhs)
 {
   unsigned int bit, i, parts_count;
   const integerPart *rhs_significand;
   integerPart *lhs_significand, *dividend, *divisor;
   integerPart scratch[4];
-  e_lost_fraction lost_fraction;
+  lostFraction lost_fraction;
 
   assert (semantics == rhs.semantics);
 
@@ -577,13 +577,13 @@ APFloat::divideSignificand (const APFloat &rhs)
   int cmp = APInt::tcCompare (dividend, divisor, parts_count);
 
   if (cmp > 0)
-    lost_fraction = lf_more_than_half;
+    lost_fraction = lfMoreThanHalf;
   else if (cmp == 0)
-    lost_fraction = lf_exactly_half;
+    lost_fraction = lfExactlyHalf;
   else if (APInt::tcIsZero (dividend, parts_count))
-    lost_fraction = lf_exactly_zero;
+    lost_fraction = lfExactlyZero;
   else
-    lost_fraction = lf_less_than_half;
+    lost_fraction = lfLessThanHalf;
 
   if (parts_count > 2)
     delete [] dividend;
@@ -604,7 +604,7 @@ APFloat::significandLSB () const
 }
 
 /* Note that a zero result is NOT normalized to fcZero.  */
-e_lost_fraction
+lostFraction
 APFloat::shiftSignificandRight (unsigned int bits)
 {
   /* Our exponent should not overflow.  */
@@ -685,13 +685,13 @@ APFloat::handleOverflow (roundingMode rounding_mode)
    numbers.  */
 bool
 APFloat::roundAwayFromZero (roundingMode rounding_mode,
-			    e_lost_fraction lost_fraction)
+			    lostFraction lost_fraction)
 {
-  /* NaNs and infinities should not have lost fractions.  */
+  /* QNaNs and infinities should not have lost fractions.  */
   assert (category == fcNormal || category == fcZero);
 
   /* Our caller has already handled this case.  */
-  assert (lost_fraction != lf_exactly_zero);
+  assert (lost_fraction != lfExactlyZero);
 
   switch (rounding_mode)
     {
@@ -699,15 +699,15 @@ APFloat::roundAwayFromZero (roundingMode rounding_mode,
       assert (0);
 
     case rmNearestTiesToAway:
-      return (lost_fraction == lf_exactly_half
-	      || lost_fraction == lf_more_than_half);
+      return (lost_fraction == lfExactlyHalf
+	      || lost_fraction == lfMoreThanHalf);
 
     case rmNearestTiesToEven:
-      if (lost_fraction == lf_more_than_half)
+      if (lost_fraction == lfMoreThanHalf)
 	return true;
 
       /* Our zeroes don't have a significand to test.  */
-      if (lost_fraction == lf_exactly_half && category != fcZero)
+      if (lost_fraction == lfExactlyHalf && category != fcZero)
 	return significandParts()[0] & 1;
 	
       return false;
@@ -725,7 +725,7 @@ APFloat::roundAwayFromZero (roundingMode rounding_mode,
 
 APFloat::opStatus
 APFloat::normalize (roundingMode rounding_mode,
-		    e_lost_fraction lost_fraction)
+		    lostFraction lost_fraction)
 {
   unsigned int msb;
   int exponent_change;
@@ -756,7 +756,7 @@ APFloat::normalize (roundingMode rounding_mode,
       /* Shifting left is easy as we don't lose precision.  */
       if (exponent_change < 0)
 	{
-	  assert (lost_fraction == lf_exactly_zero);
+	  assert (lost_fraction == lfExactlyZero);
 
 	  shiftSignificandLeft (-exponent_change);
 
@@ -765,7 +765,7 @@ APFloat::normalize (roundingMode rounding_mode,
 
       if (exponent_change > 0)
 	{
-	  e_lost_fraction lf;
+	  lostFraction lf;
 
 	  /* Shift right and capture any new lost fraction.  */
 	  lf = shiftSignificandRight (exponent_change);
@@ -785,7 +785,7 @@ APFloat::normalize (roundingMode rounding_mode,
 
   /* As specified in IEEE 754, since we do not trap we do not report
      underflow for exact results.  */
-  if (lost_fraction == lf_exactly_zero)
+  if (lost_fraction == lfExactlyZero)
     {
       /* Canonicalize zeroes.  */
       if (msb == 0)
@@ -847,19 +847,19 @@ APFloat::addOrSubtractSpecials (const APFloat &rhs, bool subtract)
     default:
       assert (0);
 
-    case convolve (fcNaN, fcZero):
-    case convolve (fcNaN, fcNormal):
-    case convolve (fcNaN, fcInfinity):
-    case convolve (fcNaN, fcNaN):
+    case convolve (fcQNaN, fcZero):
+    case convolve (fcQNaN, fcNormal):
+    case convolve (fcQNaN, fcInfinity):
+    case convolve (fcQNaN, fcQNaN):
     case convolve (fcNormal, fcZero):
     case convolve (fcInfinity, fcNormal):
     case convolve (fcInfinity, fcZero):
       return opOK;
 
-    case convolve (fcZero, fcNaN):
-    case convolve (fcNormal, fcNaN):
-    case convolve (fcInfinity, fcNaN):
-      category = fcNaN;
+    case convolve (fcZero, fcQNaN):
+    case convolve (fcNormal, fcQNaN):
+    case convolve (fcInfinity, fcQNaN):
+      category = fcQNaN;
       return opOK;
 
     case convolve (fcNormal, fcInfinity):
@@ -882,7 +882,7 @@ APFloat::addOrSubtractSpecials (const APFloat &rhs, bool subtract)
 	 subtracted.  */
       if (sign ^ rhs.sign != subtract)
 	{
-	  category = fcNaN;
+	  category = fcQNaN;
 	  return opInvalidOp;
 	}
 
@@ -894,11 +894,11 @@ APFloat::addOrSubtractSpecials (const APFloat &rhs, bool subtract)
 }
 
 /* Add or subtract two normal numbers.  */
-e_lost_fraction
+lostFraction
 APFloat::addOrSubtractSignificand (const APFloat &rhs, bool subtract)
 {
   integerPart carry;
-  e_lost_fraction lost_fraction;
+  lostFraction lost_fraction;
   int bits;
 
   /* Determine if the operation on the absolute values is effectively
@@ -917,7 +917,7 @@ APFloat::addOrSubtractSignificand (const APFloat &rhs, bool subtract)
       if (bits == 0)
 	{
 	  reverse = compareAbsoluteValue (temp_rhs) == cmpLessThan;
-	  lost_fraction = lf_exactly_zero;
+	  lost_fraction = lfExactlyZero;
 	}
       else if (bits > 0)
 	{
@@ -935,20 +935,20 @@ APFloat::addOrSubtractSignificand (const APFloat &rhs, bool subtract)
       if (reverse)
 	{
 	  carry = temp_rhs.subtractSignificand
-	    (*this, lost_fraction != lf_exactly_zero);
+	    (*this, lost_fraction != lfExactlyZero);
 	  copySignificand (temp_rhs);
 	  sign = !sign;
 	}
       else
 	carry = subtractSignificand
-	  (temp_rhs, lost_fraction != lf_exactly_zero);
+	  (temp_rhs, lost_fraction != lfExactlyZero);
 
       /* Invert the lost fraction - it was on the RHS and
 	 subtracted.  */
-      if (lost_fraction == lf_less_than_half)
-	lost_fraction = lf_more_than_half;
-      else if (lost_fraction == lf_more_than_half)
-	lost_fraction = lf_less_than_half;
+      if (lost_fraction == lfLessThanHalf)
+	lost_fraction = lfMoreThanHalf;
+      else if (lost_fraction == lfMoreThanHalf)
+	lost_fraction = lfLessThanHalf;
 
       /* The code above is intended to ensure that no borrow is
 	 necessary.  */
@@ -984,14 +984,14 @@ APFloat::multiplySpecials (const APFloat &rhs)
     default:
       assert (0);
 
-    case convolve (fcNaN, fcZero):
-    case convolve (fcNaN, fcNormal):
-    case convolve (fcNaN, fcInfinity):
-    case convolve (fcNaN, fcNaN):
-    case convolve (fcZero, fcNaN):
-    case convolve (fcNormal, fcNaN):
-    case convolve (fcInfinity, fcNaN):
-      category = fcNaN;
+    case convolve (fcQNaN, fcZero):
+    case convolve (fcQNaN, fcNormal):
+    case convolve (fcQNaN, fcInfinity):
+    case convolve (fcQNaN, fcQNaN):
+    case convolve (fcZero, fcQNaN):
+    case convolve (fcNormal, fcQNaN):
+    case convolve (fcInfinity, fcQNaN):
+      category = fcQNaN;
       return opOK;
 
     case convolve (fcNormal, fcInfinity):
@@ -1008,7 +1008,7 @@ APFloat::multiplySpecials (const APFloat &rhs)
 
     case convolve (fcZero, fcInfinity):
     case convolve (fcInfinity, fcZero):
-      category = fcNaN;
+      category = fcQNaN;
       return opInvalidOp;
 
     case convolve (fcNormal, fcNormal):
@@ -1024,20 +1024,20 @@ APFloat::divideSpecials (const APFloat &rhs)
     default:
       assert (0);
 
-    case convolve (fcNaN, fcZero):
-    case convolve (fcNaN, fcNormal):
-    case convolve (fcNaN, fcInfinity):
-    case convolve (fcNaN, fcNaN):
+    case convolve (fcQNaN, fcZero):
+    case convolve (fcQNaN, fcNormal):
+    case convolve (fcQNaN, fcInfinity):
+    case convolve (fcQNaN, fcQNaN):
     case convolve (fcInfinity, fcZero):
     case convolve (fcInfinity, fcNormal):
     case convolve (fcZero, fcInfinity):
     case convolve (fcZero, fcNormal):
       return opOK;
 
-    case convolve (fcZero, fcNaN):
-    case convolve (fcNormal, fcNaN):
-    case convolve (fcInfinity, fcNaN):
-      category = fcNaN;
+    case convolve (fcZero, fcQNaN):
+    case convolve (fcNormal, fcQNaN):
+    case convolve (fcInfinity, fcQNaN):
+      category = fcQNaN;
       return opOK;
 
     case convolve (fcNormal, fcInfinity):
@@ -1050,7 +1050,7 @@ APFloat::divideSpecials (const APFloat &rhs)
 
     case convolve (fcInfinity, fcInfinity):
     case convolve (fcZero, fcZero):
-      category = fcNaN;
+      category = fcQNaN;
       return opInvalidOp;
 
     case convolve (fcNormal, fcNormal):
@@ -1078,13 +1078,13 @@ APFloat::addOrSubtract (const APFloat &rhs, roundingMode rounding_mode,
   /* This return code means it was not a simple case.  */
   if (fs == opDivByZero)
     {
-      e_lost_fraction lost_fraction;
+      lostFraction lost_fraction;
 
       lost_fraction = addOrSubtractSignificand (rhs, subtract);
       fs = normalize (rounding_mode, lost_fraction);
 
       /* Can only be zero if we lost no fraction.  */
-      assert (category != fcZero || lost_fraction == lf_exactly_zero);
+      assert (category != fcZero || lost_fraction == lfExactlyZero);
     }
 
   /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
@@ -1124,9 +1124,9 @@ APFloat::multiply (const APFloat &rhs, roundingMode rounding_mode)
 
   if (category == fcNormal)
     {
-      e_lost_fraction lost_fraction = multiplySignificand (rhs, 0);
+      lostFraction lost_fraction = multiplySignificand (rhs, 0);
       fs = normalize (rounding_mode, lost_fraction);
-      if (lost_fraction != lf_exactly_zero)
+      if (lost_fraction != lfExactlyZero)
 	fs = (opStatus) (fs | opInexact);
     }
 
@@ -1144,9 +1144,9 @@ APFloat::divide (const APFloat &rhs, roundingMode rounding_mode)
 
   if (category == fcNormal)
     {
-      e_lost_fraction lost_fraction = divideSignificand (rhs);
+      lostFraction lost_fraction = divideSignificand (rhs);
       fs = normalize (rounding_mode, lost_fraction);
-      if (lost_fraction != lf_exactly_zero)
+      if (lost_fraction != lfExactlyZero)
 	fs = (opStatus) (fs | opInexact);
     }
 
@@ -1169,11 +1169,11 @@ APFloat::fusedMultiplyAdd (const APFloat &multiplicand,
   if (category == fcNormal && multiplicand.category == fcNormal
       && addend.category == fcNormal)
     {
-      e_lost_fraction lost_fraction;
+      lostFraction lost_fraction;
 
       lost_fraction = multiplySignificand (multiplicand, &addend);
       fs = normalize (rounding_mode, lost_fraction);
-      if (lost_fraction != lf_exactly_zero)
+      if (lost_fraction != lfExactlyZero)
 	fs = (opStatus) (fs | opInexact);
 
       /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
@@ -1189,7 +1189,7 @@ APFloat::fusedMultiplyAdd (const APFloat &multiplicand,
       /* FS can only be opOK or opInvalidOp.  There is no more work
 	 to do in the latter case.  The IEEE-754R standard says it is
 	 implementation-defined in this case whether, if ADDEND is a
-	 quiet NaN, we raise invalid op; this implementation does so.
+	 quiet QNaN, we raise invalid op; this implementation does so.
 	 
 	 If we need to do the addition we can do so with normal
 	 precision.  */
@@ -1213,13 +1213,13 @@ APFloat::compare (const APFloat &rhs) const
     default:
       assert (0);
 
-    case convolve (fcNaN, fcZero):
-    case convolve (fcNaN, fcNormal):
-    case convolve (fcNaN, fcInfinity):
-    case convolve (fcNaN, fcNaN):
-    case convolve (fcZero, fcNaN):
-    case convolve (fcNormal, fcNaN):
-    case convolve (fcInfinity, fcNaN):
+    case convolve (fcQNaN, fcZero):
+    case convolve (fcQNaN, fcNormal):
+    case convolve (fcQNaN, fcInfinity):
+    case convolve (fcQNaN, fcQNaN):
+    case convolve (fcZero, fcQNaN):
+    case convolve (fcNormal, fcQNaN):
+    case convolve (fcInfinity, fcQNaN):
       return cmpUnordered;
 
     case convolve (fcInfinity, fcNormal):
@@ -1305,7 +1305,7 @@ APFloat::convert (const fltSemantics &to_semantics,
       /* Re-interpret our bit-pattern.  */
       exponent += to_semantics.precision - semantics->precision;
       semantics = &to_semantics;
-      fs = normalize (rounding_mode, lf_exactly_zero);
+      fs = normalize (rounding_mode, lfExactlyZero);
     }
   else
     {
@@ -1330,12 +1330,12 @@ APFloat::convertToInteger (integerPart *parts, unsigned int width,
 			   bool is_signed,
 			   roundingMode rounding_mode) const
 {
-  e_lost_fraction lost_fraction;
+  lostFraction lost_fraction;
   unsigned int msb, parts_count;
   int bits;
 
   /* Handle the three special cases first.  */
-  if (category == fcInfinity || category == fcNaN)
+  if (category == fcInfinity || category == fcQNaN)
     return opInvalidOp;
 
   parts_count = part_count_for_bits (width);
@@ -1356,10 +1356,10 @@ APFloat::convertToInteger (integerPart *parts, unsigned int width,
   else
     {
       tmp.shiftSignificandLeft (-bits);
-      lost_fraction = lf_exactly_zero;
+      lost_fraction = lfExactlyZero;
     }
 
-  if (lost_fraction != lf_exactly_zero
+  if (lost_fraction != lfExactlyZero
       && tmp.roundAwayFromZero (rounding_mode, lost_fraction))
     tmp.incrementSignificand ();
 
@@ -1384,7 +1384,7 @@ APFloat::convertToInteger (integerPart *parts, unsigned int width,
   if (tmp.sign)
     APInt::tcNegate (parts, parts_count);
 
-  if (lost_fraction == lf_exactly_zero)
+  if (lost_fraction == lfExactlyZero)
     return opOK;
   else
     return opInexact;
@@ -1396,7 +1396,7 @@ APFloat::convertFromUnsignedInteger (integerPart *parts,
 				     roundingMode rounding_mode)
 {
   unsigned int msb, precision;
-  e_lost_fraction lost_fraction;
+  lostFraction lost_fraction;
 
   msb = APInt::tcMSB (parts, part_count);
   precision = semantics->precision;
@@ -1411,7 +1411,7 @@ APFloat::convertFromUnsignedInteger (integerPart *parts,
       msb = precision;
     }
   else
-    lost_fraction = lf_exactly_zero;
+    lost_fraction = lfExactlyZero;
 
   /* Copy the bit image.  */
   zeroSignificand ();
@@ -1451,7 +1451,7 @@ APFloat::opStatus
 APFloat::convertFromHexadecimalString (const char *p,
 				       roundingMode rounding_mode)
 {
-  e_lost_fraction lost_fraction;
+  lostFraction lost_fraction;
   integerPart *significand;
   unsigned int bit_pos, parts_count;
   const char *dot, *first_significant_digit;
@@ -1481,7 +1481,7 @@ APFloat::convertFromHexadecimalString (const char *p,
       hex_value = hex_digit_value (*p);
       if (hex_value == -1U)
 	{
-	  lost_fraction = lf_exactly_zero;
+	  lost_fraction = lfExactlyZero;
 	  break;
 	}
 

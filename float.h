@@ -23,11 +23,11 @@ namespace llvm {
   struct fltSemantics;
   struct decimal_number;
 
-  enum e_lost_fraction {
-    lf_exactly_zero,
-    lf_less_than_half,
-    lf_exactly_half,
-    lf_more_than_half
+  enum lostFraction {
+    lfExactlyZero,
+    lfLessThanHalf,
+    lfExactlyHalf,
+    lfMoreThanHalf
   };
 
 class APInt {
@@ -179,7 +179,7 @@ class APFloat {
   /* Category of internally-represented number.  */
   enum fltCategory {
     fcInfinity,
-    fcNaN,
+    fcQNaN,
     fcNormal,
     fcZero
   };
@@ -229,13 +229,13 @@ class APFloat {
   /* Significand operations.  */
   integerPart addSignificand (const APFloat &);
   integerPart subtractSignificand (const APFloat &, integerPart);
-  e_lost_fraction addOrSubtractSignificand (const APFloat &, bool subtract);
-  e_lost_fraction multiplySignificand (const APFloat &, const APFloat *);
-  e_lost_fraction divideSignificand (const APFloat &);
+  lostFraction addOrSubtractSignificand (const APFloat &, bool subtract);
+  lostFraction multiplySignificand (const APFloat &, const APFloat *);
+  lostFraction divideSignificand (const APFloat &);
   void incrementSignificand ();
   void initialize (const fltSemantics *);
   void shiftSignificandLeft (unsigned int);
-  e_lost_fraction shiftSignificandRight (unsigned int);
+  lostFraction shiftSignificandRight (unsigned int);
   unsigned int significandLSB () const;
   unsigned int significandMSB () const;
   void zeroSignificand ();
@@ -246,14 +246,14 @@ class APFloat {
   opStatus multiplySpecials (const APFloat &);
 
   /* Miscellany.  */
-  opStatus normalize (roundingMode, e_lost_fraction);
+  opStatus normalize (roundingMode, lostFraction);
   opStatus addOrSubtract (const APFloat &, roundingMode, bool subtract);
   cmpResult compareAbsoluteValue (const APFloat &) const;
   opStatus handleOverflow (roundingMode);
-  bool roundAwayFromZero (roundingMode, e_lost_fraction);
+  bool roundAwayFromZero (roundingMode, lostFraction);
   opStatus convertFromUnsignedInteger (integerPart *, unsigned int,
 				       roundingMode);
-  e_lost_fraction combineLostFractions (e_lost_fraction, e_lost_fraction);
+  lostFraction combineLostFractions (lostFraction, lostFraction);
   opStatus convertFromHexadecimalString (const char *, roundingMode);
 
   void assign (const APFloat &);

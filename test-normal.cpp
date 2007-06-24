@@ -195,7 +195,7 @@ divide (const char *a, const char *b, const char *c,
 
 int main (void)
 {
-  APFloat d_nan (APFloat::ieee_double, APFloat::fcNaN, false);
+  APFloat d_nan (APFloat::ieee_double, APFloat::fcQNaN, false);
   APFloat d_pos_infinity (APFloat::ieee_double, APFloat::fcInfinity, false);
   APFloat d_neg_infinity (APFloat::ieee_double, APFloat::fcInfinity, true);
   APFloat f_pos_infinity (APFloat::ieee_single, APFloat::fcInfinity, false);
