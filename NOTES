@@ -1,30 +1,39 @@
 Written by Neil Booth, 2005-2007.
 
-A software arbitrary-precision floating-point implementation.  Written
-for clarity rather than speed, in particular targetting use in the
-front-end of a multi-target compiler so that target arithmetic can be
-performed on the host.  Perhaps useful as a reference implementation
-for a run-time library during development of a faster target-specific
-one.
+A host- and target-independent arbitrary-precision floating-point
+software implementation using bignum integer arithmetic.  The library
+will work with bignum integers whose parts are any unsigned type at
+least 16 bits wide.  64 bits is recommended.
+
+Written for clarity rather than speed, in particular with a view to
+use in the front-end of a cross compiler so that target arithmetic can
+be correctly performed on the host.  Performance should nonetheless be
+reasonable, particularly for its intended use.  It may be useful as a
+base implementation for a run-time library during development of a
+faster target-specific one.
 
 All 5 rounding modes in the IEEE-754R draft are handled correctly for
 all implemented operations.  Currently implemented operations are add,
-subtract, multiply, divide, fused-multiply-add, conversion-to-integer
-and conversion-from-integer.  It also reads correctly-formed
-hexadecimal floating point numbers as per C99; syntax is not checked.
-Conversion from decimal is not currently supported.
+subtract, multiply, divide, fused-multiply-add, conversion-to-float,
+conversion-to-integer and conversion-from-integer.  New rounding modes
+(e.g. away from zero) can be added with three or four lines of code.
+The library reads and correctly rounds hexadecimal floating point
+numbers as per C99; syntax is required to have been validated by the
+caller.  Conversion from decimal is not currently implemented.
 
 Four formats are built-in: IEEE single precision, double precision,
 quadruple precision, and x87 80-bit extended double (when operating
 with full extended precision).  Adding a new format that obeys IEEE
-semantics requires just one line of code to describe the format.
+semantics only requires adding one line of code to describe the
+format.
 
-All operations return exceptions raised as a bit-mask, so multiple
-operations can be done consecutively and their results or-ed together
-if desired.  This can be useful for compiler diagnostics - inexact,
-underflow and overflow can be easily diagnosed on constant folding,
-and compiler optimizers can determine what exceptions would be raised
-by various operations and optimize accordingly.
+All operations return the status of that operation as an exception
+bit-mask, so multiple operations can be done consecutively with their
+results or-ed together.  This can be useful for compiler diagnostics;
+e.g., inexact, underflow and overflow can be easily diagnosed on
+constant folding, and compiler optimizers can determine what
+exceptions would be raised by folding operations and optimize
+accordingly.
 
 At present, underflow tininess is detected after rounding; it should
 be straight forward to add support for the before-rounding case too.
@@ -47,9 +56,14 @@ TODO
 Some features that may or may not be worth adding:
 
 Conversions to and from decimal strings (hard).
+
 Conversions to hexadecimal string.
-Read and write IEEE-format memory representations.
+
+Read and write IEEE-format in-memory representations.
+
 Optional ability to detect underflow tininess before rounding.
-New formats: x87 in single and double precision mode (extended
-exponent range) and IBM two-double extended precision (hard).
+
+New formats: x87 in single and double precision mode (IEEE apart from
+extended exponent range) and IBM two-double extended precision (hard).
+
 New operations: sqrt, copysign, nextafter, nexttoward.

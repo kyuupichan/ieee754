@@ -1,15 +1,16 @@
-/*
-   Copyright 2005-2007 Neil Booth.
-
-   See the file "COPYING" for information about the copyright
-   and warranty status of this software.
-
-   Two's complement bignum arithmetic.  The source code will run
-   correctly on any host - sign magnitude, one's complement or two's
-   complement.
-
-   The code is reasonably efficient given the above constraint.
-*/
+//===-- APInt.cpp - Implement APInt class ---------------------------------===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file was developed by Neil Booth and is distributed under the 
+// University of Illinois Open Source License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+//
+// This file implements a variety of operations on a representation of
+// arbitrary precision, two's-complement, bignum integer values.
+//
+//===----------------------------------------------------------------------===//
 
 #include <cassert>
 #include "float.h"
@@ -18,102 +19,96 @@ using namespace llvm;
 
 /* Assumed by lowHalf, highHalf, partMSB and partLSB.  A fairly safe
    and unrestricting assumption.  */
-compileTimeAssert (integerPartWidth % 2 == 0);
+compileTimeAssert(integerPartWidth % 2 == 0);
 
 #define lowBitMask(bits) (~(integerPart) 0 >> (integerPartWidth - (bits)))
-#define lowHalf(part) ((part) & lowBitMask (integerPartWidth / 2))
+#define lowHalf(part) ((part) & lowBitMask(integerPartWidth / 2))
 #define highHalf(part) ((part) >> (integerPartWidth / 2))
 
 /* Some handy functions local to this file.  */
 namespace {
 
-/* Returns the bit number of the most significant bit of a part.
-   If the input number has no bits set zero is returned.  */
-unsigned int
-tcPartMSB (integerPart value)
-{
-  unsigned int n, msb;
+  /* Returns the bit number of the most significant bit of a part.
+     If the input number has no bits set zero is returned.  */
+  unsigned int
+  tcPartMSB(integerPart value)
+  {
+    unsigned int n, msb;
 
-  if (value == 0)
-    return 0;
+    if(value == 0)
+      return 0;
 
-  n = integerPartWidth / 2;
+    n = integerPartWidth / 2;
 
-  msb = 1;
-  do
-    {
-      if (value >> n)
-	{
-	  value >>= n;
-	  msb += n;
-	}
+    msb = 1;
+    do {
+      if(value >> n) {
+	value >>= n;
+	msb += n;
+      }
 
       n >>= 1;
-    }
-  while (n);
+    } while(n);
 
-  return msb;
-}
+    return msb;
+  }
 
-/* Returns the bit number of the least significant bit of a part.
-   If the input number has no bits set zero is returned.  */
-unsigned int
-partLSB (integerPart value)
-{
-  unsigned int n, lsb;
+  /* Returns the bit number of the least significant bit of a part.
+     If the input number has no bits set zero is returned.  */
+  unsigned int
+  partLSB(integerPart value)
+  {
+    unsigned int n, lsb;
 
-  if (value == 0)
-    return 0;
+    if(value == 0)
+      return 0;
 
-  lsb = integerPartWidth;
-  n = integerPartWidth / 2;
+    lsb = integerPartWidth;
+    n = integerPartWidth / 2;
 
-  do
-    {
-      if (value << n)
-	{
-	  value <<= n;
-	  lsb -= n;
-	}
+    do {
+      if(value << n) {
+	value <<= n;
+	lsb -= n;
+      }
 
       n >>= 1;
-    }
-  while (n);
+    } while(n);
 
-  return lsb;
-}
+    return lsb;
+  }
 }
 
 /* Sets the least significant part of a bignum to the input value, and
    zeroes out higher parts.  */
 void
-APInt::tcSet (integerPart *dst, integerPart part, unsigned int parts)
+APInt::tcSet(integerPart *dst, integerPart part, unsigned int parts)
 {
   unsigned int i;
 
   dst[0] = part;
-  for (i = 1; i < parts; i++)
+  for(i = 1; i < parts; i++)
     dst[i] = 0;
 }
 
 /* Assign one bignum to another.  */
 void
-APInt::tcAssign (integerPart *dst, const integerPart *src, unsigned int parts)
+APInt::tcAssign(integerPart *dst, const integerPart *src, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
+  for(i = 0; i < parts; i++)
     dst[i] = src[i];
 }
 
 /* Returns true if a bignum is zero, false otherwise.  */
 bool
-APInt::tcIsZero (const integerPart *src, unsigned int parts)
+APInt::tcIsZero(const integerPart *src, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
-    if (src[i])
+  for(i = 0; i < parts; i++)
+    if(src[i])
       return false;
 
   return true;
@@ -122,21 +117,21 @@ APInt::tcIsZero (const integerPart *src, unsigned int parts)
 /* Extract the given bit of a bignum; returns 0 or 1.  BIT cannot be
    zero.  */
 int
-APInt::tcExtractBit (const integerPart *parts, unsigned int bit)
+APInt::tcExtractBit(const integerPart *parts, unsigned int bit)
 {
-  assert (bit != 0);
+  assert(bit != 0);
 
   bit--;
 
-  return (parts[bit / integerPartWidth]
-	  & ((integerPart) 1 << bit % integerPartWidth)) != 0;
+  return(parts[bit / integerPartWidth]
+	 & ((integerPart) 1 << bit % integerPartWidth)) != 0;
 }
 
 /* Set the given bit of a bignum.  BIT cannot be zero.  */
 void
-APInt::tcSetBit (integerPart *parts, unsigned int bit)
+APInt::tcSetBit(integerPart *parts, unsigned int bit)
 {
-  assert (bit != 0);
+  assert(bit != 0);
 
   bit--;
 
@@ -146,19 +141,17 @@ APInt::tcSetBit (integerPart *parts, unsigned int bit)
 /* Returns the bit number of the least significant bit of a number.
    If the input number has no bits set zero is returned.  */
 unsigned int
-APInt::tcLSB (const integerPart *parts, unsigned int n)
+APInt::tcLSB(const integerPart *parts, unsigned int n)
 {
   unsigned int i, lsb;
 
-  for (i = 0; i < n; i++)
-    {
-      if (parts[i] != 0)
-	{
-	  lsb = partLSB (parts[i]);
+  for(i = 0; i < n; i++) {
+      if(parts[i] != 0) {
+	  lsb = partLSB(parts[i]);
 
 	  return lsb + i * integerPartWidth;
-	}
-    }
+      }
+  }
 
   return 0;
 }
@@ -166,90 +159,79 @@ APInt::tcLSB (const integerPart *parts, unsigned int n)
 /* Returns the bit number of the most significant bit of a number.  If
    the input number has no bits set zero is returned.  */
 unsigned int
-APInt::tcMSB (const integerPart *parts, unsigned int n)
+APInt::tcMSB(const integerPart *parts, unsigned int n)
 {
   unsigned int msb;
 
-  do
-    {
+  do {
       --n;
 
-      if (parts[n] != 0)
-	{
-	  msb = tcPartMSB (parts[n]);
+      if(parts[n] != 0) {
+	  msb = tcPartMSB(parts[n]);
 
 	  return msb + n * integerPartWidth;
-	}
-    }
-  while (n);
+      }
+  } while(n);
 
   return 0;
 }
 
 /* DST += RHS + C where C is zero or one.  Returns the carry flag.  */
 integerPart
-APInt::tcAdd (integerPart *dst, const integerPart *rhs,
-	      integerPart c, unsigned int parts)
+APInt::tcAdd(integerPart *dst, const integerPart *rhs,
+	     integerPart c, unsigned int parts)
 {
   unsigned int i;
 
-  assert (c <= 1);
+  assert(c <= 1);
 
-  for (i = 0; i < parts; i++)
-    {
+  for(i = 0; i < parts; i++) {
       integerPart l;
 
       l = dst[i];
-      if (c)
-	{
-	  dst[i] += rhs[i] + 1;
-	  c = (dst[i] <= l);
-	}
-      else
-	{
-	  dst[i] += rhs[i];
-	  c = (dst[i] < l);
-	}
-    }
+      if(c) {
+	dst[i] += rhs[i] + 1;
+	c = (dst[i] <= l);
+      } else {
+	dst[i] += rhs[i];
+	c = (dst[i] < l);
+      }
+  }
 
   return c;
 }
 
 /* DST -= RHS + C where C is zero or one.  Returns the carry flag.  */
 integerPart
-APInt::tcSubtract (integerPart *dst, const integerPart *rhs,
-		   integerPart c, unsigned int parts)
+APInt::tcSubtract(integerPart *dst, const integerPart *rhs,
+		  integerPart c, unsigned int parts)
 {
   unsigned int i;
 
-  assert (c <= 1);
+  assert(c <= 1);
 
-  for (i = 0; i < parts; i++)
-    {
-      integerPart l;
+  for(i = 0; i < parts; i++) {
+    integerPart l;
 
-      l = dst[i];
-      if (c)
-	{
-	  dst[i] -= rhs[i] + 1;
-	  c = (dst[i] >= l);
-	}
-      else
-	{
-	  dst[i] -= rhs[i];
-	  c = (dst[i] > l);
-	}
+    l = dst[i];
+    if(c) {
+      dst[i] -= rhs[i] + 1;
+      c = (dst[i] >= l);
+    } else {
+      dst[i] -= rhs[i];
+      c = (dst[i] > l);
     }
+  }
 
   return c;
 }
 
 /* Negate a bignum in-place.  */
 void
-APInt::tcNegate (integerPart *dst, unsigned int parts)
+APInt::tcNegate(integerPart *dst, unsigned int parts)
 {
-  tcComplement (dst, parts);
-  tcIncrement (dst, parts);
+  tcComplement(dst, parts);
+  tcIncrement(dst, parts);
 }
 
 /*  DST += SRC * MULTIPLIER + PART   if add is true
@@ -264,101 +246,92 @@ APInt::tcNegate (integerPart *dst, unsigned int parts)
     parts were zero return zero, otherwise overflow occurred and
     return one.  */
 int
-APInt::tcMultiplyPart (integerPart *dst, const integerPart *src,
-		       integerPart multiplier, integerPart carry,
-		       unsigned int srcParts, unsigned int dstParts,
-		       bool add)
+APInt::tcMultiplyPart(integerPart *dst, const integerPart *src,
+		      integerPart multiplier, integerPart carry,
+		      unsigned int srcParts, unsigned int dstParts,
+		      bool add)
 {
   unsigned int i, n;
 
   /* Otherwise our writes of DST kill our later reads of SRC.  */
-  assert (dst <= src || dst >= src + srcParts);
-  assert (dstParts <= srcParts + 1);
+  assert(dst <= src || dst >= src + srcParts);
+  assert(dstParts <= srcParts + 1);
 
   /* N loops; minimum of dstParts and srcParts.  */
   n = dstParts < srcParts ? dstParts: srcParts;
 
-  for (i = 0; i < n; i++)
-    {
-      integerPart low, mid, high, srcPart;
+  for(i = 0; i < n; i++) {
+    integerPart low, mid, high, srcPart;
 
       /* [ LOW, HIGH ] = MULTIPLIER * SRC[i] + DST[i] + CARRY.
 
 	 This cannot overflow, because
 
-	    (n - 1) * (n - 1) + 2 (n - 1) = (n - 1) * (n + 1)
+	 (n - 1) * (n - 1) + 2 (n - 1) = (n - 1) * (n + 1)
 
 	 which is less than n^2.  */
 
-      srcPart = src[i];
+    srcPart = src[i];
+    
+    if(multiplier == 0 || srcPart == 0)	{
+      low = carry;
+      high = 0;
+    } else { 
+      low = lowHalf(srcPart) * lowHalf(multiplier);
+      high = highHalf(srcPart) * highHalf(multiplier);
 
-      if (multiplier == 0 || srcPart == 0)
-	{
-	  low = carry;
-	  high = 0;
-	}
-      else
-	{ 
-	  low = lowHalf (srcPart) * lowHalf (multiplier);
-	  high = highHalf (srcPart) * highHalf (multiplier);
+      mid = lowHalf(srcPart) * highHalf(multiplier);
+      high += highHalf(mid);
+      mid <<= integerPartWidth / 2;
+      if(low + mid < low)
+	high++;
+      low += mid;
 
-	  mid = lowHalf (srcPart) * highHalf (multiplier);
-	  high += highHalf (mid);
-	  mid <<= integerPartWidth / 2;
-	  if (low + mid < low)
-	    high++;
-	  low += mid;
+      mid = highHalf(srcPart) * lowHalf(multiplier);
+      high += highHalf(mid);
+      mid <<= integerPartWidth / 2;
+      if(low + mid < low)
+	high++;
+      low += mid;
 
-	  mid = highHalf (srcPart) * lowHalf (multiplier);
-	  high += highHalf (mid);
-	  mid <<= integerPartWidth / 2;
-	  if (low + mid < low)
-	    high++;
-	  low += mid;
-
-	  /* Now add carry.  */
-	  if (low + carry < low)
-	    high++;
-	  low += carry;
-	}
-
-      if (add)
-	{
-	  /* And now DST[i], and store the new low part there.  */
-	  if (low + dst[i] < low)
-	    high++;
-	  dst[i] += low;
-	}
-      else
-	dst[i] = low;
-
-      carry = high;
+      /* Now add carry.  */
+      if(low + carry < low)
+	high++;
+      low += carry;
     }
 
-  if (i < dstParts)
-    {
-      /* Full multiplication, there is no overflow.  */
-      assert (i + 1 == dstParts);
-      dst[i] = carry;
-      return 0;
-    }
-  else
-    {
-      /* We overflowed if there is carry.  */
-      if (carry)
-	return 1;
+    if(add) {
+      /* And now DST[i], and store the new low part there.  */
+      if(low + dst[i] < low)
+	high++;
+      dst[i] += low;
+    } else
+      dst[i] = low;
 
-      /* We would overflow if any significant unwritten parts would be
-	 non-zero.  This is true if any remaining src parts are
-	 non-zero and the multiplier is non-zero.   */
-      if (multiplier)
-	for (; i < srcParts; i++)
-	  if (src[i])
-	    return 1;
+    carry = high;
+  }
 
-      /* We fitted in the narrow destination.  */
-      return 0;
-    }
+  if(i < dstParts) {
+    /* Full multiplication, there is no overflow.  */
+    assert(i + 1 == dstParts);
+    dst[i] = carry;
+    return 0;
+  } else {
+    /* We overflowed if there is carry.  */
+    if(carry)
+      return 1;
+
+    /* We would overflow if any significant unwritten parts would be
+       non-zero.  This is true if any remaining src parts are non-zero
+       and the multiplier is non-zero.  */
+    if(multiplier)
+      for(; i < srcParts; i++)
+	if(src[i])
+	  return 1;
+
+    /* We fitted in the narrow destination.  */
+    return 0;
+  }
 }
 
 /* DST = LHS * RHS, where DST has the same width as the operands and
@@ -366,20 +339,20 @@ APInt::tcMultiplyPart (integerPart *dst, const integerPart *src,
    one if overflow occurred, otherwise zero.  DST must be disjoint
    from both operands.  */
 int
-APInt::tcMultiply (integerPart *dst, const integerPart *lhs,
-		   const integerPart *rhs, unsigned int parts)
+APInt::tcMultiply(integerPart *dst, const integerPart *lhs,
+		  const integerPart *rhs, unsigned int parts)
 {
   unsigned int i;
   int overflow;
 
-  assert (dst != lhs && dst != rhs);
+  assert(dst != lhs && dst != rhs);
 
   overflow = 0;
-  tcSet (dst, 0, parts);
+  tcSet(dst, 0, parts);
 
-  for (i = 0; i < parts; i++)
-    overflow |= tcMultiplyPart (&dst[i], lhs, rhs[i], 0, parts,
-				  parts - i, true);
+  for(i = 0; i < parts; i++)
+    overflow |= tcMultiplyPart(&dst[i], lhs, rhs[i], 0, parts,
+			       parts - i, true);
 
   return overflow;
 }
@@ -387,77 +360,75 @@ APInt::tcMultiply (integerPart *dst, const integerPart *lhs,
 /* DST = LHS * RHS, where DST has twice the width as the operands.  No
    overflow occurs.  DST must be disjoint from both operands.  */
 void
-APInt::tcFullMultiply (integerPart *dst, const integerPart *lhs,
-		       const integerPart *rhs, unsigned int parts)
+APInt::tcFullMultiply(integerPart *dst, const integerPart *lhs,
+		      const integerPart *rhs, unsigned int parts)
 {
   unsigned int i;
   int overflow;
 
-  assert (dst != lhs && dst != rhs);
+  assert(dst != lhs && dst != rhs);
 
   overflow = 0;
-  tcSet (dst, 0, parts);
+  tcSet(dst, 0, parts);
 
-  for (i = 0; i < parts; i++)
-    overflow |= tcMultiplyPart (&dst[i], lhs, rhs[i], 0, parts,
-				  parts + 1, true);
+  for(i = 0; i < parts; i++)
+    overflow |= tcMultiplyPart(&dst[i], lhs, rhs[i], 0, parts,
+			       parts + 1, true);
 
-  assert (!overflow);
+  assert(!overflow);
 }
 
 /* If RHS is zero LHS and REMAINDER are left unchanged, return one.
    Otherwise set LHS to LHS / RHS with the fractional part discarded,
    set REMAINDER to the remainder, return zero.  i.e.
 
-     OLD_LHS = RHS * LHS + REMAINDER
+   OLD_LHS = RHS * LHS + REMAINDER
 
    SCRATCH is a bignum of the same size as the operands and result for
    use by the routine; its contents need not be initialized and are
    destroyed.  LHS, REMAINDER and SCRATCH must be distinct.
 */
 int
-APInt::tcDivide (integerPart *lhs, const integerPart *rhs,
-		 integerPart *remainder, integerPart *srhs,
-		 unsigned int parts)
+APInt::tcDivide(integerPart *lhs, const integerPart *rhs,
+		integerPart *remainder, integerPart *srhs,
+		unsigned int parts)
 {
   unsigned int n, shiftCount;
   integerPart mask;
 
-  assert (lhs != remainder && lhs != srhs && remainder != srhs);
+  assert(lhs != remainder && lhs != srhs && remainder != srhs);
 
-  shiftCount = tcMSB (rhs, parts);
-  if (shiftCount == 0)
+  shiftCount = tcMSB(rhs, parts);
+  if(shiftCount == 0)
     return true;
 
   shiftCount = parts * integerPartWidth - shiftCount;
   n = shiftCount / integerPartWidth;
   mask = (integerPart) 1 << (shiftCount % integerPartWidth);
 
-  tcAssign (srhs, rhs, parts);
-  tcShiftLeft (srhs, parts, shiftCount);
-  tcAssign (remainder, lhs, parts);
-  tcSet (lhs, 0, parts);
+  tcAssign(srhs, rhs, parts);
+  tcShiftLeft(srhs, parts, shiftCount);
+  tcAssign(remainder, lhs, parts);
+  tcSet(lhs, 0, parts);
 
   /* Loop, subtracting SRHS if REMAINDER is greater and adding that to
      the total.  */
-  for (;;)
-    {
+  for(;;) {
       int compare;
 
-      compare = tcCompare (remainder, srhs, parts);
-      if (compare >= 0)
-	{
-	  tcSubtract (remainder, srhs, 0, parts);
-	  lhs[n] |= mask;
-	}
+      compare = tcCompare(remainder, srhs, parts);
+      if(compare >= 0) {
+	tcSubtract(remainder, srhs, 0, parts);
+	lhs[n] |= mask;
+      }
 
-      if (shiftCount == 0)
+      if(shiftCount == 0)
 	break;
       shiftCount--;
-      tcShiftRight (srhs, parts, 1);
-      if ((mask >>= 1) == 0)
+      tcShiftRight(srhs, parts, 1);
+      if((mask >>= 1) == 0)
 	mask = (integerPart) 1 << (integerPartWidth - 1), n--;
-    }
+  }
 
   return false;
 }
@@ -465,7 +436,7 @@ APInt::tcDivide (integerPart *lhs, const integerPart *rhs,
 /* Shift a bignum left COUNT bits in-place.  Shifted in bits are zero.
    There are no restrictions on COUNT.  */
 void
-APInt::tcShiftLeft (integerPart *dst, unsigned int parts, unsigned int count)
+APInt::tcShiftLeft(integerPart *dst, unsigned int parts, unsigned int count)
 {
   unsigned int jump, shift;
 
@@ -473,33 +444,31 @@ APInt::tcShiftLeft (integerPart *dst, unsigned int parts, unsigned int count)
   jump = count / integerPartWidth;
   shift = count % integerPartWidth;
 
-  while (parts > jump)
-    {
-      integerPart part;
+  while(parts > jump) {
+    integerPart part;
 
-      parts--;
+    parts--;
 
-      /* dst[i] comes from the two parts src[i - jump] and, if we have
-	 an intra-part shift, src[i - jump - 1].  */
-      part = dst[parts - jump];
-      if (shift)
-	{
-	  part <<= shift;
-	  if (parts >= jump + 1)
-	    part |= dst[parts - jump - 1] >> (integerPartWidth - shift);
-	}
+    /* dst[i] comes from the two parts src[i - jump] and, if we have
+       an intra-part shift, src[i - jump - 1].  */
+    part = dst[parts - jump];
+    if(shift) {
+      part <<= shift;
+	if(parts >= jump + 1)
+	  part |= dst[parts - jump - 1] >> (integerPartWidth - shift);
+      }
 
-      dst[parts] = part;
-    }
+    dst[parts] = part;
+  }
 
-  while (parts > 0)
+  while(parts > 0)
     dst[--parts] = 0;
 }
 
 /* Shift a bignum right COUNT bits in-place.  Shifted in bits are
    zero.  There are no restrictions on COUNT.  */
 void
-APInt::tcShiftRight (integerPart *dst, unsigned int parts, unsigned int count)
+APInt::tcShiftRight(integerPart *dst, unsigned int parts, unsigned int count)
 {
   unsigned int i, jump, shift;
 
@@ -509,79 +478,75 @@ APInt::tcShiftRight (integerPart *dst, unsigned int parts, unsigned int count)
 
   /* Perform the shift.  This leaves the most significant COUNT bits
      of the result at zero.  */
-  for (i = 0; i < parts; i++)
-    {
-      integerPart part;
+  for(i = 0; i < parts; i++) {
+    integerPart part;
 
-      if (i + jump >= parts)
-	part = 0;
-      else
-	{
-	  part = dst[i + jump];
-	  if (shift)
-	    {
-	      part >>= shift;
-	      if (i + jump + 1 < parts)
-		part |= dst[i + jump + 1] << (integerPartWidth - shift);
-	    }
-	}
-
-      dst[i] = part;
+    if(i + jump >= parts) {
+      part = 0;
+    } else {
+      part = dst[i + jump];
+      if(shift) {
+	part >>= shift;
+	if(i + jump + 1 < parts)
+	  part |= dst[i + jump + 1] << (integerPartWidth - shift);
+      }
     }
+
+    dst[i] = part;
+  }
 }
 
 /* Bitwise and of two bignums.  */
 void
-APInt::tcAnd (integerPart *dst, const integerPart *rhs, unsigned int parts)
+APInt::tcAnd(integerPart *dst, const integerPart *rhs, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
+  for(i = 0; i < parts; i++)
     dst[i] &= rhs[i];
 }
 
 /* Bitwise inclusive or of two bignums.  */
 void
-APInt::tcOr (integerPart *dst, const integerPart *rhs, unsigned int parts)
+APInt::tcOr(integerPart *dst, const integerPart *rhs, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
+  for(i = 0; i < parts; i++)
     dst[i] |= rhs[i];
 }
 
 /* Bitwise exclusive or of two bignums.  */
 void
-APInt::tcXor (integerPart *dst, const integerPart *rhs, unsigned int parts)
+APInt::tcXor(integerPart *dst, const integerPart *rhs, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
+  for(i = 0; i < parts; i++)
     dst[i] ^= rhs[i];
 }
 
 /* Complement a bignum in-place.  */
 void
-APInt::tcComplement (integerPart *dst, unsigned int parts)
+APInt::tcComplement(integerPart *dst, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
+  for(i = 0; i < parts; i++)
     dst[i] = ~dst[i];
 }
 
 /* Comparison (unsigned) of two bignums.  */
 int
-APInt::tcCompare (const integerPart *lhs, const integerPart *rhs,
-		  unsigned int parts)
+APInt::tcCompare(const integerPart *lhs, const integerPart *rhs,
+		 unsigned int parts)
 {
-  while (parts)
-    {
+  while(parts) {
       parts--;
-      if (lhs[parts] == rhs[parts])
+      if(lhs[parts] == rhs[parts])
 	continue;
 
-      if (lhs[parts] > rhs[parts])
+      if(lhs[parts] > rhs[parts])
 	return 1;
       else
 	return -1;
@@ -592,12 +557,12 @@ APInt::tcCompare (const integerPart *lhs, const integerPart *rhs,
 
 /* Increment a bignum in-place, return the carry flag.  */
 integerPart
-APInt::tcIncrement (integerPart *dst, unsigned int parts)
+APInt::tcIncrement(integerPart *dst, unsigned int parts)
 {
   unsigned int i;
 
-  for (i = 0; i < parts; i++)
-    if (++dst[i] != 0)
+  for(i = 0; i < parts; i++)
+    if(++dst[i] != 0)
       break;
 
   return i == parts;
@@ -606,21 +571,20 @@ APInt::tcIncrement (integerPart *dst, unsigned int parts)
 /* Set the least significant BITS bits of a bignum, clear the
    rest.  */
 void
-APInt::tcSetLeastSignificantBits (integerPart *dst, unsigned int parts,
-				  unsigned int bits)
+APInt::tcSetLeastSignificantBits(integerPart *dst, unsigned int parts,
+				 unsigned int bits)
 {
   unsigned int i;
 
   i = 0;
-  while (bits > integerPartWidth)
-    {
-      dst[i++] = ~(integerPart) 0;
-      bits -= integerPartWidth;
-    }
+  while(bits > integerPartWidth) {
+    dst[i++] = ~(integerPart) 0;
+    bits -= integerPartWidth;
+  }
 
-  if (bits)
+  if(bits)
     dst[i++] = ~(integerPart) 0 >> (integerPartWidth - bits);
 
-  while (i < parts)
+  while(i < parts)
     dst[i++] = 0;
 }
