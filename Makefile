@@ -1,12 +1,12 @@
 all: test-special test-normal
 
-test-special: float.o integer.o test-special.o
+test-special: APFloat.o APInt.o test-special.o APFloat.h
 	g++ ${>} -o $@
 
-test-normal: float.o integer.o test-normal.o
+test-normal: APFloat.o APInt.o test-normal.o APFloat.h
 	g++ ${>} -o $@
 
-.cpp.o: ${ALL_H}
+.cpp.o: APFloat.h
 	g++ -g  -c $< -o $@
 
 clean:

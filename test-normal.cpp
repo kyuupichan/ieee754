@@ -7,7 +7,7 @@
 
 #include <cassert>
 #include <cstdio>
-#include "float.h"
+#include "APFloat.h"
 
 using namespace llvm;
 
