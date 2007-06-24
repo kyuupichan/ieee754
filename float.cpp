@@ -18,7 +18,7 @@ compileTimeAssert (integerPartWidth % 4 == 0);
 namespace llvm {
 
   /* Represents floating point arithmetic semantics.  */
-  struct flt_semantics
+  struct fltSemantics
   {
     /* The largest E such that 2^E is representable; this matches the
        definition of IEEE 754.  */
@@ -43,10 +43,10 @@ namespace llvm {
     int exponent;
   };
 
-  const flt_semantics t_float::ieee_single = { 127, -126, 24, true };
-  const flt_semantics t_float::ieee_double = { 1023, -1022, 53, true };
-  const flt_semantics t_float::ieee_quad = { 16383, -16382, 113, true };
-  const flt_semantics t_float::x87_double_extended = { 16383, -16382, 64,
+  const fltSemantics APFloat::ieee_single = { 127, -126, 24, true };
+  const fltSemantics APFloat::ieee_double = { 1023, -1022, 53, true };
+  const fltSemantics APFloat::ieee_quad = { 16383, -16382, 113, true };
+  const fltSemantics APFloat::x87_double_extended = { 16383, -16382, 64,
 						       false };
 }
 
@@ -226,7 +226,7 @@ namespace {
 
 /* Constructors.  */
 void
-t_float::initialize (const flt_semantics *our_semantics)
+APFloat::initialize (const fltSemantics *our_semantics)
 {
   unsigned int count;
 
@@ -237,14 +237,14 @@ t_float::initialize (const flt_semantics *our_semantics)
 }
 
 void
-t_float::free_significand ()
+APFloat::free_significand ()
 {
   if (part_count () > 1)
     delete [] significand.parts;
 }
 
 void
-t_float::assign (const t_float &rhs)
+APFloat::assign (const APFloat &rhs)
 {
   assert (semantics == rhs.semantics);
 
@@ -256,7 +256,7 @@ t_float::assign (const t_float &rhs)
 }
 
 void
-t_float::copy_significand (const t_float &rhs)
+APFloat::copy_significand (const APFloat &rhs)
 {
   assert (category == fc_normal);
   assert (rhs.part_count () >= part_count ());
@@ -265,8 +265,8 @@ t_float::copy_significand (const t_float &rhs)
 		    part_count ());
 }
 
-t_float &
-t_float::operator= (const t_float &rhs)
+APFloat &
+APFloat::operator= (const APFloat &rhs)
 {
   if (this != &rhs)
     {
@@ -281,7 +281,7 @@ t_float::operator= (const t_float &rhs)
   return *this;
 }
 
-t_float::t_float (const flt_semantics &our_semantics, integerPart value)
+APFloat::APFloat (const fltSemantics &our_semantics, integerPart value)
 {
   initialize (&our_semantics);
   sign = 0;
@@ -291,7 +291,7 @@ t_float::t_float (const flt_semantics &our_semantics, integerPart value)
   normalize (frm_to_nearest, lf_exactly_zero);
 }
 
-t_float::t_float (const flt_semantics &our_semantics,
+APFloat::APFloat (const fltSemantics &our_semantics,
 		  e_category our_category, bool negative)
 {
   initialize (&our_semantics);
@@ -301,43 +301,43 @@ t_float::t_float (const flt_semantics &our_semantics,
     category = fc_zero;
 }
 
-t_float::t_float (const flt_semantics &our_semantics, const char *text)
+APFloat::APFloat (const fltSemantics &our_semantics, const char *text)
 {
   initialize (&our_semantics);
   convert_from_string (text, frm_to_nearest);
 }
 
-t_float::t_float (const t_float &rhs)
+APFloat::APFloat (const APFloat &rhs)
 {
   initialize (rhs.semantics);
   assign (rhs);
 }
 
-t_float::~t_float ()
+APFloat::~APFloat ()
 {
   free_significand ();
 }
 
 unsigned int
-t_float::part_count () const
+APFloat::part_count () const
 {
   return part_count_for_bits (semantics->precision + 1);
 }
 
 unsigned int
-t_float::semantics_precision (const flt_semantics &semantics)
+APFloat::semantics_precision (const fltSemantics &semantics)
 {
   return semantics.precision;
 }
 
 const integerPart *
-t_float::sig_parts_array () const
+APFloat::sig_parts_array () const
 {
-  return const_cast<t_float *>(this)->sig_parts_array ();
+  return const_cast<APFloat *>(this)->sig_parts_array ();
 }
 
 integerPart *
-t_float::sig_parts_array ()
+APFloat::sig_parts_array ()
 {
   assert (category == fc_normal);
 
@@ -349,7 +349,7 @@ t_float::sig_parts_array ()
 
 /* Combine the effect of two lost fractions.  */
 e_lost_fraction
-t_float::combine_lost_fractions (e_lost_fraction more_significant,
+APFloat::combine_lost_fractions (e_lost_fraction more_significant,
 				 e_lost_fraction less_significant)
 {
   if (less_significant != lf_exactly_zero)
@@ -364,7 +364,7 @@ t_float::combine_lost_fractions (e_lost_fraction more_significant,
 }
 
 void
-t_float::zero_significand ()
+APFloat::zero_significand ()
 {
   category = fc_normal;
   APInt::tcSet (sig_parts_array (), 0, part_count ());
@@ -372,7 +372,7 @@ t_float::zero_significand ()
 
 /* Increment an fc_normal floating point number's significand.  */
 void
-t_float::increment_significand ()
+APFloat::increment_significand ()
 {
   integerPart carry;
 
@@ -384,7 +384,7 @@ t_float::increment_significand ()
 
 /* Add the significand of the RHS.  Returns the carry flag.  */
 integerPart
-t_float::add_significand (const t_float &rhs)
+APFloat::add_significand (const APFloat &rhs)
 {
   integerPart *parts;
 
@@ -399,7 +399,7 @@ t_float::add_significand (const t_float &rhs)
 /* Subtract the significand of the RHS with a borrow flag.  Returns
    the borrow flag.  */
 integerPart
-t_float::subtract_significand (const t_float &rhs, integerPart borrow)
+APFloat::subtract_significand (const APFloat &rhs, integerPart borrow)
 {
   integerPart *parts;
 
@@ -416,7 +416,7 @@ t_float::subtract_significand (const t_float &rhs, integerPart borrow)
    on to the full-precision result of the multiplication.  Returns the
    lost fraction.  */
 e_lost_fraction
-t_float::multiply_significand (const t_float &rhs, const t_float *addend)
+APFloat::multiply_significand (const APFloat &rhs, const APFloat *addend)
 {
   unsigned int msb, parts_count, new_parts_count, precision;
   integerPart *lhs_significand;
@@ -451,8 +451,8 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
   if (addend)
     {
       Significand saved_significand = significand;
-      const flt_semantics *saved_semantics = semantics;
-      flt_semantics extended_semantics;
+      const fltSemantics *saved_semantics = semantics;
+      fltSemantics extended_semantics;
       unsigned int new_msb;
       e_status status;
 
@@ -467,7 +467,7 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 	significand.parts = full_significand;
       semantics = &extended_semantics;
 
-      t_float extended_addend (*addend);
+      APFloat extended_addend (*addend);
       status = extended_addend.convert (extended_semantics, frm_to_zero);
       assert (status == fs_ok);
       lost_fraction = add_or_subtract_significand (extended_addend, false);
@@ -505,7 +505,7 @@ t_float::multiply_significand (const t_float &rhs, const t_float *addend)
 
 /* Multiply the significands of LHS and RHS to DST.  */
 e_lost_fraction
-t_float::divide_significand (const t_float &rhs)
+APFloat::divide_significand (const APFloat &rhs)
 {
   unsigned int bit, i, parts_count;
   const integerPart *rhs_significand;
@@ -592,20 +592,20 @@ t_float::divide_significand (const t_float &rhs)
 }
 
 unsigned int
-t_float::significand_msb () const
+APFloat::significand_msb () const
 {
   return APInt::tcMSB (sig_parts_array (), part_count ());
 }
 
 unsigned int
-t_float::significand_lsb () const
+APFloat::significand_lsb () const
 {
   return APInt::tcLSB (sig_parts_array (), part_count ());
 }
 
 /* Note that a zero result is NOT normalized to fc_zero.  */
 e_lost_fraction
-t_float::shift_significand_right (unsigned int bits)
+APFloat::shift_significand_right (unsigned int bits)
 {
   /* Our exponent should not overflow.  */
   assert ((exponent_t) (exponent + bits) >= exponent);
@@ -617,7 +617,7 @@ t_float::shift_significand_right (unsigned int bits)
 
 /* Shift the significand left BITS bits, subtract BITS from its exponent.  */
 void
-t_float::shift_significand_left (unsigned int bits)
+APFloat::shift_significand_left (unsigned int bits)
 {
   assert (bits < semantics->precision);
 
@@ -632,8 +632,8 @@ t_float::shift_significand_left (unsigned int bits)
     }
 }
 
-t_float::e_comparison
-t_float::compare_absolute_value (const t_float &rhs) const
+APFloat::cmpResult
+APFloat::compare_absolute_value (const APFloat &rhs) const
 {
   int compare;
 
@@ -650,16 +650,16 @@ t_float::compare_absolute_value (const t_float &rhs) const
 				part_count ());
 
   if (compare > 0)
-    return fcmp_greater_than;
+    return cmpGreaterThan;
   else if (compare < 0)
-    return fcmp_less_than;
+    return cmpLessThan;
   else
-    return fcmp_equal;
+    return cmpEqual;
 }
 
 /* Sign is preserved.  */
-t_float::e_status
-t_float::handle_overflow (e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::handle_overflow (roundingMode rounding_mode)
 {
   /* Test if we become an infinity.  */
   if (rounding_mode == frm_to_nearest
@@ -682,7 +682,7 @@ t_float::handle_overflow (e_rounding_mode rounding_mode)
 /* This routine must work for fc_zero of both signs, and fc_normal
    numbers.  */
 bool
-t_float::round_away_from_zero (e_rounding_mode rounding_mode,
+APFloat::round_away_from_zero (roundingMode rounding_mode,
 			       e_lost_fraction lost_fraction)
 {
   /* NaNs and infinities should not have lost fractions.  */
@@ -717,8 +717,8 @@ t_float::round_away_from_zero (e_rounding_mode rounding_mode,
     }
 }
 
-t_float::e_status
-t_float::normalize (e_rounding_mode rounding_mode,
+APFloat::e_status
+APFloat::normalize (roundingMode rounding_mode,
 		    e_lost_fraction lost_fraction)
 {
   unsigned int msb;
@@ -833,8 +833,8 @@ t_float::normalize (e_rounding_mode rounding_mode,
   return (e_status) (fs_underflow | fs_inexact);
 }
 
-t_float::e_status
-t_float::add_or_subtract_specials (const t_float &rhs, bool subtract)
+APFloat::e_status
+APFloat::add_or_subtract_specials (const APFloat &rhs, bool subtract)
 {
   switch (convolve (category, rhs.category))
     {
@@ -889,7 +889,7 @@ t_float::add_or_subtract_specials (const t_float &rhs, bool subtract)
 
 /* Add or subtract two normal numbers.  */
 e_lost_fraction
-t_float::add_or_subtract_significand (const t_float &rhs, bool subtract)
+APFloat::add_or_subtract_significand (const APFloat &rhs, bool subtract)
 {
   integerPart carry;
   e_lost_fraction lost_fraction;
@@ -905,12 +905,12 @@ t_float::add_or_subtract_significand (const t_float &rhs, bool subtract)
   /* Subtraction is more subtle than one might naively expect.  */
   if (subtract)
     {
-      t_float temp_rhs (rhs);
+      APFloat temp_rhs (rhs);
       bool reverse;
 
       if (bits == 0)
 	{
-	  reverse = compare_absolute_value (temp_rhs) == fcmp_less_than;
+	  reverse = compare_absolute_value (temp_rhs) == cmpLessThan;
 	  lost_fraction = lf_exactly_zero;
 	}
       else if (bits > 0)
@@ -952,7 +952,7 @@ t_float::add_or_subtract_significand (const t_float &rhs, bool subtract)
     {
       if (bits > 0)
 	{
-	  t_float temp_rhs (rhs);
+	  APFloat temp_rhs (rhs);
 
 	  lost_fraction = temp_rhs.shift_significand_right (bits);
 	  carry = add_significand (temp_rhs);
@@ -970,8 +970,8 @@ t_float::add_or_subtract_significand (const t_float &rhs, bool subtract)
   return lost_fraction;
 }
 
-t_float::e_status
-t_float::multiply_specials (const t_float &rhs)
+APFloat::e_status
+APFloat::multiply_specials (const APFloat &rhs)
 {
   switch (convolve (category, rhs.category))
     {
@@ -1010,8 +1010,8 @@ t_float::multiply_specials (const t_float &rhs)
     }
 }
 
-t_float::e_status
-t_float::divide_specials (const t_float &rhs)
+APFloat::e_status
+APFloat::divide_specials (const APFloat &rhs)
 {
   switch (convolve (category, rhs.category))
     {
@@ -1054,15 +1054,15 @@ t_float::divide_specials (const t_float &rhs)
 
 /* Change sign.  */
 void
-t_float::change_sign ()
+APFloat::change_sign ()
 {
   /* Look mummy, this one's easy.  */
   sign = !sign;
 }
 
 /* Normalized addition or subtraction.  */
-t_float::e_status
-t_float::add_or_subtract (const t_float &rhs, e_rounding_mode rounding_mode,
+APFloat::e_status
+APFloat::add_or_subtract (const APFloat &rhs, roundingMode rounding_mode,
 			  bool subtract)
 {
   e_status fs;
@@ -1094,22 +1094,22 @@ t_float::add_or_subtract (const t_float &rhs, e_rounding_mode rounding_mode,
 }
 
 /* Normalized addition.  */
-t_float::e_status
-t_float::add (const t_float &rhs, e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::add (const APFloat &rhs, roundingMode rounding_mode)
 {
   return add_or_subtract (rhs, rounding_mode, false);
 }
 
 /* Normalized subtraction.  */
-t_float::e_status
-t_float::subtract (const t_float &rhs, e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::subtract (const APFloat &rhs, roundingMode rounding_mode)
 {
   return add_or_subtract (rhs, rounding_mode, true);
 }
 
 /* Normalized multiply.  */
-t_float::e_status
-t_float::multiply (const t_float &rhs, e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::multiply (const APFloat &rhs, roundingMode rounding_mode)
 {
   e_status fs;
 
@@ -1128,8 +1128,8 @@ t_float::multiply (const t_float &rhs, e_rounding_mode rounding_mode)
 }
 
 /* Normalized divide.  */
-t_float::e_status
-t_float::divide (const t_float &rhs, e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::divide (const APFloat &rhs, roundingMode rounding_mode)
 {
   e_status fs;
 
@@ -1148,10 +1148,10 @@ t_float::divide (const t_float &rhs, e_rounding_mode rounding_mode)
 }
 
 /* Normalized fused-multiply-add.  */
-t_float::e_status
-t_float::fused_multiply_add (const t_float &multiplicand,
-			     const t_float &addend,
-			     e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::fused_multiply_add (const APFloat &multiplicand,
+			     const APFloat &addend,
+			     roundingMode rounding_mode)
 {
   e_status fs;
 
@@ -1195,10 +1195,10 @@ t_float::fused_multiply_add (const t_float &multiplicand,
 }
 
 /* Comparison requires normalized numbers.  */
-t_float::e_comparison
-t_float::compare (const t_float &rhs) const
+APFloat::cmpResult
+APFloat::compare (const APFloat &rhs) const
 {
-  e_comparison comparison;
+  cmpResult result;
 
   assert (semantics == rhs.semantics);
 
@@ -1214,34 +1214,34 @@ t_float::compare (const t_float &rhs) const
     case convolve (fc_zero, fc_nan):
     case convolve (fc_normal, fc_nan):
     case convolve (fc_infinity, fc_nan):
-      return fcmp_unordered;
+      return cmpUnordered;
 
     case convolve (fc_infinity, fc_normal):
     case convolve (fc_infinity, fc_zero):
     case convolve (fc_normal, fc_zero):
       if (sign)
-	return fcmp_less_than;
+	return cmpLessThan;
       else
-	return fcmp_greater_than;
+	return cmpGreaterThan;
 
     case convolve (fc_normal, fc_infinity):
     case convolve (fc_zero, fc_infinity):
     case convolve (fc_zero, fc_normal):
       if (rhs.sign)
-	return fcmp_greater_than;
+	return cmpGreaterThan;
       else
-	return fcmp_less_than;
+	return cmpLessThan;
 
     case convolve (fc_infinity, fc_infinity):
       if (sign == rhs.sign)
-	return fcmp_equal;
+	return cmpEqual;
       else if (sign)
-	return fcmp_less_than;
+	return cmpLessThan;
       else
-	return fcmp_greater_than;
+	return cmpGreaterThan;
 
     case convolve (fc_zero, fc_zero):
-      return fcmp_equal;      
+      return cmpEqual;      
 
     case convolve (fc_normal, fc_normal):
       break;
@@ -1251,30 +1251,30 @@ t_float::compare (const t_float &rhs) const
   if (sign != rhs.sign)
     {
       if (sign)
-	comparison = fcmp_less_than;
+	result = cmpLessThan;
       else
-	comparison = fcmp_greater_than;
+	result = cmpGreaterThan;
     }
   else
     {
       /* Compare absolute values; invert result if negative.  */
-      comparison = compare_absolute_value (rhs);
+      result = compare_absolute_value (rhs);
 
       if (sign)
 	{
-	  if (comparison == fcmp_less_than)
-	    comparison = fcmp_greater_than;
-	  else if (comparison == fcmp_greater_than)
-	    comparison = fcmp_less_than;
+	  if (result == cmpLessThan)
+	    result = cmpGreaterThan;
+	  else if (result == cmpGreaterThan)
+	    result = cmpLessThan;
 	}
     }
 
-  return comparison;
+  return result;
 }
 
-t_float::e_status
-t_float::convert (const flt_semantics &to_semantics,
-		  e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::convert (const fltSemantics &to_semantics,
+		  roundingMode rounding_mode)
 {
   unsigned int new_part_count;
   e_status fs;
@@ -1319,10 +1319,10 @@ t_float::convert (const flt_semantics &to_semantics,
 
    Note that for conversions to integer type the C standard requires
    round-to-zero to always be used.  */
-t_float::e_status
-t_float::convert_to_integer (integerPart *parts, unsigned int width,
+APFloat::e_status
+APFloat::convert_to_integer (integerPart *parts, unsigned int width,
 			     bool is_signed,
-			     e_rounding_mode rounding_mode) const
+			     roundingMode rounding_mode) const
 {
   e_lost_fraction lost_fraction;
   unsigned int msb, parts_count;
@@ -1341,7 +1341,7 @@ t_float::convert_to_integer (integerPart *parts, unsigned int width,
     }
 
   /* Shift the bit pattern so the fraction is lost.  */
-  t_float tmp (*this);
+  APFloat tmp (*this);
 
   bits = (int) semantics->precision - 1 - exponent;
 
@@ -1384,10 +1384,10 @@ t_float::convert_to_integer (integerPart *parts, unsigned int width,
     return fs_inexact;
 }
 
-t_float::e_status
-t_float::convert_from_unsigned_integer (integerPart *parts,
+APFloat::e_status
+APFloat::convert_from_unsigned_integer (integerPart *parts,
 					unsigned int part_count,
-					e_rounding_mode rounding_mode)
+					roundingMode rounding_mode)
 {
   unsigned int msb, precision;
   e_lost_fraction lost_fraction;
@@ -1414,10 +1414,10 @@ t_float::convert_from_unsigned_integer (integerPart *parts,
   return normalize (rounding_mode, lost_fraction);
 }
 
-t_float::e_status
-t_float::convert_from_integer (const integerPart *parts,
+APFloat::e_status
+APFloat::convert_from_integer (const integerPart *parts,
 			       unsigned int part_count, bool is_signed,
-			       e_rounding_mode rounding_mode)
+			       roundingMode rounding_mode)
 {
   unsigned int width;
   e_status status;
@@ -1441,9 +1441,9 @@ t_float::convert_from_integer (const integerPart *parts,
   return status;
 }
 
-t_float::e_status
-t_float::convert_from_hexadecimal_string (const char *p,
-					  e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::convert_from_hexadecimal_string (const char *p,
+					  roundingMode rounding_mode)
 {
   e_lost_fraction lost_fraction;
   integerPart *significand;
@@ -1528,8 +1528,8 @@ t_float::convert_from_hexadecimal_string (const char *p,
   return normalize (rounding_mode, lost_fraction);
 }
 
-t_float::e_status
-t_float::convert_from_string (const char *p, e_rounding_mode rounding_mode)
+APFloat::e_status
+APFloat::convert_from_string (const char *p, roundingMode rounding_mode)
 {
   /* Handle a leading minus sign.  */
   if (*p == '-')

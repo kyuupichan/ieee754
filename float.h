@@ -20,7 +20,7 @@ namespace llvm {
   /* Exponents are stored as signed numbers.  */
   typedef signed short exponent_t;
 
-  struct flt_semantics;
+  struct fltSemantics;
   struct decimal_number;
 
   enum e_lost_fraction {
@@ -137,27 +137,27 @@ class APInt {
 					 unsigned int bits);
 };
 
-class t_float {
+class APFloat {
  public:
 
   /* We support the following floating point semantics.  */
-  static const flt_semantics ieee_single;
-  static const flt_semantics ieee_double;
-  static const flt_semantics ieee_quad;
-  static const flt_semantics x87_double_extended;
+  static const fltSemantics ieee_single;
+  static const fltSemantics ieee_double;
+  static const fltSemantics ieee_quad;
+  static const fltSemantics x87_double_extended;
 
-  static unsigned int semantics_precision (const flt_semantics &);
+  static unsigned int semantics_precision (const fltSemantics &);
 
   /* Floating point numbers have a four-state comparison relation.  */
-  enum e_comparison {
-    fcmp_less_than,
-    fcmp_equal,
-    fcmp_greater_than,
-    fcmp_unordered
+  enum cmpResult {
+    cmpLessThan,
+    cmpEqual,
+    cmpGreaterThan,
+    cmpUnordered
   };
 
   /* IEEE gives four possible rounding modes.  */
-  enum e_rounding_mode {
+  enum roundingMode {
     frm_to_nearest,
     frm_to_plus_infinity,
     frm_to_minus_infinity,
@@ -184,43 +184,43 @@ class t_float {
   };
 
   /* Constructors.  */
-  t_float (const flt_semantics &, const char *);
-  t_float (const flt_semantics &, integerPart);
-  t_float (const flt_semantics &, e_category, bool negative);
-  t_float (const t_float &);
-  ~t_float ();
+  APFloat (const fltSemantics &, const char *);
+  APFloat (const fltSemantics &, integerPart);
+  APFloat (const fltSemantics &, e_category, bool negative);
+  APFloat (const APFloat &);
+  ~APFloat ();
 
   /* Arithmetic.  */
-  e_status add (const t_float &, e_rounding_mode);
-  e_status subtract (const t_float &, e_rounding_mode);
-  e_status multiply (const t_float &, e_rounding_mode);
-  e_status divide (const t_float &, e_rounding_mode);
-  e_status fused_multiply_add (const t_float &, const t_float &,
-			       e_rounding_mode);
+  e_status add (const APFloat &, roundingMode);
+  e_status subtract (const APFloat &, roundingMode);
+  e_status multiply (const APFloat &, roundingMode);
+  e_status divide (const APFloat &, roundingMode);
+  e_status fused_multiply_add (const APFloat &, const APFloat &,
+			       roundingMode);
   void change_sign ();
 
   /* Conversions.  */
-  e_status convert (const flt_semantics &, e_rounding_mode);
+  e_status convert (const fltSemantics &, roundingMode);
   e_status convert_to_integer (integerPart *, unsigned int, bool,
-			       e_rounding_mode) const;
+			       roundingMode) const;
   e_status convert_from_integer (const integerPart *, unsigned int, bool,
-				 e_rounding_mode);
-  e_status convert_from_string (const char *, e_rounding_mode);
+				 roundingMode);
+  e_status convert_from_string (const char *, roundingMode);
 
   /* Return the value as an IEEE double.  */
   double getAsDouble () const;
 
   /* Comparison with another floating point number.  */
-  e_comparison compare (const t_float &) const;
+  cmpResult compare (const APFloat &) const;
 
   /* Simple queries.  */
   e_category get_category () const { return category; }
-  const flt_semantics &get_semantics () const { return *semantics; }
+  const fltSemantics &get_semantics () const { return *semantics; }
   bool is_zero () const { return category == fc_zero; }
   bool is_non_zero () const { return category != fc_zero; }
   bool is_negative () const { return sign; }
 
-  t_float& operator= (const t_float &);
+  APFloat& operator= (const APFloat &);
 
  private:
 
@@ -230,13 +230,13 @@ class t_float {
   unsigned int part_count () const;
 
   /* Significand operations.  */
-  integerPart add_significand (const t_float &);
-  integerPart subtract_significand (const t_float &, integerPart);
-  e_lost_fraction add_or_subtract_significand (const t_float &, bool subtract);
-  e_lost_fraction multiply_significand (const t_float &, const t_float *);
-  e_lost_fraction divide_significand (const t_float &);
+  integerPart add_significand (const APFloat &);
+  integerPart subtract_significand (const APFloat &, integerPart);
+  e_lost_fraction add_or_subtract_significand (const APFloat &, bool subtract);
+  e_lost_fraction multiply_significand (const APFloat &, const APFloat *);
+  e_lost_fraction divide_significand (const APFloat &);
   void increment_significand ();
-  void initialize (const flt_semantics *);
+  void initialize (const fltSemantics *);
   void shift_significand_left (unsigned int);
   e_lost_fraction shift_significand_right (unsigned int);
   unsigned int significand_lsb () const;
@@ -244,27 +244,27 @@ class t_float {
   void zero_significand ();
 
   /* Arithmetic on special values.  */
-  e_status add_or_subtract_specials (const t_float &, bool subtract);
-  e_status divide_specials (const t_float &);
-  e_status multiply_specials (const t_float &);
+  e_status add_or_subtract_specials (const APFloat &, bool subtract);
+  e_status divide_specials (const APFloat &);
+  e_status multiply_specials (const APFloat &);
 
   /* Miscellany.  */
-  e_status normalize (e_rounding_mode, e_lost_fraction);
-  e_status add_or_subtract (const t_float &, e_rounding_mode, bool subtract);
-  e_comparison compare_absolute_value (const t_float &) const;
-  e_status handle_overflow (e_rounding_mode);
-  bool round_away_from_zero (e_rounding_mode, e_lost_fraction);
+  e_status normalize (roundingMode, e_lost_fraction);
+  e_status add_or_subtract (const APFloat &, roundingMode, bool subtract);
+  cmpResult compare_absolute_value (const APFloat &) const;
+  e_status handle_overflow (roundingMode);
+  bool round_away_from_zero (roundingMode, e_lost_fraction);
   e_status convert_from_unsigned_integer (integerPart *, unsigned int,
-					  e_rounding_mode);
+					  roundingMode);
   e_lost_fraction combine_lost_fractions (e_lost_fraction, e_lost_fraction);
-  e_status convert_from_hexadecimal_string (const char *, e_rounding_mode);
+  e_status convert_from_hexadecimal_string (const char *, roundingMode);
 
-  void assign (const t_float &);
-  void copy_significand (const t_float &);
+  void assign (const APFloat &);
+  void copy_significand (const APFloat &);
   void free_significand ();
 
   /* What kind of semantics does this value obey?  */
-  const flt_semantics *semantics;
+  const fltSemantics *semantics;
 
   /* Significand - the fraction with an explicit integer bit.  Must be
      at least one bit wider than the target precision.  */
