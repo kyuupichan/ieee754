@@ -12,135 +12,102 @@
 //
 //===----------------------------------------------------------------------===//
 
+/*  A self-contained host- and target-independent arbitrary-precision
+    floating-point software implementation using bignum integer
+    arithmetic, as provided by static functions in the APInt class.
+    The library will work with bignum integers whose parts are any
+    unsigned type at least 16 bits wide.  64 bits is recommended.
+
+    Written for clarity rather than speed, in particular with a view
+    to use in the front-end of a cross compiler so that target
+    arithmetic can be correctly performed on the host.  Performance
+    should nonetheless be reasonable, particularly for its intended
+    use.  It may be useful as a base implementation for a run-time
+    library during development of a faster target-specific one.
+
+    All 5 rounding modes in the IEEE-754R draft are handled correctly
+    for all implemented operations.  Currently implemented operations
+    are add, subtract, multiply, divide, fused-multiply-add,
+    conversion-to-float, conversion-to-integer and
+    conversion-from-integer.  New rounding modes (e.g. away from zero)
+    can be added with three or four lines of code.  The library reads
+    and correctly rounds hexadecimal floating point numbers as per
+    C99; syntax is required to have been validated by the caller.
+    Conversion from decimal is not currently implemented.
+
+    Four formats are built-in: IEEE single precision, double
+    precision, quadruple precision, and x87 80-bit extended double
+    (when operating with full extended precision).  Adding a new
+    format that obeys IEEE semantics only requires adding two lines of
+    code: a declaration and definition of the format.
+
+    All operations return the status of that operation as an exception
+    bit-mask, so multiple operations can be done consecutively with
+    their results or-ed together.  The returned status can be useful
+    for compiler diagnostics; e.g., inexact, underflow and overflow
+    can be easily diagnosed on constant folding, and compiler
+    optimizers can determine what exceptions would be raised by
+    folding operations and optimize, or perhaps not optimize,
+    accordingly.
+
+    At present, underflow tininess is detected after rounding; it
+    should be straight forward to add support for the before-rounding
+    case too.
+
+    Non-zero finite numbers are represented internally as a sign bit,
+    a 16-bit signed exponent, and the significand as an array of
+    integer parts.  After normalization of a number of precision P the
+    exponent is within the range of the format, and if the number is
+    not denormal the P-th bit of the significand is set as an explicit
+    integer bit.  For denormals the most significant bit is shifted
+    right so that the exponent is maintained at the format's minimum,
+    so that the smallest denormal has just the least significant bit
+    of the significand set.  The sign of zeroes and infinities is
+    significant; the exponent and significand of such numbers is
+    indeterminate and meaningless.  For QNaNs the sign bit, as well as
+    the exponent and significand are indeterminate and meaningless.
+
+    TODO
+    ====
+
+    Some features that may or may not be worth adding:
+
+    Conversions to and from decimal strings (hard).
+
+    Conversions to hexadecimal string.
+
+    Read and write IEEE-format in-memory representations.
+
+    Optional ability to detect underflow tininess before rounding.
+
+    New formats: x87 in single and double precision mode (IEEE apart
+    from extended exponent range) and IBM two-double extended
+    precision (hard).
+
+    New operations: sqrt, copysign, nextafter, nexttoward.
+*/
+
 #ifndef LLVM_FLOAT_H
 #define LLVM_FLOAT_H
 
-#define HOST_CHAR_BIT 8
-#define compileTimeAssert(cond) extern int CTAssert[(cond) ? 1 : -1]
-#define integerPartWidth (HOST_CHAR_BIT * sizeof(llvm::integerPart))
+// APInt contains static functions implementing bignum arithmetic.
+#include "APInt.h"
 
 namespace llvm {
-
-  /* The most convenient unsigned host type.  */
-  __extension__ typedef unsigned long long integerPart;
 
   /* Exponents are stored as signed numbers.  */
   typedef signed short exponent_t;
 
   struct fltSemantics;
 
-  enum lostFraction {
-    lfExactlyZero,
-    lfLessThanHalf,
-    lfExactlyHalf,
-    lfMoreThanHalf
-  };
-
-  class APInt {
-  public:
-    /* Sets the least significant part of a bignum to the input value,
-       and zeroes out higher parts.  */
-    static void tcSet(integerPart *, integerPart, unsigned int);
-
-    /* Assign one bignum to another.  */
-    static void tcAssign(integerPart *, const integerPart *, unsigned int);
-
-    /* Returns true if a bignum is zero, false otherwise.  */
-    static bool tcIsZero(const integerPart *, unsigned int);
-
-    /* Extract the given bit of a bignum; returns 0 or 1.  BIT cannot be
-       zero.  */
-    static int tcExtractBit(const integerPart *, unsigned int bit);
-
-    /* Set the given bit of a bignum.  BIT cannot be zero.  */
-    static void tcSetBit(integerPart *, unsigned int bit);
-
-    /* Returns the bit  number of the least or  most significant set bit
-       of  a number.   If  the input  number  has no  bits  set zero  is
-       returned.  */
-    static unsigned int tcLSB(const integerPart *, unsigned int);
-    static unsigned int tcMSB(const integerPart *, unsigned int);
-
-    /* Negate a bignum in-place.  */
-    static void tcNegate(integerPart *, unsigned int);
-
-    /* DST += RHS + CARRY where CARRY is zero or one.  Returns the carry
-       flag.  */
-    static integerPart tcAdd(integerPart *, const integerPart *,
-			     integerPart carry, unsigned);
-
-    /* DST -= RHS + CARRY where CARRY is zero or one.  Returns the carry
-       flag.  */
-    static integerPart tcSubtract(integerPart *, const integerPart *,
-				  integerPart carry, unsigned);
-
-    /*  DST += SRC * MULTIPLIER + PART   if add is true
-	DST  = SRC * MULTIPLIER + PART   if add is false
-
-	Requires 0 <= DSTPARTS <= SRCPARTS + 1.  If DST overlaps SRC
-	they must start at the same point, i.e. DST == SRC.
-
-	If DSTPARTS == SRC_PARTS + 1 no overflow occurs and zero is
-	returned.  Otherwise DST is filled with the least significant
-	DSTPARTS parts of the result, and if all of the omitted higher
-	parts were zero return zero, otherwise overflow occurred and
-	return one.  */
-    static int tcMultiplyPart(integerPart *dst, const integerPart *src,
-			      integerPart multiplier, integerPart carry,
-			      unsigned int srcParts, unsigned int dstParts,
-			      bool add);
-
-    /* DST = LHS * RHS, where DST has the same width as the operands and
-       is filled with the least significant parts of the result.
-       Returns one if overflow occurred, otherwise zero.  DST must be
-       disjoint from both operands.  */
-    static int tcMultiply(integerPart *, const integerPart *,
-			  const integerPart *, unsigned);
-
-    /* DST = LHS * RHS, where DST has twice the width as the operands.  No
-       overflow occurs.  DST must be disjoint from both operands.  */
-    static void tcFullMultiply(integerPart *, const integerPart *,
-			       const integerPart *, unsigned);
-
-    /* If RHS is zero LHS and REMAINDER are left unchanged, return one.
-       Otherwise set LHS to LHS / RHS with the fractional part
-       discarded, set REMAINDER to the remainder, return zero.  i.e.
-
-       OLD_LHS = RHS * LHS + REMAINDER
-
-       SCRATCH is a bignum of the same size as the operands and result
-       for use by the routine; its contents need not be initialized and
-       are destroyed.  LHS, REMAINDER and SCRATCH must be distinct.  */
-    static int tcDivide(integerPart *lhs, const integerPart *rhs,
-			integerPart *remainder, integerPart *scratch,
-			unsigned int parts);
-
-    /* Shift a bignum left COUNT bits.  Shifted in bits are zero.  There
-       are no restrictions on COUNT.  */
-    static void tcShiftLeft(integerPart *, unsigned int parts,
-			    unsigned int count);
-
-    /* Shift a bignum right COUNT bits.  Shifted in bits are zero.
-       There are no restrictions on COUNT.  */
-    static void tcShiftRight(integerPart *, unsigned int parts,
-			     unsigned int count);
-
-    /* The obvious AND, OR and XOR and complement operations.  */
-    static void tcAnd(integerPart *, const integerPart *, unsigned int);
-    static void tcOr(integerPart *, const integerPart *, unsigned int);
-    static void tcXor(integerPart *, const integerPart *, unsigned int);
-    static void tcComplement(integerPart *, unsigned int);
-  
-    /* Comparison (unsigned) of two bignums.  */
-    static int tcCompare(const integerPart *, const integerPart *,
-			 unsigned int);
-
-    /* Increment a bignum in-place.  Return the carry flag.  */
-    static integerPart tcIncrement(integerPart *, unsigned int);
-
-    /* Set the least significant BITS and clear the rest.  */
-    static void tcSetLeastSignificantBits(integerPart *, unsigned int,
-					  unsigned int bits);
+  /* When bits of a floating point number are truncated, this enum is
+     used to indicate what fraction of the LSB those bits represented.
+     It essentially combines the roles of guard and sticky bits.  */
+  enum lostFraction {		// Example of truncated bits:
+    lfExactlyZero,		// 000000
+    lfLessThanHalf,		// 0xxxxx  x's not all zero
+    lfExactlyHalf,		// 100000
+    lfMoreThanHalf		// 1xxxxx  x's not all zero
   };
 
   class APFloat {
@@ -203,6 +170,15 @@ namespace llvm {
     opStatus multiply(const APFloat &, roundingMode);
     opStatus divide(const APFloat &, roundingMode);
     opStatus fusedMultiplyAdd(const APFloat &, const APFloat &, roundingMode);
+
+    /* Floating point remainder operations. remainder is the IEEE 754
+       operation, which also appears in C99 with that name.  fmod
+       follows the C90/C99 semantics of the function with that name.
+       Both operations are exact so no roundingMode is necessary.  */
+    opStatus fmod(const APFloat &);
+    opStatus remainder(const APFloat &);
+
+    /* Sign operations.  */
     void changeSign();
 
     /* Conversions.  */
@@ -238,6 +214,7 @@ namespace llvm {
     lostFraction addOrSubtractSignificand(const APFloat &, bool subtract);
     lostFraction multiplySignificand(const APFloat &, const APFloat *);
     lostFraction divideSignificand(const APFloat &);
+    APFloat remQuo(const APFloat &rhs, bool is_ieee);
     void incrementSignificand();
     void initialize(const fltSemantics *);
     void shiftSignificandLeft(unsigned int);
@@ -250,6 +227,7 @@ namespace llvm {
     opStatus addOrSubtractSpecials(const APFloat &, bool subtract);
     opStatus divideSpecials(const APFloat &);
     opStatus multiplySpecials(const APFloat &);
+    opStatus modSpecials(const APFloat &);
 
     /* Miscellany.  */
     opStatus normalize(roundingMode, lostFraction);

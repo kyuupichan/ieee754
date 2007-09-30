@@ -193,6 +193,34 @@ divide (const char *a, const char *b, const char *c,
   return compare (lhs, result);
 }
 
+static bool
+fmod (const char *a, const char *b, const char *c,
+      const fltSemantics &kind)
+{
+  APFloat lhs (kind, a);
+  APFloat rhs (kind, b);
+  APFloat result (kind, c);
+
+  if (lhs.fmod (rhs) != APFloat::opOK)
+    return false;
+
+  return compare (lhs, result);
+}
+
+static bool
+remainder (const char *a, const char *b, const char *c,
+	   const fltSemantics &kind)
+{
+  APFloat lhs (kind, a);
+  APFloat rhs (kind, b);
+  APFloat result (kind, c);
+
+  if (lhs.remainder (rhs) != APFloat::opOK)
+    return false;
+
+  return compare (lhs, result);
+}
+
 int main (void)
 {
   APFloat d_nan (APFloat::IEEEdouble, APFloat::fcQNaN, false);
@@ -811,6 +839,44 @@ int main (void)
       assert( fma ("0x1p-128", "0x1p-128", "0x1p0",
 		   inf ? "0x1.000002p0" : "0x1.0p0",
 		   rm, kind, APFloat::opInexact));
+    }
+
+  /* Remainder.  */
+  for (int j = 0; j < 4; j++)
+    {
+      const fltSemantics &kind = *all_semantics[j];
+
+      assert (fmod ("0x1p0", "0x4p0", "0x1p0", kind));
+      assert (fmod ("0x2p0", "0x4p0", "0x2p0", kind));
+      assert (fmod ("0x3p0", "0x4p0", "0x3p0", kind));
+      assert (fmod ("0x4p0", "0x4p0", "0x0p0", kind));
+      assert (fmod ("0x5p0", "0x4p0", "0x1p0", kind));
+      assert (fmod ("0x6p0", "0x4p0", "0x2p0", kind));
+      assert (fmod ("0x7p0", "0x4p0", "0x3p0", kind));
+
+      assert (fmod ("-0x1p0", "0x4p0", "-0x1p0", kind));
+      assert (fmod ("-0x2p0", "0x4p0", "-0x2p0", kind));
+      assert (fmod ("-0x3p0", "0x4p0", "-0x3p0", kind));
+      assert (fmod ("-0x4p0", "0x4p0", "-0x0p0", kind));
+      assert (fmod ("-0x5p0", "0x4p0", "-0x1p0", kind));
+      assert (fmod ("-0x6p0", "0x4p0", "-0x2p0", kind));
+      assert (fmod ("-0x7p0", "0x4p0", "-0x3p0", kind));
+
+      assert (remainder ("0x1p0", "0x4p0", "0x1p0", kind));
+      assert (remainder ("0x2p0", "0x4p0", "0x2p0", kind));
+      assert (remainder ("0x3p0", "0x4p0", "-0x1p0", kind));
+      assert (remainder ("0x4p0", "0x4p0", "0x0p0", kind));
+      assert (remainder ("0x5p0", "0x4p0", "0x1p0", kind));
+      assert (remainder ("0x6p0", "0x4p0", "-0x2p0", kind));
+      assert (remainder ("0x7p0", "0x4p0", "-0x1p0", kind));
+
+      assert (remainder ("-0x1p0", "0x4p0", "-0x1p0", kind));
+      assert (remainder ("-0x2p0", "0x4p0", "-0x2p0", kind));
+      assert (remainder ("-0x3p0", "0x4p0", "0x1p0", kind));
+      assert (remainder ("-0x4p0", "0x4p0", "-0x0p0", kind));
+      assert (remainder ("-0x5p0", "0x4p0", "-0x1p0", kind));
+      assert (remainder ("-0x6p0", "0x4p0", "0x2p0", kind));
+      assert (remainder ("-0x7p0", "0x4p0", "0x1p0", kind));
     }
 
   return 0;
