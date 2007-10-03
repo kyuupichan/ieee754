@@ -226,27 +226,28 @@ namespace {
   static const char hexDigitsUpper[] = "0123456789ABCDEF0";
 
   /* Write out an integerPart in hexadecimal, starting with the most
-     significant nibble.  Write out exactly COUNT hexdigits.  */
-  static char *
+     significant nibble.  Write out exactly COUNT hexdigits, return
+     COUNT.  */
+  static unsigned int
   partAsHex (char *dst, integerPart part, unsigned int count,
 	     const char *hexDigitChars)
   {
-    unsigned int shift;
+    unsigned int result = count;
 
-    assert (count <= integerPartWidth / 4);
+    assert (count != 0 && count <= integerPartWidth / 4);
 
-    shift = integerPartWidth;
+    part >>= (integerPartWidth - 4 * count);
     while (count--) {
-      shift -= 4;
-      *dst++ = hexDigitChars[(part >> shift) & 0xf];
+      dst[count] = hexDigitChars[part & 0xf];
+      part >>= 4;
     }
 
-    return dst;
+    return result;
   }
 
   /* Write out a decimal exponent.  */
   static char *
-  writeExponent (char *dst, int exponent)
+  writeDecimalExponent (char *dst, int exponent)
   {
     assert (exponent >= -65536 && exponent <= 65535);
 
@@ -1716,7 +1717,8 @@ APFloat::convertFromString(const char *p, roundingMode rounding_mode)
 
 /* Write out a hexadecimal representation of the floating point value
    to DST, which must be of sufficient size, in the C99 form
-   [-]0xh.hhhhp[+-]d.
+   [-]0xh.hhhhp[+-]d.  Return the number of characters written,
+   excluding the terminating NUL.
 
    If UPPERCASE, the output is in upper case, otherwise in lower case.
 
@@ -1732,111 +1734,11 @@ APFloat::convertFromString(const char *p, roundingMode rounding_mode)
    The above rules are as specified by C99.  There is ambiguity about
    what the leading hexadecimal digit should be.  This implementation
    uses whatever is necessary so that the exponent is displayed as
-   stored, which means it will always be 0 (for denormals), 1 (normal
-   numbers) or 2 (normal numbers with 1 output digit).
+   stored.  This implies the exponent will fall within the IEEE format
+   range, and the leading hexadecimal digit will be 0 (for denormals),
+   1 (normal numbers) or 2 (normal numbers rounded-away-from-zero with
+   any other digits zero).
 */
-char *
-APFloat::convertNormalToHexString(char *dst, unsigned int hexDigits,
-				  bool upperCase,
-				  roundingMode rounding_mode) const
-{
-  unsigned int count, valueBits, shift, partsCount, outputDigits;
-  const char *hexDigitChars;
-  const integerPart *significand;
-  char *p;
-  bool roundUp;
-
-  *dst++ = '0';
-  *dst++ = upperCase ? 'X': 'x';
-
-  roundUp = false;
-  hexDigitChars = upperCase ? hexDigitsUpper: hexDigitsLower;
-
-  significand = significandParts();
-  partsCount = partCount();
-
-  /* +3 because the first digit only uses the single integer bit, so
-     we have 3 virtual zero most-significant-bits.  */
-  valueBits = semantics->precision + 3;
-  shift = integerPartWidth - valueBits % integerPartWidth;
-
-  /* The natural number of digits required ignoring trailing
-     insignificant zeroes.  */
-  outputDigits = (valueBits - significandLSB () + 3) / 4;
-
-  /* hexDigits of zero means use the required number for the
-     precision.  Otherwise, see if we are truncating.  If we are,
-     found out if we need to round away from zero.  */
-  if (hexDigits) {
-    if (hexDigits < outputDigits) {
-      /* We are dropping non-zero bits, so need to check how to round.
-	 "bits" is the number of dropped bits.  */
-      unsigned int bits;
-      lostFraction fraction;
-
-      bits = valueBits - hexDigits * 4;
-      fraction = lostFractionThroughTruncation (significand, partsCount, bits);
-      roundUp = roundAwayFromZero(rounding_mode, fraction, bits);
-    }
-    outputDigits = hexDigits;
-  }
-
-  /* Write the digits consecutively, and start writing in the location
-     of the hexadecimal point.  We move the most significant digit
-     left and add the hexadecimal point later.  */
-  p = ++dst;
-
-  count = (valueBits + integerPartWidth - 1) / integerPartWidth;
-
-  while (count--) {
-    integerPart part;
-
-    /* Put the most significant integerPartWidth bits in "part".  */
-    if (count == partsCount)
-      part = 0;  /* An imaginary higher zero part.  */
-    else
-      part = significand[count] << shift;
-
-    if (count && shift)
-      part |= significand[count - 1] >> (integerPartWidth - shift);
-
-    /* Convert as much of "part" to hexdigits as we can.  */
-    if (integerPartWidth / 4 > outputDigits) {
-      dst = partAsHex (dst, part, outputDigits, hexDigitChars);
-      outputDigits = 0;
-      break;
-    } else {
-      dst = partAsHex (dst, part, integerPartWidth / 4, hexDigitChars);
-      outputDigits -= integerPartWidth / 4;
-    }
-  }
-
-  if (roundUp) {
-    char *q = dst;
-
-    /* Note that hexDigitChars has a trailing '0'.  */
-    do {
-      q--;
-      *q = hexDigitChars[hexDigitValue (*q) + 1];
-    } while (*q == '0' && q > p);
-  } else {
-    /* Add trailing zeroes.  */
-    while (outputDigits--)
-      *dst++ = '0';
-  }
-
-  /* Move the most significant digit to before the point, and if there
-     is something after the decimal point add it.  This must come
-     after rounding above.  */
-  p[-1] = p[0];
-  if (dst -1 == p)
-    dst--;
-  else
-    p[0] = '.';
-
-  return dst;
-}
-
 unsigned int
 APFloat::convertToHexString(char *dst, unsigned int hexDigits,
 			    bool upperCase, roundingMode rounding_mode) const
@@ -1877,12 +1779,118 @@ APFloat::convertToHexString(char *dst, unsigned int hexDigits,
 
   case fcNormal:
     dst = convertNormalToHexString (dst, hexDigits, upperCase, rounding_mode);
-    *dst++ = upperCase ? 'P': 'p';
-    dst = writeExponent (dst, exponent);
     break;
   }
 
   *dst = 0;
 
   return dst - p;
+}
+
+/* Does the hard work of outputting the correctly rounded hexadecimal
+   form of a normal floating point number with the specified number of
+   hexadecimal digits.  If HEXDIGITS is zero the minimum number of
+   digits necessary to print the value precisely is output.  */
+char *
+APFloat::convertNormalToHexString(char *dst, unsigned int hexDigits,
+				  bool upperCase,
+				  roundingMode rounding_mode) const
+{
+  unsigned int count, valueBits, shift, partsCount, outputDigits;
+  const char *hexDigitChars;
+  const integerPart *significand;
+  char *p;
+  bool roundUp;
+
+  *dst++ = '0';
+  *dst++ = upperCase ? 'X': 'x';
+
+  roundUp = false;
+  hexDigitChars = upperCase ? hexDigitsUpper: hexDigitsLower;
+
+  significand = significandParts();
+  partsCount = partCount();
+
+  /* +3 because the first digit only uses the single integer bit, so
+     we have 3 virtual zero most-significant-bits.  */
+  valueBits = semantics->precision + 3;
+  shift = integerPartWidth - valueBits % integerPartWidth;
+
+  /* The natural number of digits required ignoring trailing
+     insignificant zeroes.  */
+  outputDigits = (valueBits - significandLSB () + 3) / 4;
+
+  /* hexDigits of zero means use the required number for the
+     precision.  Otherwise, see if we are truncating.  If we are,
+     find out if we need to round away from zero.  */
+  if (hexDigits) {
+    if (hexDigits < outputDigits) {
+      /* We are dropping non-zero bits, so need to check how to round.
+	 "bits" is the number of dropped bits.  */
+      unsigned int bits;
+      lostFraction fraction;
+
+      bits = valueBits - hexDigits * 4;
+      fraction = lostFractionThroughTruncation (significand, partsCount, bits);
+      roundUp = roundAwayFromZero(rounding_mode, fraction, bits);
+    }
+    outputDigits = hexDigits;
+  }
+
+  /* Write the digits consecutively, and start writing in the location
+     of the hexadecimal point.  We move the most significant digit
+     left and add the hexadecimal point later.  */
+  p = ++dst;
+
+  count = (valueBits + integerPartWidth - 1) / integerPartWidth;
+
+  while (outputDigits && count) {
+    integerPart part;
+
+    /* Put the most significant integerPartWidth bits in "part".  */
+    if (--count == partsCount)
+      part = 0;  /* An imaginary higher zero part.  */
+    else
+      part = significand[count] << shift;
+
+    if (count && shift)
+      part |= significand[count - 1] >> (integerPartWidth - shift);
+
+    /* Convert as much of "part" to hexdigits as we can.  */
+    unsigned int curDigits = integerPartWidth / 4;
+
+    if (curDigits > outputDigits)
+      curDigits = outputDigits;
+    dst += partAsHex (dst, part, curDigits, hexDigitChars);
+    outputDigits -= curDigits;
+  }
+
+  if (roundUp) {
+    char *q = dst;
+
+    /* Note that hexDigitChars has a trailing '0'.  */
+    do {
+      q--;
+      *q = hexDigitChars[hexDigitValue (*q) + 1];
+    } while (*q == '0');
+    assert (q >= p);
+  } else {
+    /* Add trailing zeroes.  */
+    memset (dst, '0', outputDigits);
+    dst += outputDigits;
+  }
+
+  /* Move the most significant digit to before the point, and if there
+     is something after the decimal point add it.  This must come
+     after rounding above.  */
+  p[-1] = p[0];
+  if (dst -1 == p)
+    dst--;
+  else
+    p[0] = '.';
+
+  /* Finally output the exponent.  */
+  *dst++ = upperCase ? 'P': 'p';
+
+  return writeDecimalExponent (dst, exponent);
 }
