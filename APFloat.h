@@ -192,6 +192,10 @@ namespace llvm {
     /* Comparison with another floating point number.  */
     cmpResult compare(const APFloat &) const;
 
+    /* Convert to hexadecimal string.  */
+    unsigned int convertToHexString(char *dst, unsigned int hexDigits,
+				    bool upperCase, roundingMode) const;
+
     /* Simple queries.  */
     fltCategory getCategory() const { return category; }
     const fltSemantics &getSemantics() const { return *semantics; }
@@ -234,11 +238,13 @@ namespace llvm {
     opStatus addOrSubtract(const APFloat &, roundingMode, bool subtract);
     cmpResult compareAbsoluteValue(const APFloat &) const;
     opStatus handleOverflow(roundingMode);
-    bool roundAwayFromZero(roundingMode, lostFraction);
+    bool roundAwayFromZero(roundingMode, lostFraction, unsigned int) const;
     opStatus convertFromUnsignedInteger(integerPart *, unsigned int,
 					roundingMode);
     lostFraction combineLostFractions(lostFraction, lostFraction);
     opStatus convertFromHexadecimalString(const char *, roundingMode);
+    char *convertNormalToHexString(char *, unsigned int, bool,
+				   roundingMode) const;
 
     void assign(const APFloat &);
     void copySignificand(const APFloat &);

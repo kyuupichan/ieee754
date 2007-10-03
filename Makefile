@@ -1,4 +1,4 @@
-all: test-special test-normal
+all: test-special test-normal test-print
 
 test-special: APFloat.o APInt.o test-special.o APFloat.h
 	g++ ${>} -o $@
@@ -6,11 +6,14 @@ test-special: APFloat.o APInt.o test-special.o APFloat.h
 test-normal: APFloat.o APInt.o test-normal.o APFloat.h
 	g++ ${>} -o $@
 
+test-print: APFloat.o APInt.o test-print.o APFloat.h
+	g++ ${>} -o $@
+
 .cpp.o: APFloat.h
 	g++ -g  -c $< -o $@
 
 clean:
-	rm -f test-special test-normal *.o *~ *.core *.orig
+	rm -f test-special test-normal test-print *.o *~ *.core *.orig
 
 git:	clean
 	git commit -a
