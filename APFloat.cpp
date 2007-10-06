@@ -48,6 +48,8 @@ namespace llvm {
   const fltSemantics APFloat::IEEEdouble = { 1023, -1022, 53, true };
   const fltSemantics APFloat::IEEEquad = { 16383, -16382, 113, true };
   const fltSemantics APFloat::x87DoubleExtended = { 16383, -16382, 64, false };
+
+  const unsigned int maxExponent = 16383;
 }
 
 /* Put a bunch of private, handy routines in an anonymous namespace.  */
@@ -275,6 +277,80 @@ namespace {
 
     return dst;
   }
+
+  /* Place pow (5, power) in DST, and return the number of parts used.
+     DST must be at least one part larger than size of the answer.  */
+  static unsigned int
+  powerOf5 (integerPart *dst, unsigned int power)
+  {
+    /* A tight upper bound on number of parts required to hold the
+       value pow (5, power) is
+
+         power * 65536 / (28224 * integerPartWidth) + 1
+
+	 However, whilst the result may require only N parts, because
+	 we are multiplying two values to get it, the multiplication
+	 may require N + 1 parts with the excess part being zero
+	 (consider the trivial case of 1 * 1, the multiplier requires
+	 two parts to hold the single-part result).  So we add two to
+	 guarantee enough space whilst multiplying.  */
+    const unsigned int maxParts = 2 + ((maxExponent * 65536)
+				       / (28224 * integerPartWidth));
+    static integerPart firstEightPowers[] = { 1, 5, 25, 125, 625, 3125,
+					      15625, 78125 };
+    static integerPart pow5s[maxParts * 2 + 5] = { 78125 * 5 };
+    static unsigned int partsCount[16] = { 1 };
+
+    integerPart scratch[maxParts], *p1, *p2, *pow5;
+    unsigned int result;
+
+    assert (power <= maxExponent);
+
+    p1 = dst;
+    p2 = scratch;
+
+    *p1 = firstEightPowers[power & 7];
+    power >>= 3;
+
+    result = 1;
+    pow5 = pow5s;
+
+    for (unsigned int n = 0; power; power >>= 1, n++) {
+      unsigned int pc;
+
+      pc = partsCount[n];
+
+      /* Calculate pow(5,pow(2,n+3)) if we haven't yet.  */
+      if (pc == 0) {
+	pc = partsCount[n - 1];
+	APInt::tcFullMultiply (pow5, pow5 - pc, pow5 - pc, pc, pc);
+	pc *= 2;
+	if (pow5[pc - 1] == 0)
+	  pc--;
+	partsCount[n] = pc;
+      }
+
+      if (power & 1) {
+	integerPart *tmp;
+
+	APInt::tcFullMultiply (p2, p1, pow5, result, pc);
+	result += pc;
+	if (p2[result - 1] == 0)
+	  result--;
+
+	/* Now result is in p1 with partsCount parts and p2 is scratch
+	   space.  */
+	tmp = p1, p1 = p2, p2 = tmp;
+      }
+
+      pow5 += pc;
+    }
+
+    if (p1 != dst)
+      APInt::tcAssign (dst, p1, result);
+
+    return result;
+  }
 }
 
 /* Constructors.  */
@@ -489,7 +565,7 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
   partsCount = partCount();
 
   APInt::tcFullMultiply(fullSignificand, lhsSignificand,
-			rhs.significandParts(), partsCount);
+			rhs.significandParts(), partsCount, partsCount);
 
   lost_fraction = lfExactlyZero;
   omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
