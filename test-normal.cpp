@@ -223,7 +223,7 @@ remainder (const char *a, const char *b, const char *c,
 
 int main (void)
 {
-  APFloat d_nan (APFloat::IEEEdouble, APFloat::fcQNaN, false);
+  APFloat d_nan (APFloat::IEEEdouble, APFloat::fcNaN, false);
   APFloat d_pos_infinity (APFloat::IEEEdouble, APFloat::fcInfinity, false);
   APFloat d_neg_infinity (APFloat::IEEEdouble, APFloat::fcInfinity, true);
   APFloat f_pos_infinity (APFloat::IEEEsingle, APFloat::fcInfinity, false);

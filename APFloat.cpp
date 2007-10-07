@@ -945,7 +945,7 @@ APFloat::roundAwayFromZero(roundingMode rounding_mode,
                            lostFraction lost_fraction,
                            unsigned int bit) const
 {
-  /* QNaNs and infinities should not have lost fractions.  */
+  /* NaNs and infinities should not have lost fractions.  */
   assert(category == fcNormal || category == fcZero);
 
   /* Current callers never pass this so we don't handle it.  */
@@ -1095,19 +1095,19 @@ APFloat::addOrSubtractSpecials(const APFloat &rhs, bool subtract)
   default:
     assert(0);
 
-  case convolve(fcQNaN, fcZero):
-  case convolve(fcQNaN, fcNormal):
-  case convolve(fcQNaN, fcInfinity):
-  case convolve(fcQNaN, fcQNaN):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
   case convolve(fcNormal, fcZero):
   case convolve(fcInfinity, fcNormal):
   case convolve(fcInfinity, fcZero):
     return opOK;
 
-  case convolve(fcZero, fcQNaN):
-  case convolve(fcNormal, fcQNaN):
-  case convolve(fcInfinity, fcQNaN):
-    category = fcQNaN;
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
+    category = fcNaN;
     return opOK;
 
   case convolve(fcNormal, fcInfinity):
@@ -1129,7 +1129,7 @@ APFloat::addOrSubtractSpecials(const APFloat &rhs, bool subtract)
     /* Differently signed infinities can only be validly
        subtracted.  */
     if(sign ^ rhs.sign != subtract) {
-      category = fcQNaN;
+      category = fcNaN;
       return opInvalidOp;
     }
 
@@ -1221,14 +1221,14 @@ APFloat::multiplySpecials(const APFloat &rhs)
   default:
     assert(0);
 
-  case convolve(fcQNaN, fcZero):
-  case convolve(fcQNaN, fcNormal):
-  case convolve(fcQNaN, fcInfinity):
-  case convolve(fcQNaN, fcQNaN):
-  case convolve(fcZero, fcQNaN):
-  case convolve(fcNormal, fcQNaN):
-  case convolve(fcInfinity, fcQNaN):
-    category = fcQNaN;
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
+    category = fcNaN;
     return opOK;
 
   case convolve(fcNormal, fcInfinity):
@@ -1245,7 +1245,7 @@ APFloat::multiplySpecials(const APFloat &rhs)
 
   case convolve(fcZero, fcInfinity):
   case convolve(fcInfinity, fcZero):
-    category = fcQNaN;
+    category = fcNaN;
     return opInvalidOp;
 
   case convolve(fcNormal, fcNormal):
@@ -1260,20 +1260,20 @@ APFloat::divideSpecials(const APFloat &rhs)
   default:
     assert(0);
 
-  case convolve(fcQNaN, fcZero):
-  case convolve(fcQNaN, fcNormal):
-  case convolve(fcQNaN, fcInfinity):
-  case convolve(fcQNaN, fcQNaN):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
   case convolve(fcInfinity, fcZero):
   case convolve(fcInfinity, fcNormal):
   case convolve(fcZero, fcInfinity):
   case convolve(fcZero, fcNormal):
     return opOK;
 
-  case convolve(fcZero, fcQNaN):
-  case convolve(fcNormal, fcQNaN):
-  case convolve(fcInfinity, fcQNaN):
-    category = fcQNaN;
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
+    category = fcNaN;
     return opOK;
 
   case convolve(fcNormal, fcInfinity):
@@ -1286,7 +1286,7 @@ APFloat::divideSpecials(const APFloat &rhs)
 
   case convolve(fcInfinity, fcInfinity):
   case convolve(fcZero, fcZero):
-    category = fcQNaN;
+    category = fcNaN;
     return opInvalidOp;
 
   case convolve(fcNormal, fcNormal):
@@ -1301,16 +1301,16 @@ APFloat::modSpecials(const APFloat &rhs)
   default:
     assert(0);
 
-  case convolve(fcQNaN, fcZero):
-  case convolve(fcQNaN, fcNormal):
-  case convolve(fcQNaN, fcInfinity):
-  case convolve(fcQNaN, fcQNaN):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
     return opOK;
 
-  case convolve(fcZero, fcQNaN):
-  case convolve(fcNormal, fcQNaN):
-  case convolve(fcInfinity, fcQNaN):
-    category = fcQNaN;
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
+    category = fcNaN;
     copySignificand(rhs);
     return opOK;
 
@@ -1319,7 +1319,7 @@ APFloat::modSpecials(const APFloat &rhs)
   case convolve(fcInfinity, fcInfinity):
   case convolve(fcZero, fcZero):
   case convolve(fcNormal, fcZero):
-    category = fcQNaN;
+    category = fcNaN;
     return opInvalidOp;
 
   case convolve(fcNormal, fcInfinity):
@@ -1496,13 +1496,13 @@ APFloat::compare(const APFloat &rhs) const
   default:
     assert(0);
 
-  case convolve(fcQNaN, fcZero):
-  case convolve(fcQNaN, fcNormal):
-  case convolve(fcQNaN, fcInfinity):
-  case convolve(fcQNaN, fcQNaN):
-  case convolve(fcZero, fcQNaN):
-  case convolve(fcNormal, fcQNaN):
-  case convolve(fcInfinity, fcQNaN):
+  case convolve(fcNaN, fcZero):
+  case convolve(fcNaN, fcNormal):
+  case convolve(fcNaN, fcInfinity):
+  case convolve(fcNaN, fcNaN):
+  case convolve(fcZero, fcNaN):
+  case convolve(fcNormal, fcNaN):
+  case convolve(fcInfinity, fcNaN):
     return cmpUnordered;
 
   case convolve(fcInfinity, fcNormal):
@@ -1624,7 +1624,7 @@ APFloat::convertToInteger(integerPart *parts, unsigned int width,
   int bits;
 
   /* Handle the three special cases first.  */
-  if(category == fcInfinity || category == fcQNaN)
+  if(category == fcInfinity || category == fcNaN)
     return opInvalidOp;
 
   partsCount = partCountForBits(width);
@@ -2029,7 +2029,7 @@ APFloat::convertToHexString(char *dst, unsigned int hexDigits,
     dst += sizeof infinityL - 1;
     break;
 
-  case fcQNaN:
+  case fcNaN:
     memcpy (dst, upperCase ? NaNU: NaNL, sizeof NaNU - 1);
     dst += sizeof NaNU - 1;
     break;

@@ -160,7 +160,7 @@ namespace llvm {
     /* Category of internally-represented number.  */
     enum fltCategory {
       fcInfinity,
-      fcQNaN,
+      fcNaN,
       fcNormal,
       fcZero
     };
