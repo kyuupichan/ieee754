@@ -241,6 +241,10 @@ namespace {
      when rounding up during hexadecimal output.  */
   static const char hexDigitsLower[] = "0123456789abcdef0";
   static const char hexDigitsUpper[] = "0123456789ABCDEF0";
+  static const char infinityL[] = "infinity";
+  static const char infinityU[] = "INFINITY";
+  static const char NaNL[] = "nan";
+  static const char NaNU[] = "NAN";
 
   /* Write out an integerPart in hexadecimal, starting with the most
      significant nibble.  Write out exactly COUNT hexdigits, return
@@ -1006,7 +1010,7 @@ APFloat::normalize(roundingMode rounding_mode,
       lost_fraction = combineLostFractions(lf, lost_fraction);
 
       /* Keep OMSB up-to-date.  */
-      if(omsb > exponentChange)
+      if(omsb > (unsigned) exponentChange)
         omsb -= exponentChange;
       else
         omsb = 0;
@@ -1035,7 +1039,7 @@ APFloat::normalize(roundingMode rounding_mode,
     omsb = significandMSB() + 1;
 
     /* Did the significand increment overflow?  */
-    if(omsb == semantics->precision + 1) {
+    if(omsb == (unsigned) semantics->precision + 1) {
       /* Renormalize by incrementing the exponent and shifting our
          significand right one.  However if we already have the
          maximum exponent we overflow to infinity.  */
@@ -1143,20 +1147,20 @@ APFloat::addOrSubtractSignificand(const APFloat &rhs, bool subtract)
     APFloat temp_rhs(rhs);
     bool reverse;
 
-    if(bits == 0) {
+    if (bits == 0) {
       reverse = compareAbsoluteValue(temp_rhs) == cmpLessThan;
       lost_fraction = lfExactlyZero;
-    } else if(bits > 0) {
+    } else if (bits > 0) {
       lost_fraction = temp_rhs.shiftSignificandRight(bits - 1);
       shiftSignificandLeft(1);
       reverse = false;
-    } else if(bits < 0) {
+    } else {
       lost_fraction = shiftSignificandRight(-bits - 1);
       temp_rhs.shiftSignificandLeft(1);
       reverse = true;
     }
 
-    if(reverse) {
+    if (reverse) {
       carry = temp_rhs.subtractSignificand
         (*this, lost_fraction != lfExactlyZero);
       copySignificand(temp_rhs);
@@ -1320,6 +1324,20 @@ APFloat::changeSign()
 {
   /* Look mummy, this one's easy.  */
   sign = !sign;
+}
+
+void
+APFloat::clearSign()
+{
+  /* So is this one. */
+  sign = 0;
+}
+
+void
+APFloat::copySign(const APFloat &rhs)
+{
+  /* And this one. */
+  sign = rhs.sign;
 }
 
 /* Normalized addition or subtraction.  */
@@ -1820,10 +1838,6 @@ unsigned int
 APFloat::convertToHexString(char *dst, unsigned int hexDigits,
                             bool upperCase, roundingMode rounding_mode) const
 {
-  static const char infinityL[] = "infinity";
-  static const char NaNL[] = "nan";
-  static const char infinityU[] = "INFINITY";
-  static const char NaNU[] = "NAN";
   char *p;
 
   p = dst;
