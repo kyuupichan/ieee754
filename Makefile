@@ -10,7 +10,7 @@ test-print: APFloat.o APInt.o test-print.o APFloat.h
 	g++ ${>} -o $@
 
 .cpp.o: APFloat.h
-	g++ -g  -c $< -o $@
+	g++ -Wall -Werror -long-long -g  -c $< -o $@
 
 clean:
 	rm -f test-special test-normal test-print *.o *~ *.core *.orig

@@ -1842,7 +1842,6 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
   pow5PartCount = powerOf5 (pow5Parts, exp >= 0 ? exp: -exp);
 
   for (;;) {
-    lostFraction calcLostFraction;
     opStatus sigStatus, powStatus;
 
     calcSemantics.precision = parts * integerPartWidth - 1;
@@ -1857,6 +1856,7 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
 
     return opOK;
 #if 0
+    lostFraction calcLostFraction;
     unsigned int halfUlpsError;
     halfUlpsError = 
 
