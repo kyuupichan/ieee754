@@ -1457,7 +1457,7 @@ APFloat::fusedMultiplyAdd(const APFloat &multiplicand,
     /* FS can only be opOK or opInvalidOp.  There is no more work
        to do in the latter case.  The IEEE-754R standard says it is
        implementation-defined in this case whether, if ADDEND is a
-       quiet QNaN, we raise invalid op; this implementation does so.
+       quiet NaN, we raise invalid op; this implementation does so.
 
        If we need to do the addition we can do so with normal
        precision.  */
@@ -1661,56 +1661,71 @@ APFloat::convertToInteger(integerPart *parts, unsigned int width,
     return opInexact;
 }
 
+/* Convert an unsigned integer SRC to a floating point number,
+   rounding according to ROUNDING_MODE.  The sign of the floating
+   point number is not modified.  */
 APFloat::opStatus
-APFloat::convertFromUnsignedInteger(integerPart *parts,
-                                    unsigned int partCount,
-                                    roundingMode rounding_mode)
+APFloat::convertFromUnsignedParts(const integerPart *src,
+                                  unsigned int srcCount,
+                                  roundingMode rounding_mode)
 {
-  unsigned int msb, precision;
+  unsigned int dstCount;
   lostFraction lost_fraction;
-
-  msb = APInt::tcMSB(parts, partCount) + 1;
-  precision = semantics->precision;
+  integerPart *dst;
 
   category = fcNormal;
-  exponent = precision - 1;
+  exponent = semantics->precision - 1;
 
-  if(msb > precision) {
-    exponent += (msb - precision);
-    lost_fraction = shiftRight(parts, partCount, msb - precision);
-    msb = precision;
-  } else
+  dst = significandParts();
+  dstCount = partCount();
+
+  /* We need to capture the non-zero most significant parts.  */
+  while (srcCount > dstCount && src[srcCount - 1] == 0)
+    srcCount--;
+
+  /* Copy the bit image of as many parts as we can.  If we are wider,
+     zero-out remaining parts.  */
+  if (dstCount >= srcCount) {
+    APInt::tcAssign(dst, src, srcCount);
+    while (srcCount < dstCount)
+      dst[srcCount++] = 0;
     lost_fraction = lfExactlyZero;
-
-  /* Copy the bit image.  */
-  zeroSignificand();
-  APInt::tcAssign(significandParts(), parts, partCountForBits(msb));
+  } else {
+    exponent += (srcCount - dstCount) * integerPartWidth;
+    APInt::tcAssign(dst, src + (srcCount - dstCount), dstCount);
+    lost_fraction = lostFractionThroughTruncation(src, srcCount,
+                                                  dstCount * integerPartWidth);
+  }
 
   return normalize(rounding_mode, lost_fraction);
 }
 
+/* Convert a two's complement integer SRC to a floating point number,
+   rounding according to ROUNDING_MODE.  ISSIGNED is true if the
+   integer is signed, in which case it must be sign-extended.  */
 APFloat::opStatus
-APFloat::convertFromInteger(const integerPart *parts,
-                            unsigned int partCount, bool isSigned,
-                            roundingMode rounding_mode)
+APFloat::convertFromSignExtendedInteger(const integerPart *src,
+                                        unsigned int srcCount,
+                                        bool isSigned,
+                                        roundingMode rounding_mode)
 {
-  unsigned int width;
   opStatus status;
-  integerPart *copy;
 
-  copy = new integerPart[partCount];
-  APInt::tcAssign(copy, parts, partCount);
+  if (isSigned
+      && APInt::tcExtractBit(src, srcCount * integerPartWidth - 1)) {
+    integerPart *copy;
 
-  width = partCount * integerPartWidth;
-
-  sign = false;
-  if(isSigned && APInt::tcExtractBit(parts, width - 1)) {
+    /* If we're signed and negative negate a copy.  */
     sign = true;
-    APInt::tcNegate(copy, partCount);
+    copy = new integerPart[srcCount];
+    APInt::tcAssign(copy, src, srcCount);
+    APInt::tcNegate(copy, srcCount);
+    status = convertFromUnsignedParts(copy, srcCount, rounding_mode);
+    delete [] copy;
+  } else {
+    sign = false;
+    status = convertFromUnsignedParts(src, srcCount, rounding_mode);
   }
-
-  status = convertFromUnsignedInteger(copy, partCount, rounding_mode);
-  delete [] copy;
 
   return status;
 }

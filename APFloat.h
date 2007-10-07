@@ -195,8 +195,8 @@ namespace llvm {
     opStatus convert(const fltSemantics &, roundingMode);
     opStatus convertToInteger(integerPart *, unsigned int, bool,
 			      roundingMode) const;
-    opStatus convertFromInteger(const integerPart *, unsigned int, bool,
-				roundingMode);
+    opStatus convertFromSignExtendedInteger(const integerPart *, unsigned int,
+                                            bool, roundingMode);
     opStatus convertFromString(const char *, roundingMode);
 
     /* Comparison with another floating point number.  */
@@ -249,8 +249,8 @@ namespace llvm {
     cmpResult compareAbsoluteValue(const APFloat &) const;
     opStatus handleOverflow(roundingMode);
     bool roundAwayFromZero(roundingMode, lostFraction, unsigned int) const;
-    opStatus convertFromUnsignedInteger(integerPart *, unsigned int,
-					roundingMode);
+    opStatus convertFromUnsignedParts(const integerPart *, unsigned int,
+                                      roundingMode);
     opStatus convertFromHexadecimalString(const char *, roundingMode);
     char *convertNormalToHexString(char *, unsigned int, bool,
 				   roundingMode) const;

@@ -41,8 +41,8 @@ convertFromInteger_parts (integerPart *value, unsigned int count,
   APFloat number (semantics, APFloat::fcZero);
   APFloat result (semantics, a);
 
-  if (number.convertFromInteger (value, count, is_signed, rounding_mode)
-      != status)
+  if (number.convertFromSignExtendedInteger (value, count, is_signed,
+                                             rounding_mode) != status)
     return false;
 
   return compare (number, result);
@@ -58,8 +58,8 @@ convertFromInteger_parts (integerPart *value, unsigned int count,
 {
   APFloat number (semantics, APFloat::fcZero);
 
-  if (number.convertFromInteger (value, count, is_signed, rounding_mode)
-      != status)
+  if (number.convertFromSignExtendedInteger (value, count, is_signed,
+                                             rounding_mode) != status)
     return false;
 
   return compare (number, result);
@@ -75,8 +75,8 @@ convertFromInteger (integerPart value, bool is_signed,
   APFloat number (kind, APFloat::fcZero);
   APFloat result (kind, a);
 
-  if (number.convertFromInteger (&value, 1, is_signed, rounding_mode)
-      != status)
+  if (number.convertFromSignExtendedInteger (&value, 1, is_signed,
+                                             rounding_mode) != status)
     return false;
 
   return compare (number, result);
