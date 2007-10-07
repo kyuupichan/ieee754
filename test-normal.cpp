@@ -753,8 +753,8 @@ int main (void)
   /* Test conversion from integer.  */
   for (int i = 0; i < 4; i++)
     {
-      static integerPart flt_max[]= { 0, ((1ULL << 24) - 1) << 40 };
-      static integerPart flt_max2[]= { 0, (((1ULL << 24) - 1) << 40) + 1 };
+      static integerPart flt_max[]= { 0, ((1ULL << 24) - 1) << 40, 0 };
+      static integerPart flt_max2[]= { 0, (((1ULL << 24) - 1) << 40) + 1, 0 };
 				   
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
@@ -766,17 +766,17 @@ int main (void)
 					APFloat::opOK));
 	  assert (convertFromInteger (-1, true, rm, semantics, "-0x1p0",
 					APFloat::opOK));
-	  assert (convertFromInteger_parts (flt_max, 2, false, rm, semantics,
+	  assert (convertFromInteger_parts (flt_max, 3, false, rm, semantics,
 					      "0x1.fffffep127",
 					      APFloat::opOK));
 	}
 
       if (rm == APFloat::rmTowardPositive)
-	assert (convertFromInteger_parts (flt_max2, 2, false, rm,
+	assert (convertFromInteger_parts (flt_max2, 3, false, rm,
 					    APFloat::IEEEsingle,
 					    f_pos_infinity, overflow));
       else
-	assert (convertFromInteger_parts (flt_max2, 2, false, rm,
+	assert (convertFromInteger_parts (flt_max2, 3, false, rm,
 					    APFloat::IEEEsingle,
 					    "0x1.fffffep127",
 					    APFloat::opInexact));
