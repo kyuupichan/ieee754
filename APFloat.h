@@ -252,8 +252,11 @@ namespace llvm {
     opStatus convertFromUnsignedParts(const integerPart *, unsigned int,
                                       roundingMode);
     opStatus convertFromHexadecimalString(const char *, roundingMode);
+    opStatus convertFromDecimalString (const char *, roundingMode);
     char *convertNormalToHexString(char *, unsigned int, bool,
 				   roundingMode) const;
+    opStatus roundSignificandWithExponent(const integerPart *, unsigned int,
+                                          int, roundingMode);
 
     void assign(const APFloat &);
     void copySignificand(const APFloat &);

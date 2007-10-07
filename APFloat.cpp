@@ -49,7 +49,22 @@ namespace llvm {
   const fltSemantics APFloat::IEEEquad = { 16383, -16382, 113, true };
   const fltSemantics APFloat::x87DoubleExtended = { 16383, -16382, 64, false };
 
+  /* A tight upper bound on number of parts required to hold the value
+     pow (5, power) is
+
+       power * 1024 / (441 * integerPartWidth) + 1
+       
+     However, whilst the result may require only this many parts,
+     because we are multiplying two values to get it, the
+     multiplication may require an extra part with the excess part
+     being zero (consider the trivial case of 1 * 1, tcFullMultiply
+     requires two parts to hold the single-part result).  So we add an
+     extra one to guarantee enough space whilst multiplying.  */
   const unsigned int maxExponent = 16383;
+  const unsigned int maxPrecision = 113;
+  const unsigned int maxPowerOfFiveExponent = maxExponent + maxPrecision - 1;
+  const unsigned int maxPowerOfFiveParts = 2 + ((maxPowerOfFiveExponent * 1024)
+                                                / (441 * integerPartWidth));
 }
 
 /* Put a bunch of private, handy routines in an anonymous namespace.  */
@@ -313,14 +328,12 @@ namespace {
        the trivial case of 1 * 1, the multiplier requires two parts to
        hold the single-part result).  So we add two to guarantee
        enough space whilst multiplying.  */
-    const unsigned int maxParts = 2 + ((maxExponent * 65536)
-                                       / (28224 * integerPartWidth));
     static integerPart firstEightPowers[] = { 1, 5, 25, 125, 625, 3125,
                                               15625, 78125 };
-    static integerPart pow5s[maxParts * 2 + 5] = { 78125 * 5 };
+    static integerPart pow5s[maxPowerOfFiveParts * 2 + 5] = { 78125 * 5 };
     static unsigned int partsCount[16] = { 1 };
 
-    integerPart scratch[maxParts], *p1, *p2, *pow5;
+    integerPart scratch[maxPowerOfFiveParts], *p1, *p2, *pow5;
     unsigned int result;
 
     assert (power <= maxExponent);
@@ -922,8 +935,11 @@ APFloat::handleOverflow(roundingMode rounding_mode)
   return opInexact;
 }
 
-/* This routine must work for fcZero of both signs, and fcNormal
-   numbers.  */
+/* Returns TRUE if, when truncating the current number, with BIT the
+   new LSB, with the given lost fraction and rounding mode, the result
+   would need to be rounded away from zero (i.e., by increasing the
+   signficand).  This routine must work for fcZero of both signs, and
+   fcNormal numbers.  */
 bool
 APFloat::roundAwayFromZero(roundingMode rounding_mode,
                            lostFraction lost_fraction,
@@ -1747,7 +1763,7 @@ APFloat::convertFromHexadecimalString(const char *p,
   partsCount = partCount();
   bitPos = partsCount * integerPartWidth;
 
-  /* Skip leading zeroes and any(hexa)decimal point.  */
+  /* Skip leading zeroes and any (hexa)decimal point.  */
   p = skipLeadingZeroesAndAnyDot(p, &dot);
   firstSignificantDigit = p;
 
@@ -1811,6 +1827,154 @@ APFloat::convertFromHexadecimalString(const char *p,
 }
 
 APFloat::opStatus
+APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
+                                      unsigned sigPartCount, int exp,
+                                      roundingMode rounding_mode)
+{
+  unsigned int parts, pow5PartCount;
+  fltSemantics calcSemantics;
+  integerPart pow5Parts[maxPowerOfFiveParts];
+
+  calcSemantics = *semantics;
+  parts = partCountForBits(semantics->precision + 11);
+
+  /* Calculate pow (5, abs (exp)).  */
+  pow5PartCount = powerOf5 (pow5Parts, exp >= 0 ? exp: -exp);
+
+  for (;;) {
+    lostFraction calcLostFraction;
+    opStatus sigStatus, powStatus;
+
+    calcSemantics.precision = parts * integerPartWidth - 1;
+
+    APFloat decSig(calcSemantics, fcZero, false);
+    APFloat pow5(calcSemantics, fcZero, false);
+
+    sigStatus = decSig.convertFromUnsignedParts(decSigParts, sigPartCount,
+                                                rmNearestTiesToEven);
+    powStatus = pow5.convertFromUnsignedParts(pow5Parts, pow5PartCount,
+                                              rmNearestTiesToEven);
+
+    return opOK;
+#if 0
+    unsigned int halfUlpsError;
+    halfUlpsError = 
+
+    if (exp < 0)
+      calcLostFraction = decSig.divideSignificand(pow5);
+    else
+      calcLostFraction = decSig.multiplySignificand(pow5);
+
+    fs = normalize(rounding_mode, lost_fraction);
+#endif
+  }
+}
+
+APFloat::opStatus
+APFloat::convertFromDecimalString (const char *p, roundingMode rounding_mode)
+{
+  const char *dot, *firstSignificantDigit;
+  integerPart val, maxVal, decValue;
+  opStatus fs;
+
+  /* Skip leading zeroes and any decimal point.  */
+  p = skipLeadingZeroesAndAnyDot(p, &dot);
+  firstSignificantDigit = p;
+
+  /* The maximum number that can be multiplied by ten with any digit
+     added without overflowing an integerPart.  */
+  maxVal = (~ (integerPart) 0 - 9) / 10;
+
+  val = 0;
+  while (val <= maxVal) {
+    if (*p == '.') {
+      assert (dot == 0);
+      dot = p++;
+    }
+
+    decValue = digitValue(*p);
+    if (decValue == -1U)
+      break;
+    p++;
+    val = val * 10 + decValue;
+  }
+
+  integerPart *decSignificand;
+  unsigned int partCount, maxPartCount;
+
+  partCount = 0;
+  maxPartCount = 4;
+  decSignificand = new integerPart[maxPartCount];
+  decSignificand[partCount++] = val;
+
+  /* Now continue to do single-part arithmetic for as long as we can.
+     Then do a part multiplication, and repeat.  */
+  if (decValue != -1U) {
+    integerPart multiplier;
+
+    val = 0;
+    multiplier = 1;
+
+    while (multiplier <= maxVal) {
+      if (*p == '.') {
+        assert(dot == 0);
+        dot = p++;
+      }
+
+      decValue = digitValue(*p);
+      if (decValue == -1U)
+        break;
+      p++;
+      multiplier *= 10;
+      val = val * 10 + decValue;
+    }
+
+    if (partCount == maxPartCount) {
+      integerPart *newDecSignificand;
+      newDecSignificand = new integerPart[maxPartCount = partCount * 2];
+      APInt::tcAssign(newDecSignificand, decSignificand, partCount);
+      delete [] decSignificand;
+      decSignificand = newDecSignificand;
+    }
+
+    APInt::tcMultiplyPart(decSignificand, decSignificand, multiplier, val,
+                          partCount, partCount + 1, false);
+
+    /* If we used another part (likely), increase the count.  */
+    if (decSignificand[partCount] != 0)
+      partCount++;
+  }
+
+  /* Now decSignificand contains the supplied significand ignoring the
+     decimal point.  Figure out our effective exponent, which is the
+     specified exponent adjusted for any decimal point.  */
+
+  if (p == firstSignificantDigit) {
+    /* Ignore the exponent if we are zero - we cannot overflow.  */
+    category = fcZero;
+    fs = opOK;
+  } else {
+    int decimalExponent;
+
+    if (dot)
+      decimalExponent = dot - p;
+    else
+      decimalExponent = 0;
+
+    /* Add the given exponent.  */
+    if (*p == 'e' || *p == 'E')
+      decimalExponent = totalExponent(p, decimalExponent);
+
+    fs = roundSignificandWithExponent(decSignificand, partCount,
+                                      decimalExponent, rounding_mode);
+  }
+
+  delete [] decSignificand;
+
+  return fs;
+}
+
+APFloat::opStatus
 APFloat::convertFromString(const char *p, roundingMode rounding_mode)
 {
   /* Handle a leading minus sign.  */
@@ -1822,7 +1986,7 @@ APFloat::convertFromString(const char *p, roundingMode rounding_mode)
   if(p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
     return convertFromHexadecimalString(p + 2, rounding_mode);
   else
-    assert(0);
+    return convertFromDecimalString(p, rounding_mode);
 }
 
 /* Write out a hexadecimal representation of the floating point value
