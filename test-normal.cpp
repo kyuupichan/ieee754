@@ -221,6 +221,19 @@ remainder (const char *a, const char *b, const char *c,
   return compare (lhs, result);
 }
 
+static bool
+compare (const char *a, const char *b, const fltSemantics &kind,
+         APFloat::roundingMode rounding_mode)
+{
+  APFloat lhs (kind, APFloat::fcZero, false);
+  APFloat rhs (kind, APFloat::fcZero, false);
+
+  lhs.convertFromString(a, rounding_mode);
+  rhs.convertFromString(b, rounding_mode);
+
+  return compare (lhs, rhs);
+}
+
 int main (void)
 {
   APFloat d_nan (APFloat::IEEEdouble, APFloat::fcNaN, false);
@@ -878,6 +891,42 @@ int main (void)
       assert (remainder ("-0x6p0", "0x4p0", "0x2p0", kind));
       assert (remainder ("-0x7p0", "0x4p0", "0x1p0", kind));
     }
+
+  /* Decimal to binary conversion on IEEE single-precision.  */
+
+  assert (compare ("1.2e32", "0x1.7aa73ap+106", APFloat::IEEEsingle,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("9.87654321e12", "0x1.1f71fcp+43", APFloat::IEEEsingle,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("4483519178866687", "0x1.fdb794p+51", APFloat::IEEEsingle,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("5.2E1", "52", APFloat::IEEEsingle,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("5E2", "500", APFloat::IEEEsingle,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("0x5p0", "5", APFloat::IEEEsingle,
+                   APFloat::rmNearestTiesToEven));
+
+  /* This number lies on a half-boundary for single-precision.  */
+  assert (compare ("308105110354283262570921984", "0x1.fdb798p+87",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("308105110354283262570921983", "0x1.fdb796p+87",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+
+  /* Alternative roundings.  */
+  assert (compare ("308105110354283262570921984", "0x1.fdb796p+87",
+                   APFloat::IEEEsingle, APFloat::rmTowardZero));
+  assert (compare ("308105110354283262570921983", "0x1.fdb798p+87",
+                   APFloat::IEEEsingle, APFloat::rmTowardPositive));
+
+  /* This is FLT_MAX, first most closely, then widest, then
+     overflowing.  */
+  assert (compare ("3.40282347E+38F", "0x1.fffffep+127",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("3.40282356E+38F", "0x1.fffffep+127",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("3.40282357E+38F", "0x1.ffffffp+127",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
 
   return 0;
 }

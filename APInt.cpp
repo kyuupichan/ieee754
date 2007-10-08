@@ -109,6 +109,8 @@ APInt::tcSet(integerPart *dst, integerPart part, unsigned int parts)
 {
   unsigned int i;
 
+  assert (parts > 0);
+
   dst[0] = part;
   for(i = 1; i < parts; i++)
     dst[i] = 0;
@@ -188,6 +190,39 @@ APInt::tcMSB(const integerPart *parts, unsigned int n)
   } while (n);
 
   return -1U;
+}
+
+/* Copy the bit vector of width srcBits from SRC, starting at bit
+   srcLSB, to DST such that the bit srcLSB becomes the least
+   significant bit of DST.  If srcBITS is not a round number of parts,
+   the excess high bits of DST are zero-filled.  Returns the number
+   of parts set in DST.  */
+unsigned int
+APInt::tcExtract(integerPart *dst, const integerPart *src,
+                 unsigned int srcBits, unsigned int srcLSB)
+{
+  unsigned int firstSrcPart, dstParts, shift, n;
+
+  firstSrcPart = srcLSB / integerPartWidth;
+  dstParts = (srcBits + integerPartWidth - 1) / integerPartWidth;
+  tcAssign (dst, src + firstSrcPart, dstParts);
+
+  shift = srcLSB % integerPartWidth;
+  tcShiftRight (dst, dstParts, shift);
+
+  /* We now have (dstParts * integerPartWidth - shift) bits from SRC
+     in DST.  If this is less that srcBits, append the rest, else
+     clear the high bits.  */
+  n = dstParts * integerPartWidth - shift;
+  if (n < srcBits) {
+    integerPart mask = lowBitMask (srcBits - n);
+    dst[dstParts - 1] |= ((src[firstSrcPart + dstParts] & mask)
+                          << n % integerPartWidth);
+  } else if (n > srcBits) {
+    dst[dstParts - 1] &= lowBitMask (srcBits % integerPartWidth);
+  }
+
+  return dstParts;
 }
 
 /* DST += RHS + C where C is zero or one.  Returns the carry flag.  */
@@ -459,31 +494,33 @@ APInt::tcDivide(integerPart *lhs, const integerPart *rhs,
 void
 APInt::tcShiftLeft(integerPart *dst, unsigned int parts, unsigned int count)
 {
-  unsigned int jump, shift;
+  if (count) {
+    unsigned int jump, shift;
 
-  /* Jump is the inter-part jump; shift is is intra-part shift.  */
-  jump = count / integerPartWidth;
-  shift = count % integerPartWidth;
+    /* Jump is the inter-part jump; shift is is intra-part shift.  */
+    jump = count / integerPartWidth;
+    shift = count % integerPartWidth;
 
-  while (parts > jump) {
-    integerPart part;
+    while (parts > jump) {
+      integerPart part;
 
-    parts--;
+      parts--;
 
-    /* dst[i] comes from the two parts src[i - jump] and, if we have
-       an intra-part shift, src[i - jump - 1].  */
-    part = dst[parts - jump];
-    if (shift) {
-      part <<= shift;
+      /* dst[i] comes from the two parts src[i - jump] and, if we have
+         an intra-part shift, src[i - jump - 1].  */
+      part = dst[parts - jump];
+      if (shift) {
+        part <<= shift;
         if (parts >= jump + 1)
           part |= dst[parts - jump - 1] >> (integerPartWidth - shift);
       }
 
-    dst[parts] = part;
-  }
+      dst[parts] = part;
+    }
 
-  while (parts > 0)
-    dst[--parts] = 0;
+    while (parts > 0)
+      dst[--parts] = 0;
+  }
 }
 
 /* Shift a bignum right COUNT bits in-place.  Shifted in bits are
@@ -491,29 +528,31 @@ APInt::tcShiftLeft(integerPart *dst, unsigned int parts, unsigned int count)
 void
 APInt::tcShiftRight(integerPart *dst, unsigned int parts, unsigned int count)
 {
-  unsigned int i, jump, shift;
+  if (count) {
+    unsigned int i, jump, shift;
 
-  /* Jump is the inter-part jump; shift is is intra-part shift.  */
-  jump = count / integerPartWidth;
-  shift = count % integerPartWidth;
+    /* Jump is the inter-part jump; shift is is intra-part shift.  */
+    jump = count / integerPartWidth;
+    shift = count % integerPartWidth;
 
-  /* Perform the shift.  This leaves the most significant COUNT bits
-     of the result at zero.  */
-  for(i = 0; i < parts; i++) {
-    integerPart part;
+    /* Perform the shift.  This leaves the most significant COUNT bits
+       of the result at zero.  */
+    for(i = 0; i < parts; i++) {
+      integerPart part;
 
-    if (i + jump >= parts) {
-      part = 0;
-    } else {
-      part = dst[i + jump];
-      if (shift) {
-        part >>= shift;
-        if (i + jump + 1 < parts)
-          part |= dst[i + jump + 1] << (integerPartWidth - shift);
+      if (i + jump >= parts) {
+        part = 0;
+      } else {
+        part = dst[i + jump];
+        if (shift) {
+          part >>= shift;
+          if (i + jump + 1 < parts)
+            part |= dst[i + jump + 1] << (integerPartWidth - shift);
+        }
       }
-    }
 
-    dst[i] = part;
+      dst[i] = part;
+    }
   }
 }
 
