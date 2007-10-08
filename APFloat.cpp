@@ -1746,13 +1746,14 @@ APFloat::convertFromUnsignedParts(const integerPart *src,
                                   unsigned int srcCount,
                                   roundingMode rounding_mode)
 {
-  unsigned int omsb, precision, n, dstParts;
+  unsigned int omsb, precision, dstCount;
   integerPart *dst;
   lostFraction lost_fraction;
 
   category = fcNormal;
   omsb = APInt::tcMSB(src, srcCount) + 1;
   dst = significandParts();
+  dstCount = partCount();
   precision = semantics->precision;
 
   /* We want the most significant PRECISON bits of SRC.  There may not
@@ -1761,16 +1762,12 @@ APFloat::convertFromUnsignedParts(const integerPart *src,
     exponent = omsb - 1;
     lost_fraction = lostFractionThroughTruncation(src, srcCount,
                                                   omsb - precision);
-    n = APInt::tcExtract(dst, src, precision, omsb - precision);
+    APInt::tcExtract(dst, dstCount, src, precision, omsb - precision);
   } else {
     exponent = precision - 1;
     lost_fraction = lfExactlyZero;
-    n = APInt::tcExtract(dst, src, omsb, 0);
+    APInt::tcExtract(dst, dstCount, src, omsb, 0);
   }
-
-  /* Clear remaining high parts.  */
-  for (dstParts = partCount(); n < dstParts; n++)
-    dst[n] = 0;
 
   return normalize(rounding_mode, lost_fraction);
 }
@@ -1934,15 +1931,11 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
 
     /* Are we guaranteed to round correctly?  */
     if (ulpsRoom * 2 >= hUE) {
-      unsigned int n;
       integerPart *dst;
 
       dst = significandParts();
-      n = APInt::tcExtract(dst, decSig.significandParts(),
-                           semantics->precision, excessPrecision);
-      /* Clear extra high part, if any.  */
-      if (n != partCount())
-        dst[n] = 0;
+      APInt::tcExtract(dst, partCount(), decSig.significandParts(),
+                       semantics->precision, excessPrecision);
       calcLostFraction = lostFractionThroughTruncation(decSig.significandParts(),
                                                        decSig.partCount(),
                                                        excessPrecision);

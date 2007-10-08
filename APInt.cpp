@@ -193,18 +193,19 @@ APInt::tcMSB(const integerPart *parts, unsigned int n)
 }
 
 /* Copy the bit vector of width srcBits from SRC, starting at bit
-   srcLSB, to DST such that the bit srcLSB becomes the least
-   significant bit of DST.  If srcBITS is not a round number of parts,
-   the excess high bits of DST are zero-filled.  Returns the number
-   of parts set in DST.  */
-unsigned int
-APInt::tcExtract(integerPart *dst, const integerPart *src,
+   srcLSB, to DST, of dstCOUNT parts, such that the bit srcLSB becomes
+   the least significant bit of DST.  All high bits above srcBITS in
+   DST are zero-filled.  */
+void
+APInt::tcExtract(integerPart *dst, unsigned int dstCount, const integerPart *src,
                  unsigned int srcBits, unsigned int srcLSB)
 {
   unsigned int firstSrcPart, dstParts, shift, n;
 
-  firstSrcPart = srcLSB / integerPartWidth;
   dstParts = (srcBits + integerPartWidth - 1) / integerPartWidth;
+  assert (dstParts <= dstCount);
+
+  firstSrcPart = srcLSB / integerPartWidth;
   tcAssign (dst, src + firstSrcPart, dstParts);
 
   shift = srcLSB % integerPartWidth;
@@ -222,7 +223,9 @@ APInt::tcExtract(integerPart *dst, const integerPart *src,
     dst[dstParts - 1] &= lowBitMask (srcBits % integerPartWidth);
   }
 
-  return dstParts;
+  /* Clear high parts.  */
+  while (dstParts < dstCount)
+    dst[dstParts++] = 0;
 }
 
 /* DST += RHS + C where C is zero or one.  Returns the carry flag.  */
