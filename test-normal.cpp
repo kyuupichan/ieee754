@@ -892,20 +892,28 @@ int main (void)
       assert (remainder ("-0x7p0", "0x4p0", "0x1p0", kind));
     }
 
-  /* Decimal to binary conversion on IEEE single-precision.  */
+  assert (compare ("7.006492321624085354618e-46F", "0x0p0",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("7.006492321624085354619e-46F", "0x1p-149",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("1.17549435E-38F", "0x1p-126",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
 
+  /* Decimal to binary conversion on IEEE single-precision.  */
   assert (compare ("1.2e32", "0x1.7aa73ap+106", APFloat::IEEEsingle,
                    APFloat::rmNearestTiesToEven));
   assert (compare ("9.87654321e12", "0x1.1f71fcp+43", APFloat::IEEEsingle,
                    APFloat::rmNearestTiesToEven));
   assert (compare ("4483519178866687", "0x1.fdb794p+51", APFloat::IEEEsingle,
                    APFloat::rmNearestTiesToEven));
-  assert (compare ("5.2E1", "52", APFloat::IEEEsingle,
+  assert (compare ("5.2E1", "520E-1", APFloat::IEEEsingle,
                    APFloat::rmNearestTiesToEven));
   assert (compare ("5E2", "500", APFloat::IEEEsingle,
                    APFloat::rmNearestTiesToEven));
   assert (compare ("0x5p0", "5", APFloat::IEEEsingle,
                    APFloat::rmNearestTiesToEven));
+  assert (compare ("7.006492321624085354618e-100", "0x0p0",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
 
   /* This number lies on a half-boundary for single-precision.  */
   assert (compare ("308105110354283262570921984", "0x1.fdb798p+87",
@@ -927,6 +935,73 @@ int main (void)
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
   assert (compare ("3.40282357E+38F", "0x1.ffffffp+127",
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+
+  /* This is FLT_MIN, first most closely, then narrowest, then
+     denormal.  */
+  assert (compare ("1.17549435E-38F", "0x1p-126",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("1.17549429E-38F", "0x1p-126",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("1.17549428E-38F", "0x1.fffffcp-127",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+
+  /* This is FLT_DENORM_MIN, first most closely, then midge's dick
+     from zero, then zero.  */
+  assert (compare ("1.40129846e-45F", "0x1p-149",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("7.006492321624085354619e-46F", "0x1p-149",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("7.006492321624085354618e-46F", "0x0p0",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+
+  assert (compare ("-7.006492321624085354619e-46F", "-0x0p0",
+                   APFloat::IEEEsingle, APFloat::rmTowardZero));
+  assert (compare ("-7.006492321624085354618e-46F", "-0x1p-149",
+                   APFloat::IEEEsingle, APFloat::rmTowardNegative));
+
+  /* Decimal to binary conversion on IEEE double-precision.  */
+#if 0
+  assert (compare ("1.2e32", "0x1.7aa73ap+106", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("9.87654321e12", "0x1.1f71fcp+43", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("4483519178866687", "0x1.fdb794p+51", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("5.2E1", "52", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("5E2", "500", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("0x5p0", "5", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+
+  /* This number lies on a half-boundary for double-precision.  */
+  assert (compare ("308105110354283262570921984", "0x1.fdb798p+87",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("308105110354283262570921983", "0x1.fdb796p+87",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+
+  /* Alternative roundings.  */
+  assert (compare ("308105110354283262570921984", "0x1.fdb796p+87",
+                   APFloat::IEEEdouble, APFloat::rmTowardZero));
+  assert (compare ("308105110354283262570921983", "0x1.fdb798p+87",
+                   APFloat::IEEEdouble, APFloat::rmTowardPositive));
+#endif
+
+  /* This is DBL_MAX closely, then widest, then overflowing.  */
+  assert (compare ("1.7976931348623157E+308", "0x1.fffffffffffffp+1023",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("1.79769313486231580793728971405303415079934132710037826936173778980444968292764750946649017977587207096330286416692887910946555547851940402630657488671505820681908902000708383676273854845817711531764475730270069855571366959622842914819860834936475292719074168444365510704342711559699508093042880e+308", "0x1.fffffffffffffp+1023",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("1.79769313486231580793728971405303415079934132710037826936173778980444968292764750946649017977587207096330286416692887910946555547851940402630657488671505820681908902000708383676273854845817711531764475730270069855571366959622842914819860834936475292719074168444365510704342711559699508093042881e+308", "0x2.0p+1023",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+
+  /* Now DBL_MIN closely.  */
+  assert (compare ("2.2250738585072014E-308", "0x1p-1022",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+
+  /* Now a denormal double.  */
+  assert (compare ("1.0864618449742194253370276940099629219820390529601229641373669027769552904364834940694741987365776e-310", "0x1.4p-1030",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
 
   return 0;
 }

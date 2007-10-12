@@ -38,7 +38,7 @@ namespace llvm {
 
     /* Number of bits in the significand.  This includes the integer
        bit.  */
-    unsigned char precision;
+    unsigned int precision;
 
     /* If the target format has an implicit integer bit.  */
     bool implicitIntegerBit;
@@ -254,17 +254,20 @@ namespace {
 
   /* The error from the true value, in half-ulps, on multiplying two
      floating point numbers, which differ from the value they
-     approximate by at most hUE1 and hUE2 half-ulps, is less than the
-     returned value.
+     approximate by at most HUE1 and HUE2 half-ulps, is strictly less
+     than the returned value.
 
      See "How to Read Floating Point Numbers Accurately" by William D
      Clinger.  */
   unsigned int
-  halfUlpsError(bool inexactMultiply, unsigned int hUE1, unsigned int hUE2)
+  HUerrBound(bool inexactMultiply, unsigned int HUerr1, unsigned int HUerr2)
   {
-    assert(hUE1 < 2 || hUE2 < 2 || (hUE1 + hUE2 < 8));
+    assert(HUerr1 < 2 || HUerr2 < 2 || (HUerr1 + HUerr2 < 8));
 
-    return inexactMultiply + 2 * (hUE1 + hUE2);
+    if (HUerr1 + HUerr2 == 0)
+      return inexactMultiply * 2;  /* <= inexactMultiply half-ulps.  */
+    else
+      return inexactMultiply + 2 * (HUerr1 + HUerr2);
   }
 
   /* The number of ulps from the boundary (zero, or half if ISNEAREST)
@@ -758,6 +761,9 @@ APFloat::divideSignificand(const APFloat &rhs)
     APInt::tcShiftLeft(dividend, partsCount, bit);
   }
 
+  /* Ensure the dividend >= divisor initially for the loop below.
+     Incidentally, this means that the division loop below is
+     guaranteed to set the integer bit to one.  */
   if(APInt::tcCompare(dividend, divisor, partsCount) < 0) {
     exponent--;
     APInt::tcShiftLeft(dividend, partsCount, 1);
@@ -1111,7 +1117,6 @@ APFloat::normalize(roundingMode rounding_mode,
   if(roundAwayFromZero(rounding_mode, lost_fraction, 0)) {
     if(omsb == 0)
       exponent = semantics->minExponent;
-
     incrementSignificand();
     omsb = significandMSB() + 1;
 
@@ -1139,7 +1144,6 @@ APFloat::normalize(roundingMode rounding_mode,
 
   /* We have a non-zero denormal.  */
   assert(omsb < semantics->precision);
-  assert(exponent == semantics->minExponent);
 
   /* Canonicalize zeroes.  */
   if(omsb == 0)
@@ -1900,15 +1904,13 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
   /* Calculate pow(5, abs(exp)).  */
   pow5PartCount = powerOf5(pow5Parts, exp >= 0 ? exp: -exp);
 
-  /* FIXME.  */
-  assert(exp >= 0);
-
-  for (;; parts++) {
+  for (;; parts *= 2) {
     opStatus sigStatus, powStatus;
-    unsigned int excessPrecision;
+    unsigned int excessPrecision, truncatedBits;
 
     calcSemantics.precision = parts * integerPartWidth - 1;
     excessPrecision = calcSemantics.precision - semantics->precision;
+    truncatedBits = excessPrecision;
 
     APFloat decSig(calcSemantics, fcZero, sign);
     APFloat pow5(calcSemantics, fcZero, false);
@@ -1917,30 +1919,52 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
                                                 rmNearestTiesToEven);
     powStatus = pow5.convertFromUnsignedParts(pow5Parts, pow5PartCount,
                                               rmNearestTiesToEven);
+    /* Add exp, as 10^n = 5^n * 2^n.  */
+    decSig.exponent += exp;
 
     lostFraction calcLostFraction;
-    integerPart hUE, ulpsRoom;
+    integerPart HUerr, HUdistance, powHUerr;
 
-    calcLostFraction = decSig.multiplySignificand(pow5, NULL);
-    hUE = halfUlpsError(calcLostFraction != lfExactlyZero, sigStatus != opOK,
-                        powStatus != opOK);
-    /* FIXME: normalize significand only, in divide case.  */
+    if (exp >= 0) {
+      /* multiplySignificand leaves the precision-th bit set to 1.  */
+      calcLostFraction = decSig.multiplySignificand(pow5, NULL);
+      powHUerr = powStatus != opOK;
+    } else {
+      calcLostFraction = decSig.divideSignificand(pow5);
+      /* Denormal numbers have less precision.  */
+      if (decSig.exponent < semantics->minExponent) {
+        excessPrecision += (semantics->minExponent - decSig.exponent);
+        truncatedBits = excessPrecision;
+        if (excessPrecision > calcSemantics.precision)
+          excessPrecision = calcSemantics.precision;
+      }
+      /* Extra half-ulp lost in reciprocal of exponent.  */
+      powHUerr = 1 + powStatus != opOK;
+    }
 
-    ulpsRoom = ulpsFromBoundary(decSig.significandParts(), excessPrecision,
-                                isNearest);
+    /* Both multiplySignificand and divideSignificand return the
+       result with the integer bit set.  */
+    assert (APInt::tcExtractBit
+            (decSig.significandParts(), calcSemantics.precision - 1) == 1);
 
-    /* Are we guaranteed to round correctly?  */
-    if (ulpsRoom * 2 >= hUE) {
-      integerPart *dst;
+    HUerr = HUerrBound(calcLostFraction != lfExactlyZero, sigStatus != opOK,
+                       powHUerr);
+    HUdistance = 2 * ulpsFromBoundary(decSig.significandParts(),
+                                      excessPrecision, isNearest);
 
-      dst = significandParts();
-      APInt::tcExtract(dst, partCount(), decSig.significandParts(),
-                       semantics->precision, excessPrecision);
+    /* Are we guaranteed to round correctly if we truncate?  */
+    if (HUdistance >= HUerr) {
+      APInt::tcExtract(significandParts(), partCount(), decSig.significandParts(),
+                       calcSemantics.precision - excessPrecision,
+                       excessPrecision);
+      /* Take the exponent of decSig.  If we tcExtract-ed less bits
+         above we must adjust our exponent to compensate for the
+         implicit right shift.  */
+      exponent = (decSig.exponent + semantics->precision
+                  - (calcSemantics.precision - excessPrecision));
       calcLostFraction = lostFractionThroughTruncation(decSig.significandParts(),
                                                        decSig.partCount(),
-                                                       excessPrecision);
-      /* Add exp, as 10^n = 5^n * 2^n.  */
-      exponent = decSig.exponent + exp;
+                                                       truncatedBits);
       return normalize(rounding_mode, calcLostFraction);
     }
   }
@@ -1985,7 +2009,7 @@ APFloat::convertFromDecimalString(const char *p, roundingMode rounding_mode)
 
   /* Now continue to do single-part arithmetic for as long as we can.
      Then do a part multiplication, and repeat.  */
-  if (decValue != -1U) {
+  while (decValue != -1U) {
     integerPart multiplier;
 
     val = 0;
