@@ -39,15 +39,12 @@ namespace llvm {
     /* Number of bits in the significand.  This includes the integer
        bit.  */
     unsigned int precision;
-
-    /* If the target format has an implicit integer bit.  */
-    bool implicitIntegerBit;
   };
 
-  const fltSemantics APFloat::IEEEsingle = { 127, -126, 24, true };
-  const fltSemantics APFloat::IEEEdouble = { 1023, -1022, 53, true };
-  const fltSemantics APFloat::IEEEquad = { 16383, -16382, 113, true };
-  const fltSemantics APFloat::x87DoubleExtended = { 16383, -16382, 64, false };
+  const fltSemantics APFloat::IEEEsingle = { 127, -126, 24 };
+  const fltSemantics APFloat::IEEEdouble = { 1023, -1022, 53 };
+  const fltSemantics APFloat::IEEEquad = { 16383, -16382, 113 };
+  const fltSemantics APFloat::x87DoubleExtended = { 16383, -16382, 64 };
 
   /* A tight upper bound on number of parts required to hold the value
      pow(5, power) is
