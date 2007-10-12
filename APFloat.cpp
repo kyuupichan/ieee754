@@ -313,65 +313,6 @@ namespace {
     return ~(integerPart) 0; /* A lot.  */
   }
 
-  /* Zero at the end to avoid modular arithmetic when adding one; used
-     when rounding up during hexadecimal output.  */
-  static const char hexDigitsLower[] = "0123456789abcdef0";
-  static const char hexDigitsUpper[] = "0123456789ABCDEF0";
-  static const char infinityL[] = "infinity";
-  static const char infinityU[] = "INFINITY";
-  static const char NaNL[] = "nan";
-  static const char NaNU[] = "NAN";
-
-  /* Write out an integerPart in hexadecimal, starting with the most
-     significant nibble.  Write out exactly COUNT hexdigits, return
-     COUNT.  */
-  static unsigned int
-  partAsHex (char *dst, integerPart part, unsigned int count,
-             const char *hexDigitChars)
-  {
-    unsigned int result = count;
-
-    assert (count != 0 && count <= integerPartWidth / 4);
-
-    part >>= (integerPartWidth - 4 * count);
-    while (count--) {
-      dst[count] = hexDigitChars[part & 0xf];
-      part >>= 4;
-    }
-
-    return result;
-  }
-
-  /* Write out an unsigned decimal integer.  */
-  static char *
-  writeUnsignedDecimal (char *dst, unsigned int n)
-  {
-    char buff[40], *p;
-
-    p = buff;
-    do
-      *p++ = '0' + n % 10;
-    while (n /= 10);
-
-    do
-      *dst++ = *--p;
-    while (p != buff);
-
-    return dst;
-  }
-
-  /* Write out a signed decimal integer.  */
-  static char *
-  writeSignedDecimal (char *dst, int value)
-  {
-    if (value < 0) {
-      *dst++ = '-';
-      dst = writeUnsignedDecimal(dst, -(unsigned) value);
-    } else
-      dst = writeUnsignedDecimal(dst, value);
-
-    return dst;
-  }
 
   /* Place pow(5, power) in DST, and return the number of parts used.
      DST must be at least one part larger than size of the answer.  */
@@ -443,6 +384,66 @@ namespace {
       APInt::tcAssign(dst, p1, result);
 
     return result;
+  }
+
+  /* Zero at the end to avoid modular arithmetic when adding one; used
+     when rounding up during hexadecimal output.  */
+  static const char hexDigitsLower[] = "0123456789abcdef0";
+  static const char hexDigitsUpper[] = "0123456789ABCDEF0";
+  static const char infinityL[] = "infinity";
+  static const char infinityU[] = "INFINITY";
+  static const char NaNL[] = "nan";
+  static const char NaNU[] = "NAN";
+
+  /* Write out an integerPart in hexadecimal, starting with the most
+     significant nibble.  Write out exactly COUNT hexdigits, return
+     COUNT.  */
+  static unsigned int
+  partAsHex (char *dst, integerPart part, unsigned int count,
+             const char *hexDigitChars)
+  {
+    unsigned int result = count;
+
+    assert (count != 0 && count <= integerPartWidth / 4);
+
+    part >>= (integerPartWidth - 4 * count);
+    while (count--) {
+      dst[count] = hexDigitChars[part & 0xf];
+      part >>= 4;
+    }
+
+    return result;
+  }
+
+  /* Write out an unsigned decimal integer.  */
+  static char *
+  writeUnsignedDecimal (char *dst, unsigned int n)
+  {
+    char buff[40], *p;
+
+    p = buff;
+    do
+      *p++ = '0' + n % 10;
+    while (n /= 10);
+
+    do
+      *dst++ = *--p;
+    while (p != buff);
+
+    return dst;
+  }
+
+  /* Write out a signed decimal integer.  */
+  static char *
+  writeSignedDecimal (char *dst, int value)
+  {
+    if (value < 0) {
+      *dst++ = '-';
+      dst = writeUnsignedDecimal(dst, -(unsigned) value);
+    } else
+      dst = writeUnsignedDecimal(dst, value);
+
+    return dst;
   }
 }
 
@@ -1114,6 +1115,7 @@ APFloat::normalize(roundingMode rounding_mode,
   if(roundAwayFromZero(rounding_mode, lost_fraction, 0)) {
     if(omsb == 0)
       exponent = semantics->minExponent;
+
     incrementSignificand();
     omsb = significandMSB() + 1;
 
@@ -1889,7 +1891,7 @@ APFloat::roundSignificandWithExponent(const integerPart *decSigParts,
                                       roundingMode rounding_mode)
 {
   unsigned int parts, pow5PartCount;
-  fltSemantics calcSemantics = { 32767, -32767 };
+  fltSemantics calcSemantics = { 32767, -32767, 0 };
   integerPart pow5Parts[maxPowerOfFiveParts];
   bool isNearest;
 

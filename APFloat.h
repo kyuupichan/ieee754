@@ -60,7 +60,10 @@
     if the requested precision is less than the natural precision the
     output is correctly rounded for the specified rounding mode.
 
-    Conversion to and from decimal text is not currently implemented.
+    It also reads decimal floating point numbers and correctly rounds
+    according to the specified rounding mode.
+
+    Conversion to decimal text is not currently implemented.
 
     Non-zero finite numbers are represented internally as a sign bit,
     a 16-bit signed exponent, and the significand as an array of
@@ -83,13 +86,12 @@
 
     Some features that may or may not be worth adding:
 
-    Conversions to and from decimal strings (hard).
+    Binary to decimal conversion (hard).
 
     Optional ability to detect underflow tininess before rounding.
 
     New formats: x87 in single and double precision mode (IEEE apart
-    from extended exponent range) and IBM two-double extended
-    precision (hard).
+    from extended exponent range) (hard).
 
     New operations: sqrt, IEEE remainder, C90 fmod, nextafter,
     nexttoward.
@@ -202,7 +204,10 @@ namespace llvm {
     /* Comparison with another floating point number.  */
     cmpResult compare(const APFloat &) const;
 
-    /* Convert to hexadecimal string.  */
+    /* Write out a hexadecimal representation of the floating point
+       value to DST, which must be of sufficient size, in the C99 form
+       [-]0xh.hhhhp[+-]d.  Return the number of characters written,
+       excluding the terminating NUL.  */
     unsigned int convertToHexString(char *dst, unsigned int hexDigits,
 				    bool upperCase, roundingMode) const;
 
@@ -212,6 +217,8 @@ namespace llvm {
     bool isZero() const { return category == fcZero; }
     bool isNonZero() const { return category != fcZero; }
     bool isNegative() const { return sign; }
+    bool isPosZero() const { return isZero() && !isNegative(); }
+    bool isNegZero() const { return isZero() && isNegative(); }
 
     APFloat& operator=(const APFloat &);
 
