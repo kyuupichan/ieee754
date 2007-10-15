@@ -969,11 +969,24 @@ int main (void)
   assert (compare ("1.4e-47F", "0x0p0",
                    APFloat::IEEEsingle, APFloat::rmTowardZero));
 
-  /* Decimal to binary conversion on IEEE double-precision.  */
+  /* Decimal to binary conversion on IEEE double-precision, then hard
+     cases.  */
   assert (compare ("1.2e234", "0x1.82780b8bbd6b7p+777", APFloat::IEEEdouble,
                    APFloat::rmNearestTiesToEven));
   assert (compare (".13", "0x1.0a3d70a3d70a4p-3", APFloat::IEEEdouble,
                    APFloat::rmNearestTiesToEven));
+  assert (compare ("834548641e-46", "0x1.c65f1a8ed60c4p-124", APFloat::IEEEdouble,
+                   APFloat::rmNearestTiesToEven));
+  assert (compare ("412413848938563e-27", "0x1.d05632e531e79p-42",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("5592117679628511e-48", "0x1.d09330a4597fep-108",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("83881765194427665e-50", "0x1.16beb6c9027ffp-110",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("356645068918103229683e-42", "0xd.79426bd75b3c68p-75",
+                   APFloat::x87DoubleExtended, APFloat::rmNearestTiesToEven));
+  assert (compare ("4891559871276714924261e222", "0x1.6ecaf7694a3c7p+809",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
 
   /* This is DBL_MAX closely, then widest, then overflowing.  */
   assert (compare ("1.7976931348623157E+308", "0x1.fffffffffffffp+1023",
