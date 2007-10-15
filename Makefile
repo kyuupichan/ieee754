@@ -1,4 +1,4 @@
-CXXFLAGS=
+CXXFLAGS=-O2
 
 all: test-special test-normal test-print test-speed test-libc
 

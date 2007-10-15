@@ -964,6 +964,11 @@ int main (void)
   assert (compare ("-7.006492321624085354618e-46F", "-0x1p-149",
                    APFloat::IEEEsingle, APFloat::rmTowardNegative));
 
+  assert (compare ("1.4e-47F", "0x1p-149",
+                   APFloat::IEEEsingle, APFloat::rmTowardPositive));
+  assert (compare ("1.4e-47F", "0x0p0",
+                   APFloat::IEEEsingle, APFloat::rmTowardZero));
+
   /* Decimal to binary conversion on IEEE double-precision.  */
   assert (compare ("1.2e234", "0x1.82780b8bbd6b7p+777", APFloat::IEEEdouble,
                    APFloat::rmNearestTiesToEven));
