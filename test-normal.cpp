@@ -716,6 +716,16 @@ int main (void)
 	  assert (convertToInteger ("0x11p0", 5, true, rm, kind,
 				      0, APFloat::opInvalidOp));
 
+	  assert (convertToInteger ("0x1p63", 64, false, rm, kind,
+                                    1ULL << 63, APFloat::opOK));
+	  assert (convertToInteger ("0x1p63", 64, true, rm, kind,
+                                    0, APFloat::opInvalidOp));
+	  assert (convertToInteger ("0x1p64", 64, false, rm, kind,
+                                    0, APFloat::opInvalidOp));
+          assert (convertToInteger ("-0x1p63", 64,
+                                    true, rm, kind,
+                                    1ULL << 63, APFloat::opOK));
+
 	  for (int k = 0; k <= 1; k++)
 	    {
 	      assert (convertToInteger ("0x1p-1", 5, k, rm, kind,
@@ -737,6 +747,45 @@ int main (void)
 					  || rm == APFloat::rmNearestTiesToEven
 					  ? 2: 1, APFloat::opInexact));
 	    }
+
+          if (&kind == &APFloat::IEEEquad)
+            {
+              if (rm == APFloat::rmTowardNegative
+                  || rm == APFloat::rmNearestTiesToEven)
+                assert (convertToInteger ("-0x1.ffffffffffffffffp62", 64,
+                                          true, rm, kind,
+                                          1ULL << 63, APFloat::opInexact));
+
+              if (rm == APFloat::rmTowardNegative)
+                {
+                  assert (convertToInteger ("-0x1.8000000000000000p63", 64,
+                                            true, rm, kind,
+                                            0, APFloat::opInvalidOp));
+                  assert (convertToInteger ("-0x1.0000000000000001p63", 64,
+                                            true, rm, kind,
+                                            0, APFloat::opInvalidOp));
+                }
+
+              if (rm == APFloat::rmTowardPositive
+                  || rm == APFloat::rmNearestTiesToEven)
+                {
+                  assert (convertToInteger ("0x1.ffffffffffffffffp63", 64,
+                                            false, rm, kind,
+                                            0, APFloat::opInvalidOp));
+                  assert (convertToInteger ("0x1.ffffffffffffffffp62", 64,
+                                            true, rm, kind,
+                                            0, APFloat::opInvalidOp));
+                }
+              else
+                {
+                  assert (convertToInteger ("0x1.ffffffffffffffffp63", 64,
+                                            false, rm, kind,
+                                            ~0ULL, APFloat::opInexact));
+                  assert (convertToInteger ("0x1.ffffffffffffffffp62", 64,
+                                            true, rm, kind,
+                                            ~0ULL >> 1, APFloat::opInexact));
+                }
+            }
 
 	  if (rm == APFloat::rmTowardPositive
 	      || rm == APFloat::rmNearestTiesToEven)
@@ -919,6 +968,11 @@ int main (void)
                    APFloat::rmNearestTiesToEven));
   assert (compare ("7.006492321624085354618e-100", "0x0p0",
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("7.7071415537864938900805e-45", "0x1.4p-147",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+  assert (compare ("7.7071415537864938900806e-45", "0x1.8p-147",
+                   APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+
 
   /* This number lies on a half-boundary for single-precision.  */
   assert (compare ("308105110354283262570921984", "0x1.fdb798p+87",
