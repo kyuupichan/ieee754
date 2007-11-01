@@ -715,6 +715,8 @@ int main (void)
 				      -16, APFloat::opOK));
 	  assert (convertToInteger ("0x11p0", 5, true, rm, kind,
 				      0, APFloat::opInvalidOp));
+	  assert (convertToInteger ("-15.5", 4, true, rm, kind,
+				      0, APFloat::opInvalidOp));
 
 	  assert (convertToInteger ("0x1p63", 64, false, rm, kind,
                                     1ULL << 63, APFloat::opOK));
