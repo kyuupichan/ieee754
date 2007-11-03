@@ -105,7 +105,7 @@ namespace {
 
      If the exponent overflows, returns a large exponent with the
      appropriate sign.  */
-  static int
+  int
   readExponent(const char *p)
   {
     bool isNegative;
@@ -143,7 +143,7 @@ namespace {
 
   /* This is ugly and needs cleaning up, but I don't immediately see
      how whilst remaining safe.  */
-  static int
+  int
   totalExponent(const char *p, int exponentAdjustment)
   {
     integerPart unsignedExponent;
@@ -418,7 +418,7 @@ namespace {
 
   /* Place pow(5, power) in DST, and return the number of parts used.
      DST must be at least one part larger than size of the answer.  */
-  static unsigned int
+  unsigned int
   powerOf5(integerPart *dst, unsigned int power)
   {
     static integerPart firstEightPowers[] = { 1, 5, 25, 125, 625, 3125,
@@ -482,7 +482,7 @@ namespace {
   /* Write out an integerPart in hexadecimal, starting with the most
      significant nibble.  Write out exactly COUNT hexdigits, return
      COUNT.  */
-  static unsigned int
+  unsigned int
   partAsHex (char *dst, integerPart part, unsigned int count,
              const char *hexDigitChars)
   {
@@ -500,7 +500,7 @@ namespace {
   }
 
   /* Write out an unsigned decimal integer.  */
-  static char *
+  char *
   writeUnsignedDecimal (char *dst, unsigned int n)
   {
     char buff[40], *p;
@@ -518,7 +518,7 @@ namespace {
   }
 
   /* Write out a signed decimal integer.  */
-  static char *
+  char *
   writeSignedDecimal (char *dst, int value)
   {
     if (value < 0) {
@@ -1757,7 +1757,8 @@ APFloat::convert(const fltSemantics &toSemantics, roundingMode rounding_mode)
 
 /* Convert a floating point number to an integer according to the
    rounding mode.  If the rounded integer value is out of range this
-   returns an invalid operation exception.  If the rounded value is in
+   returns an invalid operation exception and the contents of the
+   destination parts are unspecified.  If the rounded value is in
    range but the floating point number is not the exact integer, the C
    standard doesn't require an inexact exception to be raised.  IEEE
    854 does require it so we do that.
