@@ -188,6 +188,8 @@ namespace llvm {
     opStatus fmod(const APFloat &);
     opStatus remainder(const APFloat &);
 
+    opStatus badmod(const APFloat &, roundingMode);
+
     /* Sign operations.  */
     void changeSign();
     void clearSign();

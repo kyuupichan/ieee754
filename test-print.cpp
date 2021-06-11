@@ -111,7 +111,6 @@ int main (void)
 
   return 0;
 }
-#endif
 
 /* A tight upper bound on number of parts required to hold the value
    pow (5, power) is
@@ -181,20 +180,22 @@ powerOf5 (integerPart *dst, unsigned int power)
 
   return result;
 }
+#endif
 
 int main (void)
 {
-  integerPart scratch[maxParts];
+  char dst[30];
 
-  for (unsigned int n = 0; n < 4400; n++)
-    {
-      unsigned int c, est;
+  APFloat x (APFloat::IEEEsingle, "0x1.345672p+30");
+  APFloat y (APFloat::IEEEsingle, "0x1.56789ap-20");
 
-      c = powerOf5 (scratch, n);
-      est = n * 1024 / (441 * integerPartWidth) + 1;
-      printf ("pow (5, %u) requires %u parts; estimate %u\n", n, c, est);
-      assert (est >= c);
-    }
+  x.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
+  printf ("x: %s\n", dst);
+  y.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
+  printf ("y: %s\n", dst);
+  x.badmod(y, APFloat::rmNearestTiesToEven);
+  x.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
+  printf ("mod: %s\n", dst);
 
   return 0;
 }

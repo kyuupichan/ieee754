@@ -2370,3 +2370,39 @@ APFloat::convertNormalToHexString(char *dst, unsigned int hexDigits,
 
   return writeSignedDecimal (dst, exponent);
 }
+
+/* Normalized remainder.  This is not currently doing TRT.  */
+APFloat::opStatus
+APFloat::badmod(const APFloat &rhs, roundingMode rounding_mode)
+{
+  opStatus fs;
+  APFloat V = *this;
+  unsigned int origSign = sign;
+
+  fs = V.divide(rhs, rmNearestTiesToEven);
+  if (fs == opDivByZero)
+    return fs;
+
+  int parts = partCount();
+  integerPart *x = new integerPart[parts];
+
+  fs = V.convertToInteger(x, parts * integerPartWidth, true,
+                          rmNearestTiesToEven);
+  if (fs==opInvalidOp)
+    return fs;
+
+  fs = V.convertFromSignExtendedInteger(x, parts * integerPartWidth, true,
+                                        rmNearestTiesToEven);
+  assert(fs==opOK);   // should always work
+
+  fs = V.multiply(rhs, rounding_mode);
+  assert(fs==opOK || fs==opInexact);   // should not overflow or underflow
+
+  fs = subtract(V, rounding_mode);
+  assert(fs==opOK || fs==opInexact);   // likewise
+
+  if (isZero())
+    sign = origSign;    // IEEE754 requires this
+  delete[] x;
+  return fs;
+}
