@@ -50,7 +50,7 @@ namespace llvm {
      pow(5, power) is
 
        power * 815 / (351 * integerPartWidth) + 1
-       
+
      However, whilst the result may require only this many parts,
      because we are multiplying two values to get it, the
      multiplication may require an extra part with the excess part
@@ -1161,7 +1161,7 @@ APFloat::addOrSubtractSpecials(const APFloat &rhs, bool subtract)
   case convolve(fcInfinity, fcInfinity):
     /* Differently signed infinities can only be validly
        subtracted.  */
-    if(sign ^ rhs.sign != subtract) {
+    if((sign ^ rhs.sign) != subtract) {
       category = fcNaN;
       return opInvalidOp;
     }
@@ -1713,7 +1713,7 @@ APFloat::convert(const fltSemantics &toSemantics, roundingMode rounding_mode)
   lostFraction lostFraction;
   unsigned int newPartCount, oldPartCount;
   opStatus fs;
-  
+
   lostFraction = lfExactlyZero;
   newPartCount = partCountForBits(toSemantics.precision + 1);
   oldPartCount = partCount();

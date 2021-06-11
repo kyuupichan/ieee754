@@ -193,6 +193,7 @@ divide (const char *a, const char *b, const char *c,
   return compare (lhs, result);
 }
 
+#if 0
 static bool
 fmod (const char *a, const char *b, const char *c,
       const fltSemantics &kind)
@@ -220,6 +221,7 @@ remainder (const char *a, const char *b, const char *c,
 
   return compare (lhs, result);
 }
+#endif
 
 static bool
 compare (const char *a, const char *b, const fltSemantics &kind,
@@ -819,7 +821,7 @@ int main (void)
     {
       static integerPart flt_max[]= { 0, ((1ULL << 24) - 1) << 40, 0 };
       static integerPart flt_max2[]= { 0, (((1ULL << 24) - 1) << 40) + 1, 0 };
-				   
+
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
 
       for (int j = 0; j < 4; j++)
@@ -869,7 +871,7 @@ int main (void)
 				      APFloat::IEEEsingle, "-0x2000000p0",
 				      APFloat::opInexact));
 
-      
+
     }
 
   /* Subtraction, exact.  */
