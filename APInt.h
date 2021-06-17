@@ -145,7 +145,7 @@ public:
   static void tcOr(integerPart *, const integerPart *, unsigned int);
   static void tcXor(integerPart *, const integerPart *, unsigned int);
   static void tcComplement(integerPart *, unsigned int);
-  
+
   /// Comparison (unsigned) of two bignums.
   static int tcCompare(const integerPart *, const integerPart *,
 		       unsigned int);

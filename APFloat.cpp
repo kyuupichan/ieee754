@@ -107,38 +107,66 @@ namespace {
         resOverflow
     };
 
-  /* Read a decimal exponent of the form [+-]ddddddd and place the result in exponent.
+  /* Read a decimal exponent of the form [+-]ddddddd, add delta, and place the
+     result in exponent.
 
      Returns a value of type readExponentStatus.  */
   enum readExponentStatus
-  readExponent(const char *p, int &exponent)
+  readExponent(const char *p, int delta, exponent_t &exponent)
   {
-    bool isNegative;
+    bool isNegative, overflow;
     integerPart absExponent;
+    unsigned int value;
 
+    overflow = false;
     isNegative = (*p == '-');
     if (*p == '-' || *p == '+')
       p++;
 
-    absExponent = decDigitValue(*p++);
-    assert (absExponent < 10U);
+    value = decDigitValue(*p++);
+    assert (value < 10U);
+    absExponent = value;
 
     for (;;) {
-      integerPart value;
-
       value = decDigitValue(*p);
       if (value >= 10U)
         break;
 
       p++;
-      absExponent = absExponent * 10 + value;
-      if (absExponent >= maxAbsExponent) {
-          exponent = 0;
-          if (isNegative)
-              return resUnderflow;
-          else
-              return resOverflow;
+      if (absExponent > ((integerPart) -1 - value) / 10) {
+          overflow = true;
+          break;
       }
+      absExponent = absExponent * 10 + value;
+    }
+
+    if (isNegative == (delta < 0)) {
+        if (absExponent + abs(delta) < absExponent)
+            overflow = true;
+        else
+            absExponent += abs(delta);
+    } else {
+        if (absExponent >= abs(delta))
+            absExponent -= abs(delta);
+        else {
+            absExponent = abs(delta) - absExponent;
+            isNegative = not isNegative;
+        }
+    }
+
+    if (absExponent > maxAbsExponent)
+        overflow = true;
+
+    if (overflow) {
+        /* Set the exponent to maximum or minimum; this ensures hexadecimal floating point
+           reading normalizes appropriately.  */
+        if (isNegative) {
+            exponent = -maxAbsExponent;
+            return resUnderflow;
+        } else {
+            exponent = maxAbsExponent;
+            return resOverflow;
+        }
     }
 
     exponent = (int) absExponent;
@@ -147,54 +175,6 @@ namespace {
         exponent = -exponent;
 
     return resOK;
-  }
-
-  /* This is ugly and needs cleaning up, but I don't immediately see
-     how whilst remaining safe.  */
-  int
-  totalExponent(const char *p, int exponentAdjustment)
-  {
-    integerPart unsignedExponent;
-    bool negative, overflow;
-    long exponent;
-
-    /* Move past the exponent letter and sign to the digits.  */
-    p++;
-    negative = *p == '-';
-    if(*p == '-' || *p == '+')
-      p++;
-
-    unsignedExponent = 0;
-    overflow = false;
-    for(;;) {
-      unsigned int value;
-
-      value = decDigitValue(*p);
-      if(value >= 10U)
-        break;
-
-      p++;
-      unsignedExponent = unsignedExponent * 10 + value;
-      if(unsignedExponent > 65535)
-        overflow = true;
-    }
-
-    if(exponentAdjustment > 65535 || exponentAdjustment < -65536)
-      overflow = true;
-
-    if(!overflow) {
-      exponent = unsignedExponent;
-      if(negative)
-        exponent = -exponent;
-      exponent += exponentAdjustment;
-      if(exponent > 65535 || exponent < -65536)
-        overflow = true;
-    }
-
-    if(overflow)
-      exponent = negative ? -65536: 65535;
-
-    return exponent;
   }
 
   const char *
@@ -258,8 +238,11 @@ namespace {
 
     /* If number is all zerooes accept any exponent.  */
     if (decDigitValue(*p) >= 10U) {
-      if (*p == 'e' || *p == 'E')
-        D->res = readExponent(p + 1, D->exponent);
+      if (*p == 'e' || *p == 'E') {
+          exponent_t exponent;
+          D->res = readExponent(p + 1, 0, exponent);
+          D->exponent = exponent;
+      }
 
       /* Implied decimal point?  */
       if (!dot)
@@ -2008,7 +1991,7 @@ APFloat::convertFromHexadecimalString(const char *p,
     expAdjustment -= partsCount * integerPartWidth;
 
     /* Adjust for the given exponent.  */
-    exponent = totalExponent(p, expAdjustment);
+    readExponent(p + 1, expAdjustment, exponent);
   }
 
   return normalize(rounding_mode, lost_fraction);
