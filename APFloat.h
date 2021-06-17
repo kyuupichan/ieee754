@@ -107,6 +107,7 @@ namespace llvm {
 
   /* Exponents are stored as signed numbers.  */
   typedef signed short exponent_t;
+  static integerPart maxAbsExponent = 32767;   // SHORT_MAX
 
   struct fltSemantics;
 

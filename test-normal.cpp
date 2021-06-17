@@ -242,6 +242,9 @@ int main (void)
   APFloat d_pos_infinity (APFloat::IEEEdouble, APFloat::fcInfinity, false);
   APFloat d_neg_infinity (APFloat::IEEEdouble, APFloat::fcInfinity, true);
   APFloat f_pos_infinity (APFloat::IEEEsingle, APFloat::fcInfinity, false);
+  APFloat f_neg_infinity (APFloat::IEEEsingle, APFloat::fcInfinity, true);
+  APFloat f_pos_zero (APFloat::IEEEsingle, APFloat::fcZero, false);
+  APFloat f_neg_zero (APFloat::IEEEsingle, APFloat::fcZero, true);
 
   /* Test floating-point exact divisions.  */
   for (int i = 0; i < 4; i++)
@@ -977,7 +980,6 @@ int main (void)
   assert (compare ("7.7071415537864938900806e-45", "0x1.8p-147",
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
 
-
   /* This number lies on a half-boundary for single-precision.  */
   assert (compare ("308105110354283262570921984", "0x1.fdb798p+87",
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
@@ -998,6 +1000,24 @@ int main (void)
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
   assert (compare ("3.40282357E+38F", "0x1.ffffffp+127",
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
+
+  /* Test exponent overflow.  */
+  assert(compare(APFloat(APFloat::IEEEsingle, "0.0e99999"), f_pos_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "-0.0e99999"), f_neg_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e39"), f_pos_infinity));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e51085"), f_pos_infinity));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e99999"), f_pos_infinity));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e99999999999999999999999999"), f_pos_infinity));
+  assert(compare(APFloat(APFloat::IEEEsingle, "-1.0e51085"), f_neg_infinity));
+
+  /* Test exponent underflow.  */
+  assert(APFloat(APFloat::IEEEsingle, "1.0e-45").getCategory() != APFloat::fcZero);
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e-46"), f_pos_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "-1.0e-46"), f_neg_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e-51085"), f_pos_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "-1.0e-51085"), f_neg_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e-99999"), f_pos_zero));
+  assert(compare(APFloat(APFloat::IEEEsingle, "1.0e-99999999999999999999999999"), f_pos_zero));
 
   /* This is FLT_MIN, first most closely, then narrowest, then
      denormal.  */

@@ -100,17 +100,21 @@ namespace {
     return -1U;
   }
 
-  /* Return the value of a decimal exponent of the form
-     [+-]ddddddd.
+    // Return value of readExponent.
+    enum readExponentStatus {
+        resOK,
+        resUnderflow,
+        resOverflow
+    };
 
-     If the exponent overflows, returns a large exponent with the
-     appropriate sign.  */
-  int
-  readExponent(const char *p)
+  /* Read a decimal exponent of the form [+-]ddddddd and place the result in exponent.
+
+     Returns a value of type readExponentStatus.  */
+  enum readExponentStatus
+  readExponent(const char *p, int &exponent)
   {
     bool isNegative;
-    unsigned int absExponent;
-    const unsigned int overlargeExponent = 24000;  /* FIXME.  */
+    integerPart absExponent;
 
     isNegative = (*p == '-');
     if (*p == '-' || *p == '+')
@@ -120,25 +124,29 @@ namespace {
     assert (absExponent < 10U);
 
     for (;;) {
-      unsigned int value;
+      integerPart value;
 
       value = decDigitValue(*p);
       if (value >= 10U)
         break;
 
       p++;
-      value += absExponent * 10;
-      if (absExponent >= overlargeExponent) {
-        absExponent = overlargeExponent;
-        break;
+      absExponent = absExponent * 10 + value;
+      if (absExponent >= maxAbsExponent) {
+          exponent = 0;
+          if (isNegative)
+              return resUnderflow;
+          else
+              return resOverflow;
       }
-      absExponent = value;
     }
 
+    exponent = (int) absExponent;
+    assert(exponent == absExponent);
     if (isNegative)
-      return -(int) absExponent;
-    else
-      return (int) absExponent;
+        exponent = -exponent;
+
+    return resOK;
   }
 
   /* This is ugly and needs cleaning up, but I don't immediately see
@@ -223,6 +231,7 @@ namespace {
     const char *lastSigDigit;
     int exponent;
     int normalizedExponent;
+    enum readExponentStatus res;
   };
 
   void
@@ -235,6 +244,7 @@ namespace {
     D->firstSigDigit = p;
     D->exponent = 0;
     D->normalizedExponent = 0;
+    D->res = resOK;
 
     for (;;) {
       if (*p == '.') {
@@ -249,7 +259,7 @@ namespace {
     /* If number is all zerooes accept any exponent.  */
     if (decDigitValue(*p) >= 10U) {
       if (*p == 'e' || *p == 'E')
-        D->exponent = readExponent(p + 1);
+        D->res = readExponent(p + 1, D->exponent);
 
       /* Implied decimal point?  */
       if (!dot)
@@ -2117,13 +2127,15 @@ APFloat::convertFromDecimalString(const char *p, roundingMode rounding_mode)
   if (decDigitValue(*D.firstSigDigit) >= 10U) {
     category = fcZero;
     fs = opOK;
-  } else if ((D.normalizedExponent + 1) * 28738
-             <= 8651 * (semantics->minExponent - (int) semantics->precision)) {
+  } else if (D.res == resUnderflow ||
+             (D.res == resOK && (D.normalizedExponent + 1) * 28738
+              <= 8651 * (semantics->minExponent - (int) semantics->precision))) {
     /* Underflow to zero and round.  */
     zeroSignificand();
     fs = normalize(rounding_mode, lfLessThanHalf);
-  } else if ((D.normalizedExponent - 1) * 42039
-             >= 12655 * semantics->maxExponent) {
+  } else if (D.res == resOverflow ||
+             (D.res == resOK && (D.normalizedExponent - 1) * 42039
+              >= 12655 * semantics->maxExponent)) {
     /* Overflow and round.  */
     fs = handleOverflow(rounding_mode);
   } else {
