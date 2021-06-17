@@ -1006,6 +1006,7 @@ int main (void)
   assert(compare(APFloat(APFloat::IEEEsingle, "-0.0e99999"), f_neg_zero));
   assert(compare(APFloat(APFloat::IEEEsingle, "1.0e39"), f_pos_infinity));
   assert(compare(APFloat(APFloat::IEEEsingle, "1.0e51085"), f_pos_infinity));
+  assert(compare(APFloat(APFloat::IEEEsingle, "0x1p-18446744073709551615"), f_pos_zero));
   assert(compare(APFloat(APFloat::IEEEsingle, "1.0e99999"), f_pos_infinity));
   assert(compare(APFloat(APFloat::IEEEsingle, "1.0e99999999999999999999999999"), f_pos_infinity));
   assert(compare(APFloat(APFloat::IEEEsingle, "-1.0e51085"), f_neg_infinity));

@@ -140,6 +140,10 @@ namespace {
       absExponent = absExponent * 10 + value;
     }
 
+    // Add delta to the exponent but in absolute-value terms.  Check if the delta and the
+    // exponent have the same sign.
+    // Doing it like this is tricky but ensures we correctly handle the widest range of
+    // exponent and delta values without prematurely overflowing.
     if (isNegative == (delta < 0)) {
         if (absExponent + abs(delta) < absExponent)
             overflow = true;
