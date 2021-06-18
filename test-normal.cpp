@@ -877,7 +877,7 @@ int main (void)
 
     }
 
-  /* Subtraction, exact.  */
+  /* FMA.  */
   for (int i = 0; i < 4; i++)
     {
       APFloat::roundingMode rm ((APFloat::roundingMode) i);
@@ -894,6 +894,8 @@ int main (void)
 		   rm, kind, APFloat::opOK));
       assert (fma ("0x4p0", "0x9p0", "0xfp0", "0x33p0",
 		   rm, kind, APFloat::opOK));
+      assert( fma ("14.5", "-14.5", "225.0", "14.75",
+                   rm, kind, APFloat::opOK));
 
       assert( fma ("0x1.7e5p0", "0x1.3bbp0", "0x1.0p-24",
 		   "0x1.d77348p0", rm, kind, APFloat::opOK));
@@ -909,6 +911,9 @@ int main (void)
 		   inf ? "0x1.000002p0" : "0x1.0p0",
 		   rm, kind, APFloat::opInexact));
     }
+
+  assert(fma("5.87747e-39", "5.87747e-39", "12.0", "12.0",
+             APFloat::rmNearestTiesToEven, APFloat::IEEEdouble, APFloat::opInexact));
 
 #if 0
   assert (remainder ("1.2e234", "0.13", "0x1.97b55ff72df4p-6",

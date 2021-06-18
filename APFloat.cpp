@@ -705,7 +705,7 @@ lostFraction
 APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
 {
   unsigned int omsb;    // One, not zero, based MSB.
-  unsigned int partsCount, newPartsCount, precision;
+  unsigned int partsCount, newPartsCount, precision, extendedPrecision;
   integerPart *lhsSignificand;
   integerPart scratch[4];
   integerPart *fullSignificand;
@@ -714,7 +714,8 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
   assert(semantics == rhs.semantics);
 
   precision = semantics->precision;
-  newPartsCount = partCountForBits(precision * 2);
+  extendedPrecision = precision * 2;
+  newPartsCount = partCountForBits(extendedPrecision);
 
   if(newPartsCount > 4)
     fullSignificand = new integerPart[newPartsCount];
@@ -729,21 +730,30 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
 
   lost_fraction = lfExactlyZero;
   omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
-  exponent += rhs.exponent;
+
+  /* Adjust the exponent to the wide precision.  The multiplied values are
+
+       sig1 * 2 ^ (exp1 + (precision - 1))
+       sig2 * 2 ^ (exp2 * (precision - 1))
+
+     So writing the product as:
+
+       sig1 * sig2 * 2 ^ ((exp1 + exp2 + 1) + (extendedPrecision - 1))
+
+     we have the multiplied significand with exponent (exp1 + exp2 + 1) in extendedPrecision.
+  */
+  exponent += rhs.exponent + 1;
 
   if(addend) {
     Significand savedSignificand = significand;
     const fltSemantics *savedSemantics = semantics;
     fltSemantics extendedSemantics;
     opStatus status;
-    unsigned int extendedPrecision;
 
     /* Normalize our MSB.  */
-    extendedPrecision = precision + precision - 1;
     if(omsb != extendedPrecision)
       {
-        APInt::tcShiftLeft(fullSignificand, newPartsCount,
-                           extendedPrecision - omsb);
+        APInt::tcShiftLeft(fullSignificand, newPartsCount, extendedPrecision - omsb);
         exponent -= extendedPrecision - omsb;
       }
 
@@ -771,7 +781,9 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
     omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
   }
 
-  exponent -= (precision - 1);
+  /* Now narrow from the extended precision back to normal precision, shifting the
+     significand if necessary.  */
+  exponent -= precision;
 
   if(omsb > precision) {
     unsigned int bits, significantParts;
@@ -1441,7 +1453,7 @@ APFloat::multiply(const APFloat &rhs, roundingMode rounding_mode)
   fs = multiplySpecials(rhs);
 
   if(category == fcNormal) {
-    lostFraction lost_fraction = multiplySignificand(rhs, 0);
+    lostFraction lost_fraction = multiplySignificand(rhs, NULL);
     fs = normalize(rounding_mode, lost_fraction);
     if(lost_fraction != lfExactlyZero)
       fs = (opStatus) (fs | opInexact);
