@@ -731,7 +731,7 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
   lost_fraction = lfExactlyZero;
   omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
 
-  /* Adjust the exponent to the wide precision.  The multiplied values are
+  /* Below we adjust the exponent to the extended precision.  The multiplied values are
 
        sig1 * 2 ^ (exp1 + (precision - 1))
        sig2 * 2 ^ (exp2 * (precision - 1))
@@ -742,13 +742,19 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
 
      we have the multiplied significand with exponent (exp1 + exp2 + 1) in extendedPrecision.
   */
-  exponent += rhs.exponent + 1;
-
   if(addend && addend->category == fcNormal) {
-    Significand savedSignificand = significand;
-    const fltSemantics *savedSemantics = semantics;
-    fltSemantics extendedSemantics;
     opStatus status;
+
+    /* Create new full-precision semantics and convert addend to those semantics.  */
+    fltSemantics extendedSemantics(*semantics);
+    extendedSemantics.precision = extendedPrecision;
+
+    APFloat extendedAddend(*addend);
+    status = extendedAddend.convert(extendedSemantics, rmTowardZero);
+    assert(status == opOK);
+
+    // Only modify ourselves after copying addend, in case addend is this object
+    exponent += rhs.exponent + 1;
 
     /* Normalize our MSB.  */
     if(omsb != extendedPrecision)
@@ -757,9 +763,9 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
         exponent -= extendedPrecision - omsb;
       }
 
-    /* Create new semantics.  */
-    extendedSemantics = *semantics;
-    extendedSemantics.precision = extendedPrecision;
+    /* Perform the addition by pretending our objbect's memory is fullSignificand.  */
+    Significand savedSignificand = significand;
+    const fltSemantics *savedSemantics = semantics;
 
     if(newPartsCount == 1)
       significand.part = fullSignificand[0];
@@ -767,12 +773,10 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
       significand.parts = fullSignificand;
     semantics = &extendedSemantics;
 
-    APFloat extendedAddend(*addend);
-    status = extendedAddend.convert(extendedSemantics, rmTowardZero);
-    assert(status == opOK);
     lost_fraction = addOrSubtractSignificand(extendedAddend, false);
 
-    /* Restore our state.  */
+    /* Go back to using our original storage and semantics; ensuring the full precision
+       result is in fullSignificand.  */
     if(newPartsCount == 1)
       fullSignificand[0] = significand.part;
     significand = savedSignificand;
@@ -780,6 +784,8 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
 
     omsb = APInt::tcMSB(fullSignificand, newPartsCount) + 1;
   }
+  else
+    exponent += rhs.exponent + 1;
 
   /* Now narrow from the extended precision back to normal precision, shifting the
      significand if necessary.  */

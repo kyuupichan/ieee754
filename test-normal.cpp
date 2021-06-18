@@ -944,6 +944,13 @@ int main (void)
   assert(fma("5.87747e-39", "5.87747e-39", "12.0", "12.0",
              APFloat::rmNearestTiesToEven, APFloat::IEEEdouble, APFloat::opInexact));
 
+  // Same operands
+  APFloat value(APFloat::IEEEdouble, "5.0");
+  APFloat result(APFloat::IEEEdouble, "30.0");
+
+  assert(value.fusedMultiplyAdd(value, value, APFloat::rmNearestTiesToEven) == APFloat::opOK);
+  assert(compare(value, result));
+
 #if 0
   assert (remainder ("1.2e234", "0.13", "0x1.97b55ff72df4p-6",
                      APFloat::IEEEdouble));
