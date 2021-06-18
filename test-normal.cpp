@@ -951,6 +951,15 @@ int main (void)
   assert(value.fusedMultiplyAdd(value, value, APFloat::rmNearestTiesToEven) == APFloat::opOK);
   assert(compare(value, result));
 
+  // Another previous bug
+  {
+      APFloat f1(APFloat::IEEEsingle, "-8.85242279E-41");
+      APFloat f2(APFloat::IEEEsingle, "2.0");
+      APFloat f3(APFloat::IEEEsingle, "8.85242279E-41");
+      f1.fusedMultiplyAdd(f2, f3, APFloat::rmNearestTiesToEven);
+      assert(compare(f1, APFloat(APFloat::IEEEsingle, "-8.85242279E-41")));
+  }
+
 #if 0
   assert (remainder ("1.2e234", "0.13", "0x1.97b55ff72df4p-6",
                      APFloat::IEEEdouble));

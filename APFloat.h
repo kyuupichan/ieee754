@@ -276,7 +276,8 @@ namespace llvm {
     const fltSemantics *semantics;
 
     /* Significand - the fraction with an explicit integer bit.  Must be
-       at least one bit wider than the target precision.  */
+       at least one bit wider than the target precision (the extra bit is needed when
+       subtracting significands).  */
     union Significand
     {
       integerPart part;
