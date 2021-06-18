@@ -744,7 +744,7 @@ APFloat::multiplySignificand(const APFloat &rhs, const APFloat *addend)
   */
   exponent += rhs.exponent + 1;
 
-  if(addend) {
+  if(addend && addend->category == fcNormal) {
     Significand savedSignificand = significand;
     const fltSemantics *savedSemantics = semantics;
     fltSemantics extendedSemantics;
@@ -1613,7 +1613,7 @@ APFloat::fusedMultiplyAdd(const APFloat &multiplicand,
      extended-precision calculation.  */
   if(category == fcNormal
      && multiplicand.category == fcNormal
-     && addend.category == fcNormal) {
+     && (addend.category == fcNormal || addend.category == fcZero)) {
     lostFraction lost_fraction;
 
     lost_fraction = multiplySignificand(multiplicand, &addend);
@@ -1624,7 +1624,7 @@ APFloat::fusedMultiplyAdd(const APFloat &multiplicand,
     /* If two numbers add (exactly) to zero, IEEE 754 decrees it is a
        positive zero unless rounding to minus infinity, except that
        adding two like-signed zeroes gives that zero.  */
-    if(category == fcZero && sign != addend.sign)
+    if(category == fcZero && lost_fraction == lfExactlyZero && sign != addend.sign)
       sign = (rounding_mode == rmTowardNegative);
   } else {
     fs = multiplySpecials(multiplicand);

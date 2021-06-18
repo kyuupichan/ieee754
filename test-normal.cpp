@@ -897,6 +897,35 @@ int main (void)
       assert( fma ("14.5", "-14.5", "225.0", "14.75",
                    rm, kind, APFloat::opOK));
 
+      // Addend of zero
+      assert( fma ("7.0", "8.0", "0.0", "56.0", rm, kind, APFloat::opOK));
+      assert( fma ("0.0", "-0.0", "0.0",
+                   rm == APFloat::rmTowardNegative ? "-0.0": "0.0", rm, kind, APFloat::opOK));
+      assert( fma ("0.0", "0.0", "-0.0",
+                   rm == APFloat::rmTowardNegative ? "-0.0": "0.0", rm, kind, APFloat::opOK));
+      // Addition of like-signed zeroes preserves the sign
+      assert( fma ("-0.0", "5.0", "-0.0",
+                   "-0.0", rm, kind, APFloat::opOK));
+      assert( fma ("0.0", "5.0", "0.0",
+                   "0.0", rm, kind, APFloat::opOK));
+      assert( fma ("1.0", "-1.0", "1.0",
+                   rm == APFloat::rmTowardNegative ? "-0.0": "0.0", rm, kind, APFloat::opOK));
+
+
+      // Result is zero but not from adding zeroes.
+      if (rm == APFloat::rmTowardZero || rm == APFloat::rmTowardNegative ||
+          rm == APFloat::rmNearestTiesToAway) {
+           assert( fma ("1.0e-38", "1.0e-38", "-0.0",
+                        "0.0", rm, kind, underflow));
+      }
+
+      // Result is zero but not from adding zeroes.
+      if (rm == APFloat::rmTowardZero || rm == APFloat::rmTowardPositive ||
+          rm == APFloat::rmNearestTiesToAway) {
+           assert( fma ("1.0e-38", "-1.0e-38", "-0.0",
+                        "-0.0", rm, kind, underflow));
+      }
+
       assert( fma ("0x1.7e5p0", "0x1.3bbp0", "0x1.0p-24",
 		   "0x1.d77348p0", rm, kind, APFloat::opOK));
       assert( fma ("0x1.7e5p0", "0x1.3bbp0", "-0x1.0p-24",
