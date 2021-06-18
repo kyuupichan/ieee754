@@ -1085,5 +1085,26 @@ int main (void)
   assert (compare ("1.0864618449742194253370276940099629219820390529601229641373669027769552904364834940694741987365776e-310", "0x1.4p-1030",
                    APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
 
+  /* Test floating point conversions.  */
+  APFloat cnv1(APFloat::IEEEdouble, "1.0");
+  APFloat cnv2(APFloat::IEEEsingle, "1.0");
+
+  assert(cnv1.convert(APFloat::IEEEsingle, APFloat::rmNearestTiesToEven) == APFloat::opOK);
+  assert(compare(cnv1, cnv2));
+
+  APFloat epsilon(APFloat::IEEEquad, "0x1p-53");
+  APFloat one(APFloat::IEEEquad, "1.0");
+  APFloat oned(APFloat::IEEEdouble, "1.0");
+
+  APFloat test(epsilon);
+  assert(test.add(one, APFloat::rmNearestTiesToEven) == APFloat::opOK);
+  assert(test.compare(one) == APFloat::cmpGreaterThan);
+  assert(test.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven) == APFloat::opInexact);
+  assert(test.compare(oned) == APFloat::cmpEqual);
+
+  test = APFloat(APFloat::x87DoubleExtended, "0xf.fffffffp+28");
+  assert(test.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven) == APFloat::opOK);
+  assert(test.compare(APFloat(APFloat::IEEEdouble, "4294967295.0")) == APFloat::cmpEqual);
+
   return 0;
 }

@@ -184,18 +184,32 @@ powerOf5 (integerPart *dst, unsigned int power)
 
 int main (void)
 {
-  char dst[30];
+  APFloat epsilon(APFloat::IEEEquad, "0x1p-53");
+  APFloat one(APFloat::IEEEquad, "1.0");
+  APFloat oned(APFloat::IEEEdouble, "1.0");
 
-  APFloat x (APFloat::IEEEsingle, "0x1.345672p+30");
-  APFloat y (APFloat::IEEEsingle, "0x1.56789ap-20");
+  char buf[100];
 
-  x.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
-  printf ("x: %s\n", dst);
-  y.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
-  printf ("y: %s\n", dst);
-  x.badmod(y, APFloat::rmNearestTiesToEven);
-  x.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
-  printf ("mod: %s\n", dst);
+  APFloat test(APFloat::x87DoubleExtended, "0xf.fffffffp+28");
+
+  test.convertToHexString(buf, 0, false, APFloat::rmNearestTiesToEven);
+  puts(buf);
+  assert(test.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven) == APFloat::opOK);
+  test.convertToHexString(buf, 0, false, APFloat::rmNearestTiesToEven);
+  puts(buf);
+
+  assert(test.compare(APFloat(APFloat::IEEEdouble, "4294967295.0")) == APFloat::cmpEqual);
+
+  // APFloat x (APFloat::IEEEsingle, "0x1.345672p+30");
+  // APFloat y (APFloat::IEEEsingle, "0x1.56789ap-20");
+
+  // x.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
+  // printf ("x: %s\n", dst);
+  // y.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
+  // printf ("y: %s\n", dst);
+  // x.badmod(y, APFloat::rmNearestTiesToEven);
+  // x.convertToHexString (dst, 0, false, APFloat::rmNearestTiesToEven);
+  // printf ("mod: %s\n", dst);
 
   return 0;
 }

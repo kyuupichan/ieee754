@@ -1708,12 +1708,13 @@ APFloat::opStatus
 APFloat::convert(const fltSemantics &toSemantics, roundingMode rounding_mode)
 {
   lostFraction lostFraction;
-  unsigned int newPartCount, oldPartCount;
+  unsigned int newPartCount, oldPartCount, left_shift;
   opStatus fs;
 
   lostFraction = lfExactlyZero;
   newPartCount = partCountForBits(toSemantics.precision + 1);
   oldPartCount = partCount();
+  left_shift = toSemantics.precision - semantics->precision;
 
   /* Handle storage complications.  If our new form is wider,
      re-allocate our bit pattern into wider storage.  If it is
@@ -1728,10 +1729,12 @@ APFloat::convert(const fltSemantics &toSemantics, roundingMode rounding_mode)
     freeSignificand();
     significand.parts = newParts;
   } else if (newPartCount < oldPartCount) {
-    /* Capture any lost fraction through truncation of parts so we get
-       correct rounding whilst normalizing.  */
-    lostFraction = lostFractionThroughTruncation
-      (significandParts(), oldPartCount, toSemantics.precision);
+    if(category == fcNormal) {
+      /* Shift the significand right and capture any lost fraction through truncation.  */
+      lostFraction = shiftRight(significandParts(), oldPartCount, -left_shift);
+      exponent -= left_shift;
+    }
+
     if (newPartCount == 1) {
       integerPart newPart = significandParts()[0];
       freeSignificand();
@@ -1741,7 +1744,7 @@ APFloat::convert(const fltSemantics &toSemantics, roundingMode rounding_mode)
 
   if(category == fcNormal) {
     /* Re-interpret our bit-pattern.  */
-    exponent += toSemantics.precision - semantics->precision;
+    exponent += left_shift;
     semantics = &toSemantics;
     fs = normalize(rounding_mode, lostFraction);
   } else {
