@@ -1006,6 +1006,16 @@ int main (void)
   assert (compare ("3.40282357E+38F", "0x1.ffffffp+127",
                    APFloat::IEEEsingle, APFloat::rmNearestTiesToEven));
 
+  /* Test handling of dots beyond the precision.  */
+  assert (compare ("0x800000000000000001p-221", "0x1p-150",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("0x800000000000000001.0p-221", "0x1p-150",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("0x800000000000000001.p-221", "0x1p-150",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+  assert (compare ("2251799813685248.5", "0x80000000000004000000.010p-28",
+                   APFloat::IEEEdouble, APFloat::rmNearestTiesToEven));
+
   /* Test exponent overflow.  */
   assert(compare(APFloat(APFloat::IEEEsingle, "0.0e99999"), f_pos_zero));
   assert(compare(APFloat(APFloat::IEEEsingle, "-0.0e99999"), f_neg_zero));

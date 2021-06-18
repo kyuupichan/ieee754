@@ -190,15 +190,14 @@ int main (void)
 
   char buf[100];
 
-  APFloat test(APFloat::x87DoubleExtended, "0xf.fffffffp+28");
+  APFloat lhs(APFloat::IEEEdouble, "2251799813685248.5");
+  //APFloat rhs(APFloat::IEEEdouble, "0x80000000000004000000.010p-28");
+  APFloat rhs(APFloat::IEEEdouble, "0x80000000000004000000.010p-28");
 
-  test.convertToHexString(buf, 0, false, APFloat::rmNearestTiesToEven);
+  lhs.convertToHexString(buf, 0, false, APFloat::rmNearestTiesToEven);
   puts(buf);
-  assert(test.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven) == APFloat::opOK);
-  test.convertToHexString(buf, 0, false, APFloat::rmNearestTiesToEven);
+  rhs.convertToHexString(buf, 0, false, APFloat::rmNearestTiesToEven);
   puts(buf);
-
-  assert(test.compare(APFloat(APFloat::IEEEdouble, "4294967295.0")) == APFloat::cmpEqual);
 
   // APFloat x (APFloat::IEEEsingle, "0x1.345672p+30");
   // APFloat y (APFloat::IEEEsingle, "0x1.56789ap-20");

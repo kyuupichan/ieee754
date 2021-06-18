@@ -283,8 +283,8 @@ namespace {
     else if(digitValue < 8 && digitValue > 0)
       return lfLessThanHalf;
 
-    /* Otherwise we need to find the first non-zero digit.  */
-    while(*p == '0')
+    /* Otherwise we need to find the first non-zero digit skipping any dot.  */
+    while(*p == '0' || *p == '.')
       p++;
 
     hexDigit = hexDigitValue(*p);
@@ -1944,6 +1944,7 @@ APFloat::convertFromHexadecimalString(const char *p,
   integerPart *significand;
   unsigned int bitPos, partsCount;
   const char *dot, *firstSigDigit;
+  bool calced_lf;
 
   zeroSignificand();
   exponent = 0;
@@ -1957,6 +1958,8 @@ APFloat::convertFromHexadecimalString(const char *p,
   p = skipLeadingZeroesAndAnyDot(p, &dot);
   firstSigDigit = p;
 
+  lost_fraction = lfExactlyZero;
+  calced_lf = false;
   for(;;) {
     integerPart hex_value;
 
@@ -1966,10 +1969,8 @@ APFloat::convertFromHexadecimalString(const char *p,
     }
 
     hex_value = hexDigitValue(*p);
-    if(hex_value == -1U) {
-      lost_fraction = lfExactlyZero;
+    if(hex_value == -1U)
       break;
-    }
 
     p++;
 
@@ -1978,11 +1979,9 @@ APFloat::convertFromHexadecimalString(const char *p,
       bitPos -= 4;
       hex_value <<= bitPos % integerPartWidth;
       significand[bitPos / integerPartWidth] |= hex_value;
-    } else {
+    } else if (!calced_lf) {
       lost_fraction = trailingHexadecimalFraction(p, hex_value);
-      while(hexDigitValue(*p) != -1U)
-        p++;
-      break;
+      calced_lf = true;
     }
   }
 
