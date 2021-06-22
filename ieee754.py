@@ -65,7 +65,8 @@ def shift_right(significand, bits):
     if bits <= 0:
         return significand << -bits, LostFraction.EXACTLY_ZERO
 
-    first_bit = 1 << bits
+    # FIXME: make this a single step
+    first_bit = 1 << (bits - 1)
     if significand & first_bit:
         if significand & (first_bit - 1):
             lost_fraction = LostFraction.MORE_THAN_HALF
@@ -137,21 +138,21 @@ class RoundTowardsZero(RoundingMode):
 
 class FloatEnv:
 
-    __slots__ = ('rounding_mode', 'detect_tininess_before', 'always_flag_underflow')
+    __slots__ = ('rounding_mode', 'detect_tininess_after', 'always_flag_underflow')
 
-    def __init__(self, rounding_mode, detect_tininess_before, always_flag_underflow):
+    def __init__(self, rounding_mode, detect_tininess_after, always_flag_underflow):
         '''Floating point environment flags:
 
         rounding_mode is one of the RoundingMode enumerations and controls rounding of inexact
         results.
 
-        If detect_tininess_before is True tininess is detected before rounding, otherwise after
+        If detect_tininess_after is True tininess is detected before rounding, otherwise after
 
         If always_flag_underflow is True then underflow is flagged whenever tininess is detected,
         otherwise it is only flagged if tininess is detected and the result is inexact.
         '''
         self.rounding_mode = rounding_mode
-        self.detect_tininess_before = detect_tininess_before
+        self.detect_tininess_after = detect_tininess_after
         self.always_flag_underflow = always_flag_underflow
 
 
@@ -206,9 +207,9 @@ class FloatFormat:
         self.e_width = e_width
         self.interchange_kind = interchange_kind
         # The largest e such that 2^e is representable.  The largest representable number
-        # is 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.
+        # is 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.  Unbibased.
         self.e_max = 1 << (e_width - 1) - 1
-        # The smallest e such that 2^e is a normalized number
+        # The smallest e such that 2^e is a normalized number.  Unbiased.
         self.e_min = 1 - self.e_max
         # The exponent bias
         self.e_bias = self.e_max
@@ -270,17 +271,24 @@ class FloatFormat:
             return IEEEfloat(self, sign, 0, 0), OpStatus.OK
 
         # How many excess bits of precision do we have?
-        excess = size - self.precision
+        rshift = size - self.precision
 
-        # Shift the significand and update the exponent
-        significand, lost_fraction = shift_right(significand, excess)
-        exponent += excess
+        # We have to lose precision (underflow) if the exponent would be below the minimum
+        # for normal numbbers.  Floor it at e_min - 1.
+        if exponent + rshift < self.e_min:
+            rshift += self.e_min - (exponent + rshift)
+            exponent -= 1    # Ensure it becomes e_min - 1.
 
-        # Detect tininess now (we may overwrite later)
-        is_tiny = exponent < self.e_min
+        # Now shift the significand and update the exponent
+        significand, lost_fraction = shift_right(significand, rshift)
+        exponent += rshift
+        print(lost_fraction)
+
+        # Detect tininess before rounding
+        is_tiny = significand < self.int_bit
 
         # Round
-        if env.rounds_away(lost_fraction, sign, bool(significand & 1)):
+        if env.rounding_mode.rounds_away(lost_fraction, sign, bool(significand & 1)):
             # Increment the significand
             significand += 1
             # If the significand now overflows, halve it and increment the exponent
@@ -292,9 +300,9 @@ class FloatFormat:
         if exponent > self.e_max:
             return self.make_infinity(sign), OpStatus.OVERFLOW | OpStatus.INEXACT
 
-        # Otherwise detect tininess after rounding:
-        if env.dt_after:
-            is_tiny = exponent < self.e_min
+        # Detect tininess after rounding?
+        if env.detect_tininess_after:
+            is_tiny = significand < self.int_bit
 
         if lost_fraction == LostFraction.EXACTLY_ZERO:
             status = OpStatus.OK
