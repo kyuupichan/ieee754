@@ -9,6 +9,13 @@ from abc import ABC, abstractmethod
 from enum import IntFlag, IntEnum
 
 
+__all__ = ('InterchangeKind', 'FloatClass', 'FloatEnv', 'FloatFormat', 'OpStatus', 'IEEEfloat',
+           'RoundingMode', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
+           'RoundTowardsNegative', 'RoundTowardsZero',
+           'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad', 'IEEEoctuple',
+           'x87extended', 'x87double', 'x87single',)
+
+
 HEX_FLOAT_REGEX = re.compile(
     # sign[opt]
     '[-+]?'
@@ -444,7 +451,7 @@ IEEEquad = FloatFormat(14, 113, InterchangeKind.IMPLICIT)
 IEEEoctuple = FloatFormat(18, 237, InterchangeKind.IMPLICIT)
 # 80387 floating point takes place with a wide exponent range but rounds to single, double
 # or extended precision.  It also has an explicit integer bit.
-x87entended = FloatFormat(14, 64, InterchangeKind.EXPLICIT)
+x87extended = FloatFormat(14, 64, InterchangeKind.EXPLICIT)
 x87double = FloatFormat(14, 53, InterchangeKind.NONE)
 x87single = FloatFormat(14, 24, InterchangeKind.NONE)
 
