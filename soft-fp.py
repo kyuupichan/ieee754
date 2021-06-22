@@ -5,6 +5,7 @@
 #
 
 import re
+from abc import ABC, abstractmethod
 from enum import IntFlag, IntEnum
 
 
@@ -44,15 +45,16 @@ class FloatClass(IntEnum):
 # fraction of the LSB those bits represented.  It essentially combines the roles of guard
 # and sticky bits.
 class LostFraction(IntEnum):   # Example of truncated bits:
-    EXACTLY_ZERO = 0           # 00000
+    EXACTLY_ZERO = 0           # 000000
     LESS_THAN_HALF = 1	       # 0xxxxx  x's not all zero
     EXACTLY_HALF = 2           # 100000
     MORE_THAN_HALF = 3         # 1xxxxx  x's not all zero
 
 
 def shift_right(significand, bits):
-    '''Return the significand shifted right a given number of bits, and the fraction that is
-    lost doing so.'''
+    '''Return the significand shifted right a given number of bits (left if bits is negative),
+    and the fraction that is lost doing so.
+    '''
     if bits <= 0:
         return significand << -bits, LostFraction.EXACTLY_ZERO
 
@@ -70,10 +72,11 @@ def shift_right(significand, bits):
     return significand >> bits, lost_fraction
 
 
-class RoundingMode:
+class RoundingMode(ABC):
     '''Rounding modes are implemented as derived classes.'''
 
     @classmethod
+    @abstractmethod
     def rounds_away(cls, _lost_fraction, _sign, _is_odd):
         '''Return True if, when an operation results in a lost fraction, the rounding mode
         requires rounding away from zero (i.e. incrementing the significand).
@@ -89,11 +92,9 @@ class RoundTiesToEven(RoundingMode):
 
     @classmethod
     def rounds_away(cls, lost_fraction, _sign, is_odd):
-        if lost_fraction == LostFraction.MORE_THAN_HALF:
-            return True
         if lost_fraction == LostFraction.EXACTLY_HALF:
             return is_odd
-        return False
+        return lost_fraction == LostFraction.MORE_THAN_HALF
 
 
 class RoundTiesToAway(RoundingMode):
