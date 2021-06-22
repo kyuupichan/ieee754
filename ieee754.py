@@ -282,7 +282,6 @@ class FloatFormat:
         # Now shift the significand and update the exponent
         significand, lost_fraction = shift_right(significand, rshift)
         exponent += rshift
-        print(lost_fraction)
 
         # Detect tininess before rounding
         is_tiny = significand < self.int_bit
@@ -481,8 +480,16 @@ class IEEEfloat:
         significand.  For NaNs - saturing exponents with non-zero signficands - we interpret
         the significand as the binary payload below the quiet bit.
         '''
+        if not isinstance(biased_exponent, int):
+            raise TypeError('biased exponent must be an integer')
+        if not isinstance(significand, int):
+            raise TypeError('significand must be an integer')
+        if not 0 <= biased_exponent <= fmt.e_saturated:
+            raise ValueError('biased exponent {biased_exponent:,d} out of range')
+        if not 0 <= significand <= fmt.max_significand:
+            raise ValueError('significand {significand:,d} out of range')
         self.fmt = fmt
-        self.sign = sign
+        self.sign = bool(sign)
         self.e_biased = biased_exponent
         # The significand as an unsigned integer, or payload including quiet bit for NaNs
         self.significand = significand
