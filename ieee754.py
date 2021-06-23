@@ -530,8 +530,12 @@ class IEEEfloat:
             raise TypeError('significand must be an integer')
         if not 0 <= biased_exponent <= fmt.e_saturated:
             raise ValueError('biased exponent {biased_exponent:,d} out of range')
-        if not 0 <= significand <= fmt.max_significand:
-            raise ValueError('significand {significand:,d} out of range')
+        if biased_exponent in (0, fmt.e_saturated):
+            if not 0 <= significand < fmt.int_bit:
+                raise ValueError('significand {significand:,d} out of range for non-normal')
+        else:
+            if not 0 <= significand <= fmt.max_significand:
+                raise ValueError('significand {significand:,d} out of range')
         self.fmt = fmt
         self.sign = bool(sign)
         self.e_biased = biased_exponent
