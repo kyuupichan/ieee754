@@ -274,3 +274,33 @@ class TestGeneralNonComputationalOps:
             assert value.e_biased == exponent + fmt.e_bias + 2
         assert value.sign is sign
         assert value.fmt is fmt
+
+    @pytest.mark.parametrize('fmt, sign, two_bits, rounding_mode',
+                             product(all_IEEE_fmts,
+                                     (False, True),
+                                     (0, 1, 2, 3, ),
+                                     all_rounding_modes,
+                             ))
+    def test_make_real_rounding_subnormal_to_normal(self, fmt, sign, two_bits, rounding_mode):
+        # Test cases where rounding away causes a subnormal to normalize
+        env = FloatEnv(rounding_mode, True, False)
+        # two extra bits in the significand, with all bits other than MSB zero
+        significand = two_bits + ((fmt.max_significand >> 1) << 2)
+        value, status = fmt.make_real(sign, fmt.e_min - 2, significand, env)
+        rounds_away = (two_bits and
+                       ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
+                        or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
+                        or (rounding_mode is RoundTowardsPositive and not sign)
+                        or (rounding_mode is RoundTowardsNegative and sign)))
+        if rounds_away:
+            assert status == OpStatus.INEXACT
+            assert value.is_normal()
+            assert value.significand == fmt.int_bit
+            assert value.e_biased == 1
+        else:
+            assert status == (OpStatus.INEXACT | OpStatus.UNDERFLOW if two_bits else OpStatus.OK)
+            assert value.is_subnormal()
+            assert value.significand == fmt.int_bit - 1
+            assert value.e_biased == 0
+        assert value.sign is sign
+        assert value.fmt is fmt

@@ -315,7 +315,6 @@ class FloatFormat:
         # for normal numbbers.  Floor it at e_min - 1.
         if exponent + rshift < self.e_min:
             rshift += self.e_min - (exponent + rshift)
-            exponent -= 1    # Ensure it becomes e_min - 1.
 
         # Now shift the significand and update the exponent
         significand, lost_fraction = shift_right(significand, rshift)
@@ -343,6 +342,10 @@ class FloatFormat:
         # Detect tininess after rounding?
         if env.detect_tininess_after:
             is_tiny = significand < self.int_bit
+
+        # Denormals require exponent of zero
+        if significand < self.int_bit:
+            exponent -= 1
 
         if lost_fraction == LostFraction.EXACTLY_ZERO:
             status = OpStatus.OK
