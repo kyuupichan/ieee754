@@ -308,19 +308,15 @@ class FloatFormat:
             # Return a correctly-signed zero
             return IEEEfloat(self, sign, 0, 0), OpStatus.OK
 
-        # How many excess bits of precision do we have?
-        rshift = size - self.precision
+        # How many excess bits of precision do we have?  That gives us the natural shift,
+        # but we cannot allow the exponent to fall below e_min.
+        rshift = max(size - self.precision, self.e_min - exponent)
 
-        # We have to lose precision (underflow) if the exponent would be below the minimum
-        # for normal numbbers.  Floor it at e_min - 1.
-        if exponent + rshift < self.e_min:
-            rshift += self.e_min - (exponent + rshift)
-
-        # Now shift the significand and update the exponent
+        # Shift the significand and update the exponent
         significand, lost_fraction = shift_right(significand, rshift)
         exponent += rshift
 
-        # Detect tininess before rounding
+        # In case we detect tininess before rounding
         is_tiny = significand < self.int_bit
 
         # Round
@@ -339,18 +335,14 @@ class FloatFormat:
                 return self.make_infinity(sign), OpStatus.OVERFLOW | OpStatus.INEXACT
             return self.make_largest_finite(sign), OpStatus.INEXACT
 
-        # Detect tininess after rounding?
+        # Detect tininess after rounding if appropriate
         if env.detect_tininess_after:
             is_tiny = significand < self.int_bit
 
         # Denormals require exponent of zero
-        if significand < self.int_bit:
-            exponent -= 1
+        exponent -= significand < self.int_bit
 
-        if lost_fraction == LostFraction.EXACTLY_ZERO:
-            status = OpStatus.OK
-        else:
-            status = OpStatus.INEXACT
+        status = OpStatus.OK if lost_fraction == LostFraction.EXACTLY_ZERO else OpStatus.INEXACT
 
         if is_tiny and (env.always_flag_underflow or status == OpStatus.INEXACT):
             status |= OpStatus.UNDERFLOW
