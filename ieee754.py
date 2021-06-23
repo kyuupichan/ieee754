@@ -94,6 +94,15 @@ class RoundingMode(ABC):
         '''
         raise NotImplementedError
 
+    @classmethod
+    @abstractmethod
+    def overflow_to_infinity(cls, sign):
+        '''When the rounded result has an too high exponent, return True if the rounding mode
+        requires rounding to infinity.
+
+        sign is the sign of the number.'''
+        raise NotImplementedError
+
 
 class RoundTiesToEven(RoundingMode):
     '''Round-to-nearest with ties-to-even.'''
@@ -104,6 +113,11 @@ class RoundTiesToEven(RoundingMode):
             return is_odd
         return lost_fraction == LostFraction.MORE_THAN_HALF
 
+    @classmethod
+    @abstractmethod
+    def overflow_to_infinity(cls, _sign):
+        return True
+
 
 class RoundTiesToAway(RoundingMode):
     '''Round-to-nearest with ties-to-away.'''
@@ -111,6 +125,11 @@ class RoundTiesToAway(RoundingMode):
     @classmethod
     def rounds_away(cls, lost_fraction, _sign, _is_odd):
         return lost_fraction in {LostFraction.EXACTLY_HALF, LostFraction.MORE_THAN_HALF}
+
+    @classmethod
+    @abstractmethod
+    def overflow_to_infinity(cls, _sign):
+        return True
 
 
 class RoundTowardsPositive(RoundingMode):
@@ -120,6 +139,11 @@ class RoundTowardsPositive(RoundingMode):
     def rounds_away(cls, lost_fraction, sign, _is_odd):
         return not sign and lost_fraction != LostFraction.EXACTLY_ZERO
 
+    @classmethod
+    @abstractmethod
+    def overflow_to_infinity(cls, sign):
+        return not sign
+
 
 class RoundTowardsNegative(RoundingMode):
     '''Round towards negative infinity.'''
@@ -128,11 +152,21 @@ class RoundTowardsNegative(RoundingMode):
     def rounds_away(cls, lost_fraction, sign, _is_odd):
         return sign and lost_fraction != LostFraction.EXACTLY_ZERO
 
+    @classmethod
+    @abstractmethod
+    def overflow_to_infinity(cls, sign):
+        return sign
+
 
 class RoundTowardsZero(RoundingMode):
 
     @classmethod
     def rounds_away(cls, _lost_fraction, _sign, _is_odd):
+        return False
+
+    @classmethod
+    @abstractmethod
+    def overflow_to_infinity(cls, _sign):
         return False
 
 
@@ -237,6 +271,10 @@ class FloatFormat:
         '''Returns an infinity of the given sign.'''
         return IEEEfloat(self, sign, self.e_saturated, 0)
 
+    def make_largest_finite(self, sign):
+        '''Returns an infinity of the given sign.'''
+        return IEEEfloat(self, sign, self.e_saturated - 1, self.max_significand)
+
     def make_NaN(self, sign, is_quiet, payload):
         '''Returns a quiet NaN with the given payload.'''
         if is_quiet:
@@ -295,9 +333,12 @@ class FloatFormat:
                 significand >>= 1
                 exponent += 1
 
-        # If the new exponent would be too big, then we overflow
+        # If the new exponent would be too big, then we overflow to infinity, or round
+        # down to the format's largest finite value.
         if exponent > self.e_max:
-            return self.make_infinity(sign), OpStatus.OVERFLOW | OpStatus.INEXACT
+            if env.rounding_mode.overflow_to_infinity(sign):
+                return self.make_infinity(sign), OpStatus.OVERFLOW | OpStatus.INEXACT
+            return self.make_largest_finite(sign), OpStatus.INEXACT
 
         # Detect tininess after rounding?
         if env.detect_tininess_after:
