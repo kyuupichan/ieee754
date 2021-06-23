@@ -1,0 +1,60 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Rounding: E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
+# Sign: + or -
+
+# Test format: FloatFormat Rounding HexString Status Sign BiasedExponent Significand
+#              HexString Error
+
+#
+# Syntax errors
+#
+
+1p0          # Missing hex prefix
+0xp0         # No significand
+0x.p0        # No hex digitsx
+0xgp         # Not a hex digit
+0x5.6z1      # No hex exponent indicator
+0x7.ap       # No exponent digits
+0xc.dp-      # No exponent digits
+0xc.dp+      # No exponent digits
+0xc.dp+a     # Not decimal exponent
+0x1.p2z      # Trailing garbage
+Inf          # No hex significand
+Nan          # No hex significand
+
+#
+# Zeroes
+#
+
+S E 0x0p0 K + 0 0
+S E 0x0p+0 K + 0 0
+S E 0.0x0p-00 K + 0 0
+S E 0x00p1 K + 0 0
+S E 0x.0000x0p-1 K + 0 0
+S E 0x0.p1000000 K + 0 0
+S E 0x.0p-1000000 K + 0 0
+S E -0x0p0 K - 0 0
+S E -0x0.p-0 K - 0 0
+S E -0x000000000000000000000000000000000.000000000000000000000000000p1000000 K - 0 0
+S E -0x.0p-100000000000 K - 0 0
+
+#
+# Infinities
+#
+
+#
+# Quiet NaNs
+#
+
+#
+# Signalling NaNs
+#
+
+
+
+#
+# Normals no rounding
+#
+
+#S E 0x1p0

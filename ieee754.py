@@ -12,15 +12,23 @@ from enum import IntFlag, IntEnum
 __all__ = ('InterchangeKind', 'FloatClass', 'FloatEnv', 'FloatFormat', 'OpStatus', 'IEEEfloat',
            'RoundingMode', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
            'RoundTowardsNegative', 'RoundTowardsZero',
-           'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad', 'IEEEoctuple',
+           'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single',)
 
 
-HEX_FLOAT_REGEX = re.compile(
+HEX_SIGNIFICAND_REGEX = re.compile(
     # sign[opt]
     '[-+]?'
-    # (hex-integer[opt].fraction or hex-integer.[opt]) hex-exp-p exp-sign[opt]dec-exponent
-    '(0x((([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)p?([-+]?[0-9]+))'
+    # (hex-integer[opt].fraction or hex-integer.[opt]) p exp-sign[opt]dec-exponent
+    '(0x((([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)p([-+]?[0-9]+)))$',
+    re.ASCII | re.IGNORECASE
+)
+
+DEC_FLOAT_REGEX = re.compile(
+    # sign[opt]
+    '[-+]?'
+    # (dec-integer[opt].fraction or hex-integer.[opt]) e exp-sign[opt]dec-exponent
+    '(0x((([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)e?([-+]?[0-9]+))'
     # inf or infinity
     '|(inf(inity)?)'
     # nan-or-snan hex-payload-or-dec-payload[opt]
@@ -405,26 +413,49 @@ class FloatFormat:
         '''
         raise NotImplementedError
 
-    def from_hex_string(self, string, env):
-        '''Converts a hexadecimal floating point string to a floating number of the
+    def from_hex_significand_string(self, string, env):
+        '''Converts a string with a hexadecimal significand to a floating number of the
+        required format.'''
+        match = HEX_SIGNIFICAND_REGEX.match(string)
+        if match is None:
+            raise SyntaxError(f'invalid hexadecimal float: {string}')
+        sign = string[0] == '-'
+
+        groups = match.groups()
+        if groups[2] is not None:
+            # Floating point.  groups[3] is before the point and groups[4] after it.
+            fraction = groups[4].rstrip('0')
+            significand = int(groups[3] + fraction, 16)
+            exponent = self.precision - 1 - len(fraction) * 4
+            return self.make_real(sign, exponent, significand, env)
+
+        assert groups[5] is not None
+        # Integer.  groups[5] is before the point.
+        significand = int(groups[5], 16)
+        exponent = self.precision - 1
+        return self.make_real(sign, exponent, significand, env)
+
+    def from_dec_string(self, string, env):
+        '''Converts a string with a hexadecimal significand to a floating number of the
         required format.'''
         match = HEX_FLOAT_REGEX.match(string)
         if match is None:
             raise ValueError(f'invalid hexadecimal float: {string}')
         sign = string[0] == '-'
 
-        groups = match.groups
+        groups = match.groups()
         if groups[2] is not None:
             # Floating point.  groups[3] is before the point and groups[4] after it.
             fraction = groups[4].rstrip('0')
             significand = int(groups[3] + fraction, 16)
-            exponent = len(fraction) * -4
+            exponent = self.precision - 1 - len(fraction) * 4
             return self.make_real(sign, exponent, significand, env)
 
         if groups[5] is not None:
-            # Integer.  groups[3] is before the point and groups[4] after it.
+            # Integer.  groups[5] is before the point.
             significand = int(groups[5], 16)
-            return self.make_real(sign, 0, significand, env)
+            exponent = self.precision - 1
+            return self.make_real(sign, exponent, significand, env)
 
         if groups[7] is not None:
             # Infinity
@@ -491,7 +522,7 @@ IEEEhalf = FloatFormat(4, 11, InterchangeKind.IMPLICIT)
 IEEEsingle = FloatFormat(7, 24, InterchangeKind.IMPLICIT)
 IEEEdouble = FloatFormat(10, 53, InterchangeKind.IMPLICIT)
 IEEEquad = FloatFormat(14, 113, InterchangeKind.IMPLICIT)
-IEEEoctuple = FloatFormat(18, 237, InterchangeKind.IMPLICIT)
+#IEEEoctuple = FloatFormat(18, 237, InterchangeKind.IMPLICIT)
 # 80387 floating point takes place with a wide exponent range but rounds to single, double
 # or extended precision.  It also has an explicit integer bit.
 x87extended = FloatFormat(14, 64, InterchangeKind.EXPLICIT)
@@ -633,7 +664,7 @@ class IEEEfloat:
         return IEEEfloat(self.fmt, False, self.e_biased, self.significand)
 
     def take_sign(self, y):
-        '''Sets the sign of this number to that of y.'''
+        '''Sets the sign of this number to that of y.  copy_sign without a copy.'''
         self.sign = y.sign
 
     def negate(self):

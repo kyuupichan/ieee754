@@ -1,2 +1,5 @@
+#*
 *.o
 test-[a-z]*
+__pycache__
+.pytest_cache

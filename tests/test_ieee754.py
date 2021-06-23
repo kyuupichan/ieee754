@@ -1,6 +1,7 @@
-import pytest
-
+import os
 from itertools import product
+
+import pytest
 
 from ieee754 import *
 
@@ -10,6 +11,18 @@ all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
 all_rounding_modes = (RoundTiesToEven, RoundTiesToAway, RoundTowardsZero,
                       RoundTowardsPositive, RoundTowardsNegative)
 
+
+def read_lines(filename):
+    result = []
+    with open(os.path.join('tests/data', filename)) as f:
+        for line in f:
+            hash_pos = line.find('#')
+            if hash_pos != -1:
+                line = line[:hash_pos]
+            line = line.strip()
+            if line:
+                result.append(line)
+    return result
 
 
 # Test basic class functions before reading test files
@@ -304,3 +317,15 @@ class TestGeneralNonComputationalOps:
             assert value.e_biased == 0
         assert value.sign is sign
         assert value.fmt is fmt
+
+    @pytest.mark.parametrize('line', read_lines('from_hex_significand_string.txt'))
+    def test_from_hex_significand_string(self, line):
+        parts = line.split()
+        if len(parts) == 1:
+            hex_str, = parts
+            with pytest.raises(SyntaxError):
+                IEEEsingle.from_hex_significand_string(hex_str, std_env)
+        elif len(parts) == 7:
+            fmt, rounding, hex_str, status, sign, e_biased, significand = parts
+        else:
+            assert False, f'bad line: {line}'
