@@ -550,6 +550,7 @@ class OpStatus(IntFlag):
 
 
 class IEEEfloat:
+    # TODO: reconsider using an IEEE biased exponent internally.
 
     def __init__(self, fmt, sign, biased_exponent, significand):
         '''Create a floating point number with the given format, sign, biased exponent and

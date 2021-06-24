@@ -24,6 +24,13 @@ def read_lines(filename):
                 result.append(line)
     return result
 
+def env_string_to_env(env_str):
+    rounding = rounding_codes[env_str[0]]
+    pos = 1
+    detect_tininess_after = not 'B' in env_str
+    always_detect_underflow = 'U' in env_str
+    return FloatEnv(rounding, detect_tininess_after, always_detect_underflow)
+
 
 format_codes = {
     'H': IEEEhalf,
@@ -357,14 +364,13 @@ class TestGeneralNonComputationalOps:
             with pytest.raises(SyntaxError):
                 IEEEsingle.from_string(hex_str, std_env)
         elif len(parts) == 7:
-            fmt, rounding, hex_str, status, sign, exponent, significand = parts
+            fmt, env_str, hex_str, status, sign, exponent, significand = parts
             fmt = format_codes[fmt]
-            rounding = rounding_codes[rounding]
+            env = env_string_to_env(env_str)
             status = status_codes[status]
             sign = sign_codes[sign]
             exponent = int(exponent)
             significand = int(significand)
-            env = FloatEnv(rounding, True, False)
             value, stat = fmt.from_string(hex_str, env)
             assert value.to_parts() == (sign, exponent, significand)
             assert stat == status
