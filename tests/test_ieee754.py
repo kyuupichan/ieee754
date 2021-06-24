@@ -375,3 +375,22 @@ class TestGeneralNonComputationalOps:
             assert stat == status
         else:
             assert False, f'bad line: {line}'
+
+    @pytest.mark.parametrize('line', read_lines('round.txt'))
+    def test_round(self, line):
+        parts = line.split()
+        if len(parts) == 5:
+            fmt, env_str, value, status, answer = parts
+            fmt = format_codes[fmt]
+            rounding_mode = rounding_codes[env_str]
+            value, stat = fmt.from_string(value, std_env)
+            assert stat == OpStatus.OK
+            status = status_codes[status]
+            answer, stat = fmt.from_string(answer, std_env)
+            assert stat == OpStatus.OK
+
+            result, stat = value.round(rounding_mode)
+            assert result.to_parts() == answer.to_parts()
+            assert stat == status
+        else:
+            assert False, f'bad line: {line}'

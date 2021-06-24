@@ -557,13 +557,13 @@ class IEEEfloat:
         if not isinstance(significand, int):
             raise TypeError('significand must be an integer')
         if not 0 <= biased_exponent <= fmt.e_saturated:
-            raise ValueError('biased exponent {biased_exponent:,d} out of range')
+            raise ValueError(f'biased exponent {biased_exponent:,d} out of range')
         if biased_exponent in (0, fmt.e_saturated):
             if not 0 <= significand < fmt.int_bit:
-                raise ValueError('significand {significand:,d} out of range for non-normal')
+                raise ValueError(f'significand {significand:,d} out of range for non-normal')
         else:
             if not 0 <= significand <= fmt.max_significand:
-                raise ValueError('significand {significand:,d} out of range')
+                raise ValueError(f'significand {significand:,d} out of range')
         self.fmt = fmt
         self.sign = bool(sign)
         self.e_biased = biased_exponent
@@ -699,13 +699,6 @@ class IEEEfloat:
     ## Format is preserved and the result is in-place.
     ##
 
-    def make_quiet(self):
-        '''Converts a signalling NaN to a quiet NaN.  Has no effect on other values.'''
-        if self.is_signalling():
-            self.significand |= self.fmt.quiet_bit
-            return OpStatus.OP_INVALID
-        return OpStatus.OK
-
     def next_up(self):
         '''Set to the smallest floating point value (unless operating on a positive infinity or
         NaN) that compares greater.
@@ -748,7 +741,7 @@ class IEEEfloat:
         raise NotImplementedError
 
     def logb(self, env):
-        '''Returns a pair (log2(x), status).
+        '''Return a pair (log2(x), status).
 
         The result is the exponent e of x, a signed integer, when represented with
         infinite range and minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is
@@ -761,6 +754,65 @@ class IEEEfloat:
     ##
     ## General computational operations
     ##
+
+    def to_quiet(self):
+        '''Return a pair (result, status).
+
+        Result is a copy except that a signalling NaN becomes its quiet twin.  Status is
+        OpStatus.OP_INVALID in this case, otherwise OpStatus.OK.
+        '''
+        if self.is_signalling():
+            return IEEEfloat(self.fmt, self.sign, self.e_biased,
+                             self.significand | self.fmt.quiet_bit), OpStatus.OP_INVALID
+        return self.copy(), OpStatus.OK
+
+    def round(self, rounding_mode, exact=False):
+        '''Round to the nearest integer retaining the input floating point format and return a
+        (value, status) pair.
+
+        This function flags INVALID_OP on a signalling NaN input; if exact is True, the
+        INEXACT flag is set in the status if the result does not have the same numerical
+        value as the input.  In all other cases no flags are set.
+
+        This function implmements all six functions whose names begin with "roundToIntegral"
+        in the IEEE-754 standard.
+        '''
+        if self.e_biased == self.fmt.e_saturated:
+            # Quiet NaNs and infinites stay unchanged; signalling NaNs are converted to quiet.
+            return self.to_quiet()
+
+        # Zeroes return unchanged.
+        if self.significand == 0:
+            return self.copy(), OpStatus.OK
+
+        # Rounding-towards-zero is semantically equivalent to clearing zero or more of the
+        # significand's least-significant bits.
+        exponent = max(1, self.e_biased) - self.fmt.e_bias
+        count = (self.fmt.precision - 1) - exponent
+        if count <= 0:
+            return self.copy(), OpStatus.OK
+
+        significand = self.significand
+        lost_fraction = lost_bits_from_rshift(significand, count)
+        # Clear the insignificant bits of the significand
+        lsb = 1 << count
+        significand &= ~(lsb - 1)
+
+        # Round
+        e_biased = self.e_biased
+        if rounding_mode.rounds_away(lost_fraction, self.sign, bool(significand & lsb)):
+            significand += lsb
+            # If the significand now overflows, halve it and increment the exponent
+            if significand > self.fmt.max_significand:
+                significand >>= 1
+                e_biased += 1
+
+        if exact and lost_fraction != LostFraction.EXACTLY_ZERO:
+            status = OpStatus.INEXACT
+        else:
+            status = OpStatus.OK
+
+        return IEEEfloat(self.fmt, self.sign, e_biased, significand), status
 
     def to_int(self, int_format, env):
         '''Returns a (int(lhs), status) pair correctly-rounded with int_format the integer format

@@ -1,9 +1,12 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
-# Rounding: E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+# Envirnement:
+#   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+#   Tininess:   B=Detect before rounding, otherwise detect after
+#   Underflow:  U=Always flag, otherwise only if inexact
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
 # Sign: + or -
 
-# Test format: FloatFormat Rounding HexString Status Sign BiasedExponent Significand
+# Test format: FloatFormat Env HexString Status Sign BiasedExponent Significand
 #              HexString Error
 
 #
