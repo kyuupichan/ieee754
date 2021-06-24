@@ -70,26 +70,28 @@ class LostFraction(IntEnum):   # Example of truncated bits:
     MORE_THAN_HALF = 3         # 1xxxxx  x's not all zero
 
 
+def lost_bits_from_rshift(significand, bits):
+    '''Return what the lost bits would be were the significand shifted right the given number
+    of bits (negative is a left shift).
+    '''
+    if bits <= 0:
+        return LostFraction.EXACTLY_ZERO
+    bit_mask = 1 << (bits - 1)
+    first_bit = bool(significand & bit_mask)
+    second_bit = bool(significand & (bit_mask - 1))
+    return LostFraction(first_bit * 2 + second_bit)
+
+
 def shift_right(significand, bits):
     '''Return the significand shifted right a given number of bits (left if bits is negative),
     and the fraction that is lost doing so.
     '''
     if bits <= 0:
-        return significand << -bits, LostFraction.EXACTLY_ZERO
-
-    # FIXME: make this a single step
-    first_bit = 1 << (bits - 1)
-    if significand & first_bit:
-        if significand & (first_bit - 1):
-            lost_fraction = LostFraction.MORE_THAN_HALF
-        else:
-            lost_fraction = LostFraction.EXACTLY_HALF
+        result = significand << -bits
     else:
-        if significand & (first_bit - 1):
-            lost_fraction = LostFraction.LESS_THAN_HALF
-        else:
-            lost_fraction = LostFraction.EXACTLY_ZERO
-    return significand >> bits, lost_fraction
+        result = significand >> bits
+
+    return result, lost_bits_from_rshift(significand, bits)
 
 
 class RoundingMode(ABC):
@@ -494,13 +496,6 @@ class FloatFormat:
         '''
         raise NotImplementedError
 
-    def round(self, x, env):
-        '''Convert x to an integer, rounding if necessary.
-
-        Returns an (value, status) pair.
-        '''
-        raise NotImplementedError
-
     def add(self, lhs, rhs, env):
         '''Returns a (lhs + rhs, status) pair with dst_format as the format of the result.'''
         raise NotImplementedError
@@ -704,12 +699,12 @@ class IEEEfloat:
     ## Format is preserved and the result is in-place.
     ##
 
-    def round(self, rounding_mode):
-        '''Round to an integer-valued floating-point number of the same format.
-
-        Returns status flags.
-        '''
-        raise NotImplementedError
+    def make_quiet(self):
+        '''Converts a signalling NaN to a quiet NaN.  Has no effect on other values.'''
+        if self.is_signalling():
+            self.significand |= self.fmt.quiet_bit
+            return OpStatus.OP_INVALID
+        return OpStatus.OK
 
     def next_up(self):
         '''Set to the smallest floating point value (unless operating on a positive infinity or
