@@ -28,33 +28,38 @@ Nan          # No hex significand
 #
 
 S E 0x0p0 K + 0 0
-S E 0x0p+0 K + 0 0
-S E 0.0x0p-00 K + 0 0
-S E 0x00p1 K + 0 0
-S E 0x.0000x0p-1 K + 0 0
-S E 0x0.p1000000 K + 0 0
+Q E 0x0p+0 K + 0 0
+H E 0x0.0p-00 K + 0 0
+S E 0X00p1 K + 0 0
+D E 0x.00000p-1 K + 0 0
+S E 0X0.P1000000 K + 0 0
 S E 0x.0p-1000000 K + 0 0
-S E -0x0p0 K - 0 0
+Q E -0x0p0 K - 0 0
 S E -0x0.p-0 K - 0 0
-S E -0x000000000000000000000000000000000.000000000000000000000000000p1000000 K - 0 0
+H E -0x000000000000000000000000000000000.000000000000000000000000000p1000000 K - 0 0
 S E -0x.0p-100000000000 K - 0 0
-
-#
-# Infinities
-#
-
-#
-# Quiet NaNs
-#
-
-#
-# Signalling NaNs
-#
-
-
 
 #
 # Normals no rounding
 #
 
-#S E 0x1p0
+# Various forms of 1.0 with and without fractions, dots and positive and negative exponents
+D E 0x1.0p0 K + -52 4503599627370496
+D E 0x2.p-1 K + -52 4503599627370496
+D E 0x.4p2 K + -52 4503599627370496
+D E 0x10.0p-4 K + -52 4503599627370496
+D E 0x8.p-3 K + -52 4503599627370496
+D E 0X.1p+4 K + -52 4503599627370496
+
+S E 0x1.5p2 K + -21 11010048
+S E 0x1p0 K + -23 8388608
+S E 0x1p-126 K + -149 8388608
+
+#
+# Subnormals no rounding
+#
+
+S E 0x1p-127 K + -149 4194304
+S E 0x1p-128 K + -149 2097152
+S E 0x1p-149 K + -149 1
+#S E 0x101p-131 K + -131 257

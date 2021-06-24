@@ -16,11 +16,15 @@ __all__ = ('InterchangeKind', 'FloatClass', 'FloatEnv', 'FloatFormat', 'OpStatus
            'x87extended', 'x87double', 'x87single',)
 
 
+HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
+
 HEX_SIGNIFICAND_REGEX = re.compile(
-    # sign[opt]
-    '[-+]?'
-    # (hex-integer[opt].fraction or hex-integer.[opt]) p exp-sign[opt]dec-exponent
-    '(0x((([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)p([-+]?[0-9]+)))$',
+    # sign[opt] hex-sig-prefix
+    '[-+]?0x'
+    # (hex-integer[opt].fraction or hex-integer.[opt])
+    '(([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)'
+    # p exp-sign[opt]dec-exponent
+    'p([-+]?[0-9]+)$',
     re.ASCII | re.IGNORECASE
 )
 
@@ -250,7 +254,7 @@ class FloatFormat:
         self.interchange_kind = interchange_kind
         # The largest e such that 2^e is representable.  The largest representable number
         # is 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.  Unbibased.
-        self.e_max = 1 << (e_width - 1) - 1
+        self.e_max = (1 << e_width - 1) - 1
         # The smallest e such that 2^e is a normalized number.  Unbiased.
         self.e_min = 1 - self.e_max
         # The exponent bias
@@ -265,7 +269,7 @@ class FloatFormat:
             self.size = (1 + e_width + (interchange_kind == InterchangeKind.EXPLICIT)
                          + (self.precision - 1) + 7) // 8
         # The integer bit (MSB) in the significand
-        self.int_bit = 1 << (self.precision - 1)
+        self.int_bit = 1 << self.precision - 1
         # The quiet bit in NaNs
         self.quiet_bit = self.int_bit >> 1
         # Significands are unsigned bitstrings of precision bits
@@ -316,8 +320,10 @@ class FloatFormat:
             # Return a correctly-signed zero
             return IEEEfloat(self, sign, 0, 0), OpStatus.OK
 
-        # How many excess bits of precision do we have?  That gives us the natural shift,
-        # but we cannot allow the exponent to fall below e_min.
+        # Shifting the significand so the MSB is one gives us the natural shift.  There it
+        # is followed by a decimal point, so the exponent must be adjusted to compensate.
+        # However we cannot fully shift if the exponent would fall below e_min.
+        exponent += self.precision - 1
         rshift = max(size - self.precision, self.e_min - exponent)
 
         # Shift the significand and update the exponent
@@ -407,37 +413,40 @@ class FloatFormat:
         sign = bool(value & (self.e_saturated + 1))
         return sign, biased_exponent, significand
 
-    def from_dec_string(self, string, env):
-        '''Converts a decimal floating point string to a floating number of the required
+    def from_string(self, string, env):
+        '''Convert a string to a rounded floating number of this format.'''
+        if HEX_SIGNIFICAND_PREFIX.match(string):
+            return self._from_hex_significand_string(string, env)
+        return self._from_decimal_string(string, env)
+
+    def _from_hex_significand_string(self, string, env):
+        '''Convert a string with hexadecimal significand to a rounded floating number of this
         format.
         '''
-        raise NotImplementedError
-
-    def from_hex_significand_string(self, string, env):
-        '''Converts a string with a hexadecimal significand to a floating number of the
-        required format.'''
         match = HEX_SIGNIFICAND_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid hexadecimal float: {string}')
+
         sign = string[0] == '-'
-
         groups = match.groups()
-        if groups[2] is not None:
-            # Floating point.  groups[3] is before the point and groups[4] after it.
-            fraction = groups[4].rstrip('0')
-            significand = int(groups[3] + fraction, 16)
-            exponent = self.precision - 1 - len(fraction) * 4
-            return self.make_real(sign, exponent, significand, env)
+        exponent = int(groups[4])
 
-        assert groups[5] is not None
-        # Integer.  groups[5] is before the point.
-        significand = int(groups[5], 16)
-        exponent = self.precision - 1
+        if groups[1] is None:
+            # Integer.  groups[3] is the string before the point.
+            assert groups[3] is not None
+            significand = int(groups[3], 16)
+        else:
+            # Floating point.  groups[1] is before the point and groups[2] after it.
+            fraction = groups[2].rstrip('0')
+            significand = int((groups[1] + fraction) or '0', 16)
+            exponent -= len(fraction) * 4
+
         return self.make_real(sign, exponent, significand, env)
 
-    def from_dec_string(self, string, env):
+    def _from_decimal_string(self, string, env):
         '''Converts a string with a hexadecimal significand to a floating number of the
         required format.'''
+        raise SyntaxError(f'invalid hexadecimal float: {string}')
         match = HEX_FLOAT_REGEX.match(string)
         if match is None:
             raise ValueError(f'invalid hexadecimal float: {string}')
@@ -518,16 +527,16 @@ class FloatFormat:
         raise NotImplementedError
 
 
-IEEEhalf = FloatFormat(4, 11, InterchangeKind.IMPLICIT)
-IEEEsingle = FloatFormat(7, 24, InterchangeKind.IMPLICIT)
-IEEEdouble = FloatFormat(10, 53, InterchangeKind.IMPLICIT)
-IEEEquad = FloatFormat(14, 113, InterchangeKind.IMPLICIT)
+IEEEhalf = FloatFormat(5, 11, InterchangeKind.IMPLICIT)
+IEEEsingle = FloatFormat(8, 24, InterchangeKind.IMPLICIT)
+IEEEdouble = FloatFormat(11, 53, InterchangeKind.IMPLICIT)
+IEEEquad = FloatFormat(15, 113, InterchangeKind.IMPLICIT)
 #IEEEoctuple = FloatFormat(18, 237, InterchangeKind.IMPLICIT)
 # 80387 floating point takes place with a wide exponent range but rounds to single, double
 # or extended precision.  It also has an explicit integer bit.
-x87extended = FloatFormat(14, 64, InterchangeKind.EXPLICIT)
-x87double = FloatFormat(14, 53, InterchangeKind.NONE)
-x87single = FloatFormat(14, 24, InterchangeKind.NONE)
+x87extended = FloatFormat(15, 64, InterchangeKind.EXPLICIT)
+x87double = FloatFormat(15, 53, InterchangeKind.NONE)
+x87single = FloatFormat(15, 24, InterchangeKind.NONE)
 
 
 # Operation status.  UNDERFLOW and OVERFLOW are always returned or-ed with INEXACT.
@@ -590,6 +599,19 @@ class IEEEfloat:
 
         # Normal
         return FloatClass.nNormal if self.sign else FloatClass.pNormal
+
+    def to_parts(self):
+        '''Returns a triple: (sign, unbiased exponent, significand).'''
+        if self.significand == 0:
+            # Canonicalize zero exponents to 0
+            exponent = 0
+        else:
+            # Denormal numbers given their significand mathematically have a biased
+            # exponent of 1 not 0.  Zero is chosen so the interchange format can omit the
+            # integer bit.  Here we force it back to 1.
+            exponent = max(self.e_biased, 1) - self.fmt.e_bias - (self.fmt.precision - 1)
+
+        return (self.sign, exponent, self.significand)
 
     def is_negative(self):
         '''Return True if the sign bit is set.'''

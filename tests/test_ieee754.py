@@ -25,6 +25,37 @@ def read_lines(filename):
     return result
 
 
+format_codes = {
+    'H': IEEEhalf,
+    'S': IEEEsingle,
+    'D': IEEEdouble,
+    'Q': IEEEquad,
+}
+
+rounding_codes = {
+    'E': RoundTiesToEven,
+    'A': RoundTiesToAway,
+    'P': RoundTowardsPositive,
+    'N': RoundTowardsNegative,
+    'Z': RoundTowardsZero,
+}
+
+status_codes = {
+    'K': OpStatus.OK,
+    'VI': OpStatus.OVERFLOW | OpStatus.INEXACT,
+    'U': OpStatus.UNDERFLOW,
+    'UI': OpStatus.UNDERFLOW | OpStatus.INEXACT,
+    'I': OpStatus.INEXACT,
+    'Z': OpStatus.DIV_BY_ZERO,
+    'X': OpStatus.INVALID_OP,
+}
+
+sign_codes = {
+    '+': False,
+    '-': True,
+}
+
+
 # Test basic class functions before reading test files
 class TestGeneralNonComputationalOps:
 
@@ -324,8 +355,18 @@ class TestGeneralNonComputationalOps:
         if len(parts) == 1:
             hex_str, = parts
             with pytest.raises(SyntaxError):
-                IEEEsingle.from_hex_significand_string(hex_str, std_env)
+                IEEEsingle.from_string(hex_str, std_env)
         elif len(parts) == 7:
-            fmt, rounding, hex_str, status, sign, e_biased, significand = parts
+            fmt, rounding, hex_str, status, sign, exponent, significand = parts
+            fmt = format_codes[fmt]
+            rounding = rounding_codes[rounding]
+            status = status_codes[status]
+            sign = sign_codes[sign]
+            exponent = int(exponent)
+            significand = int(significand)
+            env = FloatEnv(rounding, True, False)
+            value, stat = fmt.from_string(hex_str, env)
+            assert value.to_parts() == (sign, exponent, significand)
+            assert stat == status
         else:
             assert False, f'bad line: {line}'
