@@ -179,7 +179,7 @@ class TestGeneralNonComputationalOps:
     def test_make_real_MSB_set(self, fmt, detect_tininess_after, always_flag_underflow, sign):
         '''Test MSB set with various exponents.'''
         env = FloatEnv(RoundTiesToEven, detect_tininess_after, always_flag_underflow)
-        significand = 1 << (fmt.precision - 1)
+        significand = 1
         for exponent in (
                 fmt.e_min - (fmt.precision - 1),
                 fmt.e_min - 1,
@@ -231,7 +231,7 @@ class TestGeneralNonComputationalOps:
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('fmt, sign, significand, rounding_mode, dtar, afu',
+    @pytest.mark.parametrize('fmt, sign, two_bits, rounding_mode, dtar, afu',
                              product(all_IEEE_fmts,
                                      (False, True),
                                      (1, 2, 3, ),
@@ -239,13 +239,12 @@ class TestGeneralNonComputationalOps:
                                      (False, True),
                                      (False, True),
                              ))
-    def test_make_real_underflow_to_zero(self, fmt, sign, significand, rounding_mode,
-                                         dtar, afu):
+    def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding_mode, dtar, afu):
         # Test that a value that loses two bits of precision underflows correctly
         env = FloatEnv(rounding_mode, dtar, afu)
-        value, status = fmt.make_real(sign, fmt.e_min - 2, significand, env)
-        underflows_to_zero = ((rounding_mode is RoundTiesToEven and significand in (1, 2))
-                              or (rounding_mode is RoundTiesToAway and significand == 1)
+        value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits, env)
+        underflows_to_zero = ((rounding_mode is RoundTiesToEven and two_bits in (1, 2))
+                              or (rounding_mode is RoundTiesToAway and two_bits == 1)
                               or (rounding_mode is RoundTowardsPositive and sign)
                               or (rounding_mode is RoundTowardsNegative and not sign)
                               or (rounding_mode is RoundTowardsZero))
@@ -267,7 +266,7 @@ class TestGeneralNonComputationalOps:
     def test_make_overflow(self, fmt, sign, rounding_mode):
         env = FloatEnv(rounding_mode, True, False)
         # First test the exponent that doesn't overflow but that one more would
-        exponent = fmt.e_max + fmt.precision - 1
+        exponent = fmt.e_max
         value, status = fmt.make_real(sign, exponent, 1, env)
         assert status == OpStatus.OK
         assert value.is_normal()
@@ -303,7 +302,7 @@ class TestGeneralNonComputationalOps:
         exponent = [fmt.e_min - 2, fmt.e_max - 3, fmt.e_max - 2][e_selector]
         # two extra bits in the significand
         significand = two_bits + (fmt.max_significand << 2)
-        value, status = fmt.make_real(sign, exponent, significand, env)
+        value, status = fmt.make_real(sign, exponent - (fmt.precision - 1), significand, env)
         rounds_away = (two_bits and
                        ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
                         or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
@@ -335,9 +334,9 @@ class TestGeneralNonComputationalOps:
     def test_make_real_rounding_subnormal_to_normal(self, fmt, sign, two_bits, rounding_mode):
         # Test cases where rounding away causes a subnormal to normalize
         env = FloatEnv(rounding_mode, True, False)
-        # two extra bits in the significand, with all bits other than MSB zero
+        # an extra bit in the significand with two LSBs varying
         significand = two_bits + ((fmt.max_significand >> 1) << 2)
-        value, status = fmt.make_real(sign, fmt.e_min - 2, significand, env)
+        value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand, env)
         rounds_away = (two_bits and
                        ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
                         or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
