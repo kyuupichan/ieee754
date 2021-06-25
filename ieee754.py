@@ -30,13 +30,13 @@ HEX_SIGNIFICAND_REGEX = re.compile(
 
 DEC_FLOAT_REGEX = re.compile(
     # sign[opt]
-    '[-+]?'
+    '[-+]?('
     # (dec-integer[opt].fraction or hex-integer.[opt]) e exp-sign[opt]dec-exponent
-    '(0x((([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)e?([-+]?[0-9]+))'
+    #'(0x((([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)e?([-+]?[0-9]+))|'
     # inf or infinity
-    '|(inf(inity)?)'
+    '(inf(inity)?)|'
     # nan-or-snan hex-payload-or-dec-payload[opt]
-    '|(s?)nan((0x[0-9a-f]+)|([0-9]+))?)$',
+    '((s?)nan((0x[0-9a-f]+)|([0-9]+))?))$',
     re.ASCII | re.IGNORECASE
 )
 
@@ -286,22 +286,28 @@ class FloatFormat:
         return IEEEfloat(self, sign, self.e_saturated, 0)
 
     def make_largest_finite(self, sign):
-        '''Returns an infinity of the given sign.'''
+        '''Returns the finite number of maximal magnitude with the given sign.'''
         return IEEEfloat(self, sign, self.e_saturated - 1, self.max_significand)
 
     def make_NaN(self, sign, is_quiet, payload):
-        '''Returns a quiet NaN with the given payload.'''
+        '''Return a (value, status) pair.
+
+        The value is a NaN with the given payload; the NaN is quiet iff is_quiet.
+        If no payload bits are lost the status is OK, otherwise INEXACT.
+        '''
+        if payload < 0:
+            raise ValueError(f'NaN payload cannot be negative: {payload}')
+        mask = self.quiet_bit - 1
+        adj_payload = payload & mask
         if is_quiet:
-            if not 0 <= payload < self.quiet_bit:
-                raise ValueError('invalid quiet NaN payload')
-            payload += self.quiet_bit
+            adj_payload |= self.quiet_bit
         else:
-            if not 1 <= payload < self.quiet_bit:
-                raise ValueError('invalid signalling NaN payload')
-        return IEEEfloat(self, sign, self.e_saturated, payload)
+            adj_payload = max(adj_payload, 1)
+        status = OpStatus.OK if adj_payload & mask == payload else OpStatus.INEXACT
+        return IEEEfloat(self, sign, self.e_saturated, adj_payload), status
 
     def make_real(self, sign, exponent, significand, env):
-        '''Return an (IEEEfloat, status) pair.
+        '''Return a (value, status) pair.
 
         The floating point number is the correctly-rounded (according to env) value of the
         infinitely precise result
@@ -447,42 +453,37 @@ class FloatFormat:
 
     def _from_decimal_string(self, string, env):
         '''Converts a string with a hexadecimal significand to a floating number of the
-        required format.'''
-        raise SyntaxError(f'invalid hexadecimal float: {string}')
-        match = HEX_FLOAT_REGEX.match(string)
+        required format.
+
+        A quiet NaN with no specificed payload has payload 0, a signalling NaN has payload
+        1.  If the specified payload is too wide to be stored without loss, the most
+        significant bits are dropped.  If the resulting signalling NaN payload is 0 it
+        becomes 1.  If the payload of the returned NaN does not equal the given payload
+        INEXACT is flagged.
+        '''
+        match = DEC_FLOAT_REGEX.match(string)
         if match is None:
-            raise ValueError(f'invalid hexadecimal float: {string}')
+            raise SyntaxError(f'invalid floating point number: {string}')
         sign = string[0] == '-'
 
         groups = match.groups()
-        if groups[2] is not None:
-            # Floating point.  groups[3] is before the point and groups[4] after it.
-            fraction = groups[4].rstrip('0')
-            significand = int(groups[3] + fraction, 16)
-            exponent = self.precision - 1 - len(fraction) * 4
-            return self.make_real(sign, exponent, significand, env)
 
-        if groups[5] is not None:
-            # Integer.  groups[5] is before the point.
-            significand = int(groups[5], 16)
-            exponent = self.precision - 1
-            return self.make_real(sign, exponent, significand, env)
+        is_quiet = not groups[4]
 
-        if groups[7] is not None:
-            # Infinity
-            return self.make_infinity(sign)
+        # groups[1] matches infinities
+        if groups[1] is not None:
+            return self.make_infinity(sign), OpStatus.OK
 
-        # NaN.  groups[9] is 's', 'S' or '' if this is a NaN; the s indicates signalling.
-        assert groups[9] is not None
-        # If it has a decimal payload groups[10] contains it
-        # If it has a hex payload groups[11] contains it
-        if groups[10] is not None:
-            payload = int(groups[10])
-        elif groups[11] is not None:
-            payload = int(groups[11], 16)
+        # groups[3] matches NaNs.  groups[4] is 's', 'S' or ''; the s indicates
+        # a signalling NaN.  The payload is in groups[5], and duplicated in groups[6] if hex
+        # or groups[7] if decimal
+        assert groups[3] is not None
+        if groups[6] is not None:
+            payload = int(groups[6], 16)
+        elif groups[7] is not None:
+            payload = int(groups[7])
         else:
-            payload = 0
-        is_quiet = groups[9] == ''
+            payload = 1 - is_quiet
         return self.make_NaN(sign, is_quiet, payload)
 
     ##
@@ -597,9 +598,27 @@ class IEEEfloat:
         return FloatClass.nNormal if self.sign else FloatClass.pNormal
 
     def to_parts(self):
-        '''Returns a triple: (sign, unbiased exponent, significand).'''
-        if self.significand == 0:
-            # Canonicalize zero exponents to 0
+        '''Returns a triple: (sign, exponent, significand).
+
+        Finite non-zero numbers have the magniture 2^exponent * significand (an integer).
+
+        Zeroes have an exponent and significand of 0.  Infinities have an exponent of 'I'
+        with significand zero, quiet NaNs an exponent of 'Q' and signalling NaNs an
+        exponent of 'S' and in either case the significand is the payload (without the
+        quiet bit).
+        '''
+        significand = self.significand
+        if self.e_biased == self.fmt.e_saturated:
+            # NaNs and infinities
+            if significand == 0:
+                exponent = 'I'
+            elif significand & self.fmt.quiet_bit:
+                exponent = 'Q'
+                significand -= self.fmt.quiet_bit
+            else:
+                exponent = 'S'
+        elif significand == 0:
+            # Zeroes
             exponent = 0
         else:
             # Denormal numbers given their significand mathematically have a biased
@@ -607,7 +626,7 @@ class IEEEfloat:
             # integer bit.  Here we force it back to 1.
             exponent = max(self.e_biased, 1) - self.fmt.e_bias - (self.fmt.precision - 1)
 
-        return (self.sign, exponent, self.significand)
+        return (self.sign, exponent, significand)
 
     def is_negative(self):
         '''Return True if the sign bit is set.'''

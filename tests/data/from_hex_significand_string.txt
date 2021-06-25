@@ -3,11 +3,12 @@
 #   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
 #   Tininess:   B=Detect before rounding, otherwise detect after
 #   Underflow:  U=Always flag, otherwise only if inexact
+#   Exponent:   A decimal integer, or S for infinities and NaNs
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
 # Sign: + or -
 
-# Test format: FloatFormat Env HexString Status Sign BiasedExponent Significand
-#              HexString Error
+# Test format: FloatFormat Env String Status Sign Exponent Significand
+#              String Error
 
 #
 # Syntax errors
@@ -23,8 +24,11 @@
 0xc.dp+      # No exponent digits
 0xc.dp+a     # Not decimal exponent
 0x1.p2z      # Trailing garbage
-Inf          # No hex significand
-Nan          # No hex significand
+-infinit     # Bad form
+infinityz    # Bad form
+nant         # Bad form
+-snant       # Bad form
+sna          # Bad form
 
 #
 # Zeroes
@@ -41,6 +45,44 @@ Q E -0x0p0 K - 0 0
 S E -0x0.p-0 K - 0 0
 H E -0x000000000000000000000000000000000.000000000000000000000000000p1000000 K - 0 0
 S E -0x.0p-100000000000 K - 0 0
+
+#
+# Infinities
+#
+
+S E inf K + I 0
+S E InF K + I 0
+S E INF K + I 0
+S E InfIniTy K + I 0
+S E -inf K - I 0
+S E -iNFinitY K - I 0
+
+#
+# Quiet NaNs
+#
+
+S E nan K + Q 0
+S E -nAN K - Q 0
+S E NAN123 K + Q 123
+S E -NAN0x123 K - Q 0x123
+   # 22 payload bits are kept
+S E -NAN2345678 K - Q 2345678
+   # 23 payload bits loses top bit
+S E NAN0x5bcdef I + Q 0x1bcdef
+
+#
+# Signalling NaNs
+#
+
+S E snan K + S 1
+S E -SnAN K - S 1
+S E snan0 I + S 1
+S E SNAN123 K + S 123
+S E -sNAN0x123 K - S 0x123
+   # 22 payload bits
+S E -SNAN0x2bcdef K - S 0x2bcdef
+   # 23 payload bits loses top bit
+S E snAN0x5bcdef I + S 0x1bcdef
 
 #
 # Normals no rounding

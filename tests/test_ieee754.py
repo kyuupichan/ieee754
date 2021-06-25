@@ -1,4 +1,5 @@
 import os
+import re
 from itertools import product
 
 import pytest
@@ -30,6 +31,11 @@ def env_string_to_env(env_str):
     detect_tininess_after = not 'B' in env_str
     always_detect_underflow = 'U' in env_str
     return FloatEnv(rounding, detect_tininess_after, always_detect_underflow)
+
+def read_significand(significand):
+    if significand[:2] in ('0x', '0X'):
+        return int(significand, 16)
+    return int(significand)
 
 
 format_codes = {
@@ -114,10 +120,15 @@ class TestGeneralNonComputationalOps:
                              product(all_IEEE_fmts,
                                      (False, True),
                                      (False, True),
-                                     (1, 24),
+                                     (0, 1, 24),
                              ))
     def test_make_NaN(self, fmt, sign, quiet, payload):
-        value = fmt.make_NaN(sign, quiet, payload)
+        value, status = fmt.make_NaN(sign, quiet, payload)
+        if payload == 0 and not quiet:
+            assert status == OpStatus.INEXACT
+            payload = 1
+        else:
+            assert status == OpStatus.OK
         if quiet:
             assert value.classify() == FloatClass.qNaN
         else:
@@ -135,7 +146,7 @@ class TestGeneralNonComputationalOps:
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
-        # FIXME: test get_payload
+        assert value.to_parts()[-1] == payload
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts,
@@ -150,8 +161,6 @@ class TestGeneralNonComputationalOps:
             fmt.make_NaN(sign, True, 1.2)
         with pytest.raises(TypeError):
             fmt.make_NaN(sign, True, 1.2)
-        with pytest.raises(ValueError):
-            fmt.make_NaN(sign, True, fmt.quiet_bit)
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts,
@@ -160,15 +169,11 @@ class TestGeneralNonComputationalOps:
     def test_make_NaN_signalling_payload(self, fmt, sign):
         fmt.make_NaN(sign, False, fmt.quiet_bit - 1)
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, False, 0)
-        with pytest.raises(ValueError):
             fmt.make_NaN(sign, False, -1)
         with pytest.raises(TypeError):
             fmt.make_NaN(sign, False, 1.2)
         with pytest.raises(TypeError):
             fmt.make_NaN(sign, False, 1.2)
-        with pytest.raises(ValueError):
-            fmt.make_NaN(sign, False, fmt.quiet_bit)
 
     @pytest.mark.parametrize('fmt, detect_tininess_after, always_flag_underflow, sign',
                              product(all_IEEE_fmts,
@@ -356,7 +361,7 @@ class TestGeneralNonComputationalOps:
         assert value.fmt is fmt
 
     @pytest.mark.parametrize('line', read_lines('from_hex_significand_string.txt'))
-    def test_from_hex_significand_string(self, line):
+    def test_from_string(self, line):
         parts = line.split()
         if len(parts) == 1:
             hex_str, = parts
@@ -368,8 +373,11 @@ class TestGeneralNonComputationalOps:
             env = env_string_to_env(env_str)
             status = status_codes[status]
             sign = sign_codes[sign]
-            exponent = int(exponent)
-            significand = int(significand)
+            try:
+                exponent = int(exponent)
+            except ValueError:
+                pass
+            significand = read_significand(significand)
             value, stat = fmt.from_string(hex_str, env)
             assert value.to_parts() == (sign, exponent, significand)
             assert stat == status
