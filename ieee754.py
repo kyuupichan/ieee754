@@ -44,12 +44,14 @@ DEC_FLOAT_REGEX = re.compile(
 
 
 class InterchangeKind(IntEnum):
-    NONE = 0            # Not an interchange format
-    IMPLICIT = 1        # Implicit integer bit (IEEE)
-    EXPLICIT = 2        # Explicit integer bit (x87 extended precision)
+    '''Descibes if and how floating point numbers in this format can be interchaged.'''
+    NONE = 0            # Not an interchange format, values cannot be packed or unpacked
+    IMPLICIT = 1        # Pack with an implicit integer bit (IEEE)
+    EXPLICIT = 2        # Pack with an explicit integer bit (x87 extended precision)
 
 
 class FloatClass(IntEnum):
+    '''All floating point numbers belong to precisely one class.'''
     sNaN = 0          # Signalling NaN
     qNaN = 1          # Quiet NaN
     nInf = 2          # Negative infinity
@@ -62,7 +64,9 @@ class FloatClass(IntEnum):
     pInf = 9          # Positive infinity
 
 
-# Operation status.  UNDERFLOW and OVERFLOW are always returned or-ed with INEXACT.
+# Operation status flags.  OVERFLOW is always returned with INEXACT.  UNDERFLOW, too, has
+# INEXACT unless the environment always_flag_underflow bit is set, in which case UNDERFLOW
+# may stand alone as per IEEE-754.
 class OpStatus(IntFlag):
     OK          = 0
     INVALID     = 0x01
@@ -72,9 +76,8 @@ class OpStatus(IntFlag):
     INEXACT     = 0x10
 
 
-# When bits of a floating point number are truncated, this is used to indicate what
-# fraction of the LSB those bits represented.  It essentially combines the roles of guard
-# and sticky bits.
+# When precision is lost during a calculation this indicates what fraction of the LSB the
+# lost bits represented.  It essentially combines the roles of 'guard' and 'sticky' bits.
 class LostFraction(IntEnum):   # Example of truncated bits:
     EXACTLY_ZERO = 0           # 000000
     LESS_THAN_HALF = 1	       # 0xxxxx  x's not all zero
@@ -779,9 +782,6 @@ class IEEEfloat:
             # Zeroes
             exponent = 0
         else:
-            # Denormal numbers given their significand mathematically have a biased
-            # exponent of 1 not 0.  Zero is chosen so the interchange format can omit the
-            # integer bit.  Here we force it back to 1.
             exponent = self.exponent()
 
         return (self.sign, exponent, significand)
@@ -839,7 +839,12 @@ class IEEEfloat:
         return 2
 
     def exponent(self):
-        '''Return the effective exponent of our significand viewed as a integer.'''
+        '''Return the arithmetic exponent of our significand interpreted as an integer.
+
+        Subnormal numbers mathematically have a biased exponent of 1 not 0.  Zero is only
+        chosen so the interchange format can unambiguously omit the integer bit.  So here
+        we must force it back to 1.
+        '''
         return max(1, self.e_biased) - self.fmt.e_bias - (self.fmt.precision - 1)
 
     def total_order(self, rhs):
