@@ -428,8 +428,22 @@ class FloatFormat:
     def convert(self, value, env):
         '''Return a (result, status) pair.
 
-        Convert value to this floating point format rounding according to env.'''
-        raise NotImplementedError
+        Convert a floating point value to this format rounding according to env.'''
+        if value.e_biased == value.fmt.e_saturated:
+            if value.significand:
+                # NaNs
+                result, status = self.make_NaN(value.sign, True, value.NaN_payload())
+                if value.is_signalling():
+                    status |= OpStatus.INVALID
+                return result, status
+            # Infinities
+            return self.make_infinity(value.sign), OpStatus.OK
+
+        # Zeroes
+        if value.significand == 0:
+            return self.make_zero(value.sign), OpStatus.OK
+
+        return self.make_real(value.sign, value.exponent(), value.significand, env)
 
     def pack(self, sign, biased_exponent, significand, endianness='little'):
         '''Returns a floating point value encoded as bytes of the given endianness.'''
@@ -717,7 +731,7 @@ class IEEEfloat:
 
     ##
     ## Non-computational operations.  These are never exceptional so simply return their
-    ## results.
+    ## non-floating-point results.
     ##
 
     def classify(self):
@@ -768,9 +782,15 @@ class IEEEfloat:
             # Denormal numbers given their significand mathematically have a biased
             # exponent of 1 not 0.  Zero is chosen so the interchange format can omit the
             # integer bit.  Here we force it back to 1.
-            exponent = max(self.e_biased, 1) - self.fmt.e_bias - (self.fmt.precision - 1)
+            exponent = self.exponent()
 
         return (self.sign, exponent, significand)
+
+    def NaN_payload(self):
+        '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''
+        if not self.is_NaN():
+            raise RuntimeError(f'NaN_payload called on a non-NaN: {self.to_parts()}')
+        return self.significand & self.fmt.quiet_bit - 1
 
     def is_negative(self):
         '''Return True if the sign bit is set.'''
@@ -817,6 +837,10 @@ class IEEEfloat:
     def radix(self):
         '''We're binary!'''
         return 2
+
+    def exponent(self):
+        '''Return the effective exponent of our significand viewed as a integer.'''
+        return max(1, self.e_biased) - self.fmt.e_bias - (self.fmt.precision - 1)
 
     def total_order(self, rhs):
         raise NotImplementedError
@@ -952,8 +976,7 @@ class IEEEfloat:
 
         # Rounding-towards-zero is semantically equivalent to clearing zero or more of the
         # significand's least-significant bits.
-        exponent = max(1, self.e_biased) - self.fmt.e_bias
-        count = (self.fmt.precision - 1) - exponent
+        count = -self.exponent()
 
         # We're already an integer if count is <= 0
         if count <= 0:
@@ -998,12 +1021,6 @@ class IEEEfloat:
         raise NotImplementedError
 
     def to_integral(self, flt_format, env):
-        '''Returns a (lhs, status) pair correctly-rounded with flt_format the floating point
-        format of the result.
-        '''
-        raise NotImplementedError
-
-    def convert(self, flt_format, env):
         '''Returns a (lhs, status) pair correctly-rounded with flt_format the floating point
         format of the result.
         '''

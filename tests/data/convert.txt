@@ -1,0 +1,88 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Envirnement:
+#   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+#   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
+#   Underflow:  U=Always flag, otherwise only if inexact   (optional)
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
+# Sign: + or -
+
+# Test format: SourceFormat Env String DestFormat Status String
+
+#
+# Zeroes
+#
+
+S E 0 D K 0
+D N +0 S K 0
+Q P -0 H K -0
+H A +0 H K 0
+S Z -0 Q K -0
+
+#
+# Infinities
+#
+
+S E inf D K +inf
+D P +InF S K inf
+H N -INF Q K -inf
+Q Z -inf H K -inf
+
+
+#
+# Quiet NaNs
+#
+
+H E Nan D K NaN
+D Z -Nan H K -NaN
+   # Widening
+H A Nan0x156 Q K Nan0x156
+   # Narrowing double has 51 bits for payload, S just 22
+D N Nan0x1234567f90123 S I nan0x390123
+
+
+#
+# Signalling NaNs
+#
+
+H E SNan D X NaN1
+Q A SNan H X Nan1
+   # Widening
+S A SNan0x156 D X Nan0x156
+   # Narrowing quad has 111 bits for payload, H just 9
+Q Z SNan0x7123456789012345678901234567 H XI nan0x167
+
+
+#
+# Narrowing conversions: Normal -> Normal or SubNormal
+#
+
+Q E 1 H K 1
+S E 0x1.ff4p-14 H K 0x1.ff4p-14       # Normal number in H with H precision bits
+S E 0x1.ff2p-14 H I 0x1.ff0p-14       # Loses the LSB on conversion
+S A 0x1.ff2p-14 H I 0x1.ff4p-14       # Rounds up the LSB on conversion
+S E -0x1p-15 H K -0x1p-15             # Subnormal in H
+S EBU -0x1p-15 H U -0x1p-15           # Subnormal in H detect tininess before and flag
+S EB -0x1p-15 H K -0x1p-15            # Subnormal in H detect tininess before flag if inexact
+S E -0x1p-24 H K -0x1p-24             # Minimal subnormal in H
+S EB -0x1p-24 H K -0x1p-24            # Minimal subnormal in H
+S EBU -0x1p-24 H U -0x1p-24           # Minimal subnormal in H
+S E -0x1.11p-24 H UI -0x1p-24         # Minimal inexact subnormal in H
+S EB -0x1.11p-24 H UI -0x1p-24        # Minimal inexact subnormal in H
+S EBU -0x1.11p-24 H UI -0x1p-24       # Minimal inexact subnormal in H
+S EU -0x1.11p-24 H UI -0x1p-24        # Minimal inexact subnormal in H
+
+#
+# Narrowing conversions: Subnormal -> Zero
+#
+
+D E -0x1p-25 H UI -0                  # Underflows to zero
+Q EBU -0x1p-25 H UI -0                # Underflows to zero
+
+#
+# Widening conversions: Normal -> Normal
+#
+
+H E 0x1.ff4p-14 Q K 0x1.ff4p-14
+H E 0x1.ff4p-14 S K 0x1.ff4p-14
+D A 0x1p-1022 Q K 0x1p-1022
+D Z 0x1.234567890123p1023 Q K 0x1.234567890123p1023

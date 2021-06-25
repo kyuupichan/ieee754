@@ -61,6 +61,7 @@ status_codes = {
     'I': OpStatus.INEXACT,
     'Z': OpStatus.DIV_BY_ZERO,
     'X': OpStatus.INVALID,
+    'XI': OpStatus.INVALID | OpStatus.INEXACT,
 }
 
 sign_codes = {
@@ -386,18 +387,36 @@ class TestGeneralNonComputationalOps:
     @pytest.mark.parametrize('line', read_lines('round.txt'))
     def test_round(self, line):
         parts = line.split()
-        if len(parts) == 5:
-            fmt, env_str, value, status, answer = parts
-            fmt = format_codes[fmt]
-            rounding_mode = rounding_codes[env_str]
-            value, stat = fmt.from_string(value, std_env)
-            assert stat == OpStatus.OK
-            status = status_codes[status]
-            answer, stat = fmt.from_string(answer, std_env)
-            assert stat == OpStatus.OK
-
-            result, stat = value.round(rounding_mode)
-            assert result.to_parts() == answer.to_parts()
-            assert stat == status
-        else:
+        if len(parts) != 5:
             assert False, f'bad line: {line}'
+        fmt, env_str, value, status, answer = parts
+        fmt = format_codes[fmt]
+        rounding_mode = rounding_codes[env_str]
+        value, stat = fmt.from_string(value, std_env)
+        assert stat == OpStatus.OK
+        status = status_codes[status]
+        answer, stat = fmt.from_string(answer, std_env)
+        assert stat == OpStatus.OK
+
+        result, stat = value.round(rounding_mode)
+        assert result.to_parts() == answer.to_parts()
+        assert stat == status
+
+    @pytest.mark.parametrize('line', read_lines('convert.txt'))
+    def test_convert(self, line):
+        parts = line.split()
+        if len(parts) != 6:
+            assert False, f'bad line: {line}'
+        src_fmt, env_str, src_value, dst_fmt, status, answer = parts
+        src_fmt = format_codes[src_fmt]
+        env = env_string_to_env(env_str)
+        src_value, src_stat = src_fmt.from_string(src_value, std_env)
+        assert src_stat == OpStatus.OK
+        dst_fmt = format_codes[dst_fmt]
+        status = status_codes[status]
+        answer, ans_stat = dst_fmt.from_string(answer, std_env)
+        assert ans_stat == OpStatus.OK
+
+        result, stat = dst_fmt.convert(src_value, env)
+        assert result.to_parts() == answer.to_parts()
+        assert stat == status
