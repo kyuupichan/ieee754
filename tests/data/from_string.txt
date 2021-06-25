@@ -24,15 +24,23 @@
 0xc.dp+      # No exponent digits
 0xc.dp+a     # Not decimal exponent
 0x1.p2z      # Trailing garbage
+0x.1p2z      # Trailing garbage
+0x2.3p2z     # Trailing garbage
 -infinit     # Bad form
 infinityz    # Bad form
 nant         # Bad form
 -snant       # Bad form
 sna          # Bad form
+.            # No decimal values
+1e+          # No exponent digits
+1e-          # No exponent digits
+1e           # No exponent digits
 
 #
 # Zeroes
 #
+
+  # Hexadecimal
 
 S E 0x0p0 K + 0 0
 Q E 0x0p+0 K + 0 0
@@ -45,6 +53,15 @@ Q E -0x0p0 K - 0 0
 S E -0x0.p-0 K - 0 0
 H E -0x000000000000000000000000000000000.000000000000000000000000000p1000000 K - 0 0
 S E -0x.0p-100000000000 K - 0 0
+
+  # Decimal
+
+S E 0 K + 0 0
+S E -0 K - 0 0
+S E -0.0000 K - 0 0
+S E .00000e000 K + 0 0
+S E 0e000 K + 0 0
+
 
 #
 # Infinities

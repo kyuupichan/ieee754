@@ -31,8 +31,10 @@ HEX_SIGNIFICAND_REGEX = re.compile(
 DEC_FLOAT_REGEX = re.compile(
     # sign[opt]
     '[-+]?('
-    # (dec-integer[opt].fraction or hex-integer.[opt]) e exp-sign[opt]dec-exponent
-    #'(0x((([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)e?([-+]?[0-9]+))|'
+    # (dec-integer[opt].fraction or dec-integer.[opt])
+    '(([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)'
+    # e sign[opt]dec-exponent   [opt]
+    '(e([-+]?[0-9]+))?|'
     # inf or infinity
     '(inf(inity)?)|'
     # nan-or-snan hex-payload-or-dec-payload[opt]
@@ -408,10 +410,10 @@ class FloatFormat:
             # negative numbers.  Negative zero is the only number whose sign flips.
             if sign and significand:
                 significand -= 1
-                if e_biased and significand < self.fmt.int_bit:
+                if e_biased and significand < self.int_bit:
                     e_biased -= 1
                     if e_biased:
-                        significand |= self.fmt.int_bit
+                        significand |= self.int_bit
             else:
                 sign = False
                 significand += 1
@@ -422,6 +424,12 @@ class FloatFormat:
                         significand = 0
 
         return IEEEfloat(self, sign ^ flip_sign, e_biased, significand), status
+
+    def convert(self, value, env):
+        '''Return a (result, status) pair.
+
+        Convert value to this floating point format rounding according to env.'''
+        raise NotImplementedError
 
     def pack(self, sign, biased_exponent, significand, endianness='little'):
         '''Returns a floating point value encoded as bytes of the given endianness.'''
@@ -491,12 +499,12 @@ class FloatFormat:
         groups = match.groups()
         exponent = int(groups[4])
 
+        # If a fraction was specified, the integer and fraction parts are in groups[1],
+        # groups[2].  If no fraction was specified the integer is in groups[3].
+        assert groups[1] is not None or groups[3]
         if groups[1] is None:
-            # Integer.  groups[3] is the string before the point.
-            assert groups[3] is not None
             significand = int(groups[3], 16)
         else:
-            # Floating point.  groups[1] is before the point and groups[2] after it.
             fraction = groups[2].rstrip('0')
             significand = int((groups[1] + fraction) or '0', 16)
             exponent -= len(fraction) * 4
@@ -516,27 +524,121 @@ class FloatFormat:
         match = DEC_FLOAT_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid floating point number: {string}')
-        sign = string[0] == '-'
 
+        sign = string[0] == '-'
         groups = match.groups()
 
-        is_quiet = not groups[4]
-
-        # groups[1] matches infinities
+        # Decimal float?
         if groups[1] is not None:
+            # Read the optional exponent first.  It is in groups[6].
+            exponent = 0 if groups[6] is None else int(groups[6])
+
+            # If a fraction was specified, the integer and fraction parts are in
+            # groups[2], groups[3].  If no fraction was specified the integer is in
+            # groups[4].
+            assert groups[2] is not None or groups[4]
+            if groups[2] is None:
+                significand = int(groups[4])
+            else:
+                fraction = groups[3].rstrip('0')
+                significand = int((groups[2] + fraction) or '0', 10)
+                exponent -= len(fraction)
+
+            if exponent == 0:
+                return self.make_real(sign, 0, significand, env)
+            raise NotImplementedError
+
+            # Now the value is significand * 10^exponent.
+            return self._decimal_to_binary(sign, exponent, significand, env)
+
+        # groups[7] matches infinities
+        if groups[7] is not None:
             return self.make_infinity(sign), OpStatus.OK
 
-        # groups[3] matches NaNs.  groups[4] is 's', 'S' or ''; the s indicates
-        # a signalling NaN.  The payload is in groups[5], and duplicated in groups[6] if hex
-        # or groups[7] if decimal
-        assert groups[3] is not None
-        if groups[6] is not None:
-            payload = int(groups[6], 16)
-        elif groups[7] is not None:
-            payload = int(groups[7])
+        # groups[9] matches NaNs.  groups[10] is 's', 'S' or ''; the s indicates a
+        # signalling NaN.  The payload is in groups[11], and duplicated in groups[12] if
+        # hex or groups[13] if decimal
+        assert groups[9] is not None
+        is_quiet = not groups[10]
+        if groups[12] is not None:
+            payload = int(groups[12], 16)
+        elif groups[13] is not None:
+            payload = int(groups[13])
         else:
             payload = 1 - is_quiet
         return self.make_NaN(sign, is_quiet, payload)
+
+    def _decimal_to_binary(self, sign, exponent, significand, env):
+        '''Return a correctly-rounded binary value of
+
+             (-1)^sign * significand * 10^exponent
+        '''
+        pow5 = pow(5, abs(exponent))
+        calc_env = FloatEnv(RoundTiesToEven, True, False)
+        round_to_nearest = env.rounding_mode in {RoundTiesToEven, RoundTiesToAway}
+
+        def ulps_from_boundary(a, b, c):
+            raise NotImplementedError
+
+        # The loops are expensive; optimistically start with a low precision and
+        # iteratively increase it until we can guarantee the result was correctly rounded.
+        # Start with a precision a multiple of 64 bits with some room over the format
+        # precision.
+        parts_count = (self.precision + 10) // 64 + 1
+
+        while True:
+            # FIXME: choice of e_width
+            calc_fmt = FloatFormat(16, parts_count * 64, InterchangeKind.NONE)
+            excess_precision = calc_fmt.precision - self.precision
+
+            sig_status, sig_value = calc_fmt.make_real(sign, 0, significand, calc_env)
+            pow5_status, pow5_value = calc_fmt.make_real(False, 0, pow5, calc_env)
+
+            # Because 10^n = 5^n * 2^n.   FIXME: check for out-of-range exponents.
+            sig_value.e_biased += exponent
+
+            if exponent >= 0:
+                scaled_value, lost_fraction = calc_fmt._multiply_finite(sig_value, pow5_value)
+                pow_HU_err = pow5_status != OpStatus.OK
+            else:
+                scaled_value, lost_fraction = calc_fmt._divide_finite(sig_value, pow5_value)
+                # Subnormals have less precision
+                if scaled_value.e_biased == 0:
+                    excess_precision += calc_fmt.precision - scaled_value.bit_length()
+                    excess_precision = min(excess_precision, calc_fmt.precision)
+                # An extra half-ulp is lost in reciprocal of pow5
+                if pow5_status == OpStatus.OK and lost_fraction == LostFraction.EXACTLY_ZERO:
+                    pow_HU_err = 0
+                else:
+                    pow_HU_err = 2
+
+            # The error from the true value, in half-ulps, on multiplying two floating
+            # point numbers, which differ from the value they approximate by at most HUE1
+            # and HUE2 half-ulps, is strictly less than the returned value.
+            #
+            # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
+            # Clinger.
+            inexact_multiply = lost_fraction != LostFraction.EXACTLY_ZERO
+            sig_HU_err = sig_status != OpStatus.OK
+            if sig_HU_err + pow_HU_err == 0:
+                HU_err = inexact_multiply * 2     # <= inexactMultiply half-ulps
+            else:
+                HU_err = inexact_multiply + 2 * (sig_HU_err + pow_HU_err)
+
+            HU_distance = 2 * ulps_from_boundary(sig_value, excess_precision, round_to_nearest)
+
+            # If we truncate now are we guaranteed to round correctly?
+            if HU_distance >= HU_err:
+                return self.convert(scaled_value, env)
+
+            # Increase precision and try again
+            parts_count += parts_count // 2 + 1
+
+    def _multiply_finite(self, lhs, rhs):
+        raise NotImplementedError
+
+    def _divide_finite(self, lhs, rhs):
+        raise NotImplementedError
 
     ##
     ## General computational operations.  The operands can be different formats;
