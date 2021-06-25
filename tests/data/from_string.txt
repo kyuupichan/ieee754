@@ -115,7 +115,9 @@ S E snAN0x5bcdef I + S 0x1bcdef
 # Normals no rounding
 #
 
-# Various forms of 1.0 with and without fractions, dots and positive and negative exponents
+  # Hexadecimal
+
+  # Various forms of 1.0 with and without fractions, dots and positive and negative exponents
 D E 0x1.0p0 K + -52 4503599627370496
 D E 0x2.p-1 K + -52 4503599627370496
 D E 0x.4p2 K + -52 4503599627370496
@@ -130,6 +132,11 @@ S E 0x1p-126 K + -149 8388608
 D E 0x1.0000000000001p-1022 K + -1074 4503599627370497
    # All bits set, minimal exponent
 D E 0x1.fffffffffffffp-1022 K + -1074 9007199254740991
+
+  # Decimal
+
+D E 1 K + -52 4503599627370496
+D E -1. K - -52 4503599627370496
 
 #
 # Subnormals no rounding
