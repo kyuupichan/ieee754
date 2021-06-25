@@ -371,6 +371,48 @@ class FloatFormat:
 
         return IEEEfloat(self, sign, exponent + self.e_bias, significand), status
 
+    def next_up(self, value, flip_sign):
+        '''Return the smallest floating point value (unless operating on a positive infinity or
+        NaN) that compares greater than the one whose parts are given.
+
+        Signs are flipped on read and write if flip_sign is True.
+        '''
+        assert value.fmt is self
+        sign = value.sign ^ flip_sign
+        e_biased = value.e_biased
+        significand = value.significand
+        status = OpStatus.OK
+
+        if e_biased == self.e_saturated:
+            # Negative infinity becomes largest negative number; positive infinity unchanged
+            if significand == 0:
+                if sign:
+                    significand = self.max_significand
+                    e_biased -= 1
+            # Signalling NaNs are converted to quiet.
+            elif significand < self.quiet_bit:
+                significand |= self.quiet_bit
+                status = OpStatus.OP_INVALID
+        else:
+            # Increment the significand of positive numbers, decrement the significand of
+            # negative numbers.  Negative zero is the only number whose sign flips.
+            if sign and significand:
+                significand -= 1
+                if e_biased and significand < self.fmt.int_bit:
+                    e_biased -= 1
+                    if e_biased:
+                        significand |= self.fmt.int_bit
+            else:
+                sign = False
+                significand += 1
+                if significand > self.max_significand:
+                    significand >>= 1
+                    e_biased += 1
+                    if e_biased == self.e_saturated:
+                        significand = 0
+
+        return IEEEfloat(self, sign ^ flip_sign, e_biased, significand), status
+
     def pack(self, sign, biased_exponent, significand, endianness='little'):
         '''Returns a floating point value encoded as bytes of the given endianness.'''
         if self.size is None:
@@ -718,18 +760,6 @@ class IEEEfloat:
     ## Format is preserved and the result is in-place.
     ##
 
-    def next_up(self):
-        '''Set to the smallest floating point value (unless operating on a positive infinity or
-        NaN) that compares greater.
-        '''
-        raise NotImplementedError
-
-    def next_down(self):
-        '''Set to the greatest floating point value (unless operating on a negative infinity or
-        NaN) that compares less.
-        '''
-        raise NotImplementedError
-
     def remainder(self, rhs):
         '''Set to the reaminder when divided by rhs.  Returns OpStatus.OK.
 
@@ -784,6 +814,20 @@ class IEEEfloat:
             return IEEEfloat(self.fmt, self.sign, self.e_biased,
                              self.significand | self.fmt.quiet_bit), OpStatus.OP_INVALID
         return self.copy(), OpStatus.OK
+
+    def next_up(self):
+        '''Set to the smallest floating point value (unless operating on a positive infinity or
+        NaN) that compares greater.
+        '''
+        return self.fmt.next_up(self, False)
+
+    def next_down(self):
+        '''Set to the greatest floating point value (unless operating on a negative infinity or
+        NaN) that compares less.
+
+        As per IEEE-754 next_down(x) = -next_up(-x)
+        '''
+        return self.fmt.next_up(self, True)
 
     def round(self, rounding_mode, exact=False):
         '''Round to the nearest integer retaining the input floating point format and return a

@@ -360,7 +360,7 @@ class TestGeneralNonComputationalOps:
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('line', read_lines('from_hex_significand_string.txt'))
+    @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
         parts = line.split()
         if len(parts) == 1:
