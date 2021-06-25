@@ -60,7 +60,7 @@ status_codes = {
     'UI': OpStatus.UNDERFLOW | OpStatus.INEXACT,
     'I': OpStatus.INEXACT,
     'Z': OpStatus.DIV_BY_ZERO,
-    'X': OpStatus.INVALID_OP,
+    'X': OpStatus.INVALID,
 }
 
 sign_codes = {
@@ -299,8 +299,7 @@ class TestGeneralNonComputationalOps:
                                      (0, 1, 2, 3, ),
                                      all_rounding_modes,
                              ))
-    def test_make_real_rounding_overflows_significand(self, fmt, sign, e_selector, two_bits,
-                                                      rounding_mode):
+    def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding_mode):
         # Test cases where rounding away causes significand to overflow
         env = FloatEnv(rounding_mode, True, False)
         # Minimimum good, maximum good, overflows to infinity
@@ -336,7 +335,7 @@ class TestGeneralNonComputationalOps:
                                      (0, 1, 2, 3, ),
                                      all_rounding_modes,
                              ))
-    def test_make_real_rounding_subnormal_to_normal(self, fmt, sign, two_bits, rounding_mode):
+    def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding_mode):
         # Test cases where rounding away causes a subnormal to normalize
         env = FloatEnv(rounding_mode, True, False)
         # an extra bit in the significand with two LSBs varying

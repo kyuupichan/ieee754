@@ -60,6 +60,16 @@ class FloatClass(IntEnum):
     pInf = 9          # Positive infinity
 
 
+# Operation status.  UNDERFLOW and OVERFLOW are always returned or-ed with INEXACT.
+class OpStatus(IntFlag):
+    OK          = 0
+    INVALID     = 0x01
+    DIV_BY_ZERO = 0x02
+    OVERFLOW    = 0x04
+    UNDERFLOW   = 0x08
+    INEXACT     = 0x10
+
+
 # When bits of a floating point number are truncated, this is used to indicate what
 # fraction of the LSB those bits represented.  It essentially combines the roles of guard
 # and sticky bits.
@@ -392,7 +402,7 @@ class FloatFormat:
             # Signalling NaNs are converted to quiet.
             elif significand < self.quiet_bit:
                 significand |= self.quiet_bit
-                status = OpStatus.OP_INVALID
+                status = OpStatus.INVALID
         else:
             # Increment the significand of positive numbers, decrement the significand of
             # negative numbers.  Negative zero is the only number whose sign flips.
@@ -575,16 +585,6 @@ IEEEquad = FloatFormat(15, 113, InterchangeKind.IMPLICIT)
 x87extended = FloatFormat(15, 64, InterchangeKind.EXPLICIT)
 x87double = FloatFormat(15, 53, InterchangeKind.NONE)
 x87single = FloatFormat(15, 24, InterchangeKind.NONE)
-
-
-# Operation status.  UNDERFLOW and OVERFLOW are always returned or-ed with INEXACT.
-class OpStatus(IntFlag):
-    OK          = 0
-    INVALID_OP  = 0x01
-    DIV_BY_ZERO = 0x02
-    OVERFLOW    = 0x04
-    UNDERFLOW   = 0x08
-    INEXACT     = 0x10
 
 
 class IEEEfloat:
@@ -808,11 +808,11 @@ class IEEEfloat:
         '''Return a pair (result, status).
 
         Result is a copy except that a signalling NaN becomes its quiet twin.  Status is
-        OpStatus.OP_INVALID in this case, otherwise OpStatus.OK.
+        OpStatus.INVALID in this case, otherwise OpStatus.OK.
         '''
         if self.is_signalling():
             return IEEEfloat(self.fmt, self.sign, self.e_biased,
-                             self.significand | self.fmt.quiet_bit), OpStatus.OP_INVALID
+                             self.significand | self.fmt.quiet_bit), OpStatus.INVALID
         return self.copy(), OpStatus.OK
 
     def next_up(self):
@@ -833,7 +833,7 @@ class IEEEfloat:
         '''Round to the nearest integer retaining the input floating point format and return a
         (value, status) pair.
 
-        This function flags INVALID_OP on a signalling NaN input; if exact is True, the
+        This function flags INVALID on a signalling NaN input; if exact is True, the
         INEXACT flag is set in the status if the result does not have the same numerical
         value as the input.  In all other cases no flags are set.
 
@@ -852,11 +852,19 @@ class IEEEfloat:
         # significand's least-significant bits.
         exponent = max(1, self.e_biased) - self.fmt.e_bias
         count = (self.fmt.precision - 1) - exponent
+
+        # We're already an integer if count is <= 0
         if count <= 0:
             return self.copy(), OpStatus.OK
 
+        # If count >= precision then we're a fraction and all bits are cleared, in which
+        # case rounding away rounds to int_bit with exponent of 0.  Cap the count at
+        # precision + 1, which still captures the lost fraction correctly.
+        count = min(count, self.fmt.precision + 1)
+
         significand = self.significand
         lost_fraction = lost_bits_from_rshift(significand, count)
+
         # Clear the insignificant bits of the significand
         lsb = 1 << count
         significand &= ~(lsb - 1)
@@ -864,11 +872,15 @@ class IEEEfloat:
         # Round
         e_biased = self.e_biased
         if rounding_mode.rounds_away(lost_fraction, self.sign, bool(significand & lsb)):
-            significand += lsb
-            # If the significand now overflows, halve it and increment the exponent
-            if significand > self.fmt.max_significand:
-                significand >>= 1
-                e_biased += 1
+            if lsb <= self.fmt.int_bit:
+                significand += lsb
+                # If the significand now overflows, halve it and increment the exponent
+                if significand > self.fmt.max_significand:
+                    significand >>= 1
+                    e_biased += 1
+            else:
+                significand = self.fmt.int_bit
+                e_biased = self.fmt.e_bias
 
         if exact and lost_fraction != LostFraction.EXACTLY_ZERO:
             status = OpStatus.INEXACT
