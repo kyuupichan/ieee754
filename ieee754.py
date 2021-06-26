@@ -304,7 +304,7 @@ class FloatFormat:
         '''Returns the finite number of maximal magnitude with the given sign.'''
         return IEEEfloat(self, sign, self.e_saturated - 1, self.max_significand)
 
-    def make_NaN(self, sign, is_quiet, payload):
+    def make_NaN(self, sign, is_quiet, payload, flag_invalid):
         '''Return a (value, status) pair.
 
         The value is a NaN with the given payload; the NaN is quiet iff is_quiet.
@@ -319,6 +319,8 @@ class FloatFormat:
         else:
             adj_payload = max(adj_payload, 1)
         status = OpStatus.OK if adj_payload & mask == payload else OpStatus.INEXACT
+        if flag_invalid:
+            status |= OpStatus.INVALID
         return IEEEfloat(self, sign, self.e_saturated, adj_payload), status
 
     def make_real(self, sign, exponent, significand, env):
@@ -365,12 +367,14 @@ class FloatFormat:
                 significand >>= 1
                 exponent += 1
 
-        # If the new exponent would be too big, then we overflow to infinity, or round
-        # down to the format's largest finite value.
+        # If the new exponent would be too big, then we overflow.  The result is either
+        # infinity or the format's largest finite value depnding on the rounding mode.
         if exponent > self.e_max:
             if env.rounding_mode.overflow_to_infinity(sign):
-                return self.make_infinity(sign), OpStatus.OVERFLOW | OpStatus.INEXACT
-            return self.make_largest_finite(sign), OpStatus.INEXACT
+                result = self.make_infinity(sign)
+            else:
+                result = self.make_largest_finite(sign)
+            return result, OpStatus.OVERFLOW | OpStatus.INEXACT
 
         # Detect tininess after rounding if appropriate
         if env.detect_tininess_after:
@@ -433,14 +437,12 @@ class FloatFormat:
 
         Convert a floating point value to this format rounding according to env.'''
         if value.e_biased == value.fmt.e_saturated:
-            if value.significand:
-                # NaNs
-                result, status = self.make_NaN(value.sign, True, value.NaN_payload())
-                if value.is_signalling():
-                    status |= OpStatus.INVALID
-                return result, status
             # Infinities
-            return self.make_infinity(value.sign), OpStatus.OK
+            if value.significand == 0:
+                return self.make_infinity(value.sign), OpStatus.OK
+
+            # NaNs
+            return self.make_NaN(value.sign, True, value.NaN_payload(), value.is_signalling())
 
         # Zeroes
         if value.significand == 0:
@@ -583,7 +585,7 @@ class FloatFormat:
             payload = int(groups[13])
         else:
             payload = 1 - is_quiet
-        return self.make_NaN(sign, is_quiet, payload)
+        return self.make_NaN(sign, is_quiet, payload, False)
 
     def _decimal_to_binary(self, sign, exponent, significand, env):
         '''Return a correctly-rounded binary value of
@@ -678,7 +680,39 @@ class FloatFormat:
 
     def multiply(self, lhs, rhs, env):
         '''Returns a (lhs * rhs, status) pair with dst_format as the format of the result.'''
-        raise NotImplementedError
+        if lhs.e_biased == lhs.fmt.e_saturated:
+            return self._multiply_special(lhs, rhs)
+        if rhs.e_biased == rhs.fmt.e_saturated:
+            return self._multiply_special(rhs, lhs)
+
+        # Both numbers are finite.
+        sign = lhs.sign ^ rhs.sign
+        exponent = lhs.exponent() + rhs.exponent()
+        return self.make_real(sign, exponent, lhs.significand * rhs.significand, env)
+
+    def _multiply_special(self, lhs, rhs):
+        '''Return a (lhs * rhs, status) pair with self as the format of the result.
+
+        The LHS is a NaN or infinity.
+        '''
+        assert lhs.e_biased == lhs.fmt.e_saturated
+
+        sign = lhs.sign ^ rhs.sign
+
+        if lhs.significand == 0:
+            # infinity * zero -> NaN
+            if rhs.is_zero():
+                return self.make_NaN(sign, True, 0, True)
+            # infinity * NaN -> NaN
+            if rhs.is_NaN():
+                return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
+            # infinity * infinity -> infinity
+            # infinity * finite-non-zero -> infinity
+            return self.make_infinity(sign), OpStatus.OK
+
+        # NaN * anything -> NaN, but need to catch signalling NaNs
+        return self.make_NaN(sign, True, lhs.NaN_payload(),
+                             lhs.is_signalling() or rhs.is_signalling())
 
     def divide(self, lhs, rhs, env):
         '''Returns a (lhs / rhs, status) pair with dst_format as the format of the result.'''
@@ -845,6 +879,8 @@ class IEEEfloat:
         chosen so the interchange format can unambiguously omit the integer bit.  So here
         we must force it back to 1.
         '''
+        assert self.is_finite()
+
         return max(1, self.e_biased) - self.fmt.e_bias - (self.fmt.precision - 1)
 
     def total_order(self, rhs):

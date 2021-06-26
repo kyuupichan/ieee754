@@ -124,7 +124,7 @@ class TestGeneralNonComputationalOps:
                                      (0, 1, 24),
                              ))
     def test_make_NaN(self, fmt, sign, quiet, payload):
-        value, status = fmt.make_NaN(sign, quiet, payload)
+        value, status = fmt.make_NaN(sign, quiet, payload, False)
         if payload == 0 and not quiet:
             assert status == OpStatus.INEXACT
             payload = 1
@@ -154,27 +154,27 @@ class TestGeneralNonComputationalOps:
                                      (False, True),
                              ))
     def test_make_NaN_quiet_payload(self, fmt, sign):
-        fmt.make_NaN(sign, True, 0)
-        fmt.make_NaN(sign, True, fmt.quiet_bit - 1)
+        fmt.make_NaN(sign, True, 0, False)
+        fmt.make_NaN(sign, True, fmt.quiet_bit - 1, False)
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, True, -1)
+            fmt.make_NaN(sign, True, -1, False)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, True, 1.2)
+            fmt.make_NaN(sign, True, 1.2, False)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, True, 1.2)
+            fmt.make_NaN(sign, True, 1.2, False)
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts,
                                      (False, True),
                              ))
     def test_make_NaN_signalling_payload(self, fmt, sign):
-        fmt.make_NaN(sign, False, fmt.quiet_bit - 1)
+        fmt.make_NaN(sign, False, fmt.quiet_bit - 1, False)
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, False, -1)
+            fmt.make_NaN(sign, False, -1, False)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, False, 1.2)
+            fmt.make_NaN(sign, False, 1.2, False)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, False, 1.2)
+            fmt.make_NaN(sign, False, 1.2, False)
 
     @pytest.mark.parametrize('fmt, detect_tininess_after, always_flag_underflow, sign',
                              product(all_IEEE_fmts,
@@ -282,14 +282,13 @@ class TestGeneralNonComputationalOps:
         # Increment the exponent.  Overflow now depends on rounding mode
         exponent += 1
         value, status = fmt.make_real(sign, exponent, 1, env)
+        assert status == OpStatus.OVERFLOW | OpStatus.INEXACT
         if (rounding_mode is RoundTiesToEven or rounding_mode is RoundTiesToAway
                 or (rounding_mode is RoundTowardsPositive and not sign)
                 or (rounding_mode is RoundTowardsNegative and sign)):
             assert value.is_infinite()
-            assert status == OpStatus.OVERFLOW | OpStatus.INEXACT
         else:
             assert value.is_normal()
-            assert status == OpStatus.INEXACT
         assert value.sign is sign
         assert value.fmt is fmt
 
@@ -418,5 +417,30 @@ class TestGeneralNonComputationalOps:
         assert ans_stat == OpStatus.OK
 
         result, stat = dst_fmt.convert(src_value, env)
+        assert result.to_parts() == answer.to_parts()
+        assert stat == status
+
+    @pytest.mark.parametrize('line', read_lines('multiply.txt'))
+    def test_multiply(self, line):
+        parts = line.split()
+        if len(parts) != 8:
+            assert False, f'bad line: {line}'
+        env_str, lhs_fmt, lhs, rhs_fmt, rhs, dst_fmt, status, answer = parts
+        env = env_string_to_env(env_str)
+
+        lhs_fmt = format_codes[lhs_fmt]
+        lhs, lhs_stat = lhs_fmt.from_string(lhs, std_env)
+        assert lhs_stat == OpStatus.OK
+
+        rhs_fmt = format_codes[rhs_fmt]
+        rhs, rhs_stat = rhs_fmt.from_string(rhs, std_env)
+        assert rhs_stat == OpStatus.OK
+
+        dst_fmt = format_codes[dst_fmt]
+        status = status_codes[status]
+        answer, ans_stat = dst_fmt.from_string(answer, std_env)
+        assert ans_stat == OpStatus.OK
+
+        result, stat = dst_fmt.multiply(lhs, rhs, env)
         assert result.to_parts() == answer.to_parts()
         assert stat == status
