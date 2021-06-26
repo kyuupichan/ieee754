@@ -1,0 +1,180 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Envirnement:
+#   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+#   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
+#   Underflow:  U=Always flag, otherwise only if inexact   (optional)
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=Invalid
+# Sign: + or -
+
+# Test format: Env LHSFormat LHS RHSFormat RHS DstFormat Status String
+
+
+###############
+#
+# NaN / Anything
+# Anything / NaN
+#
+###############
+
+# Nan / non-NaN - return the LHS with appropriate sign
+E D NaN1 Q 0 Q K NaN1
+E D NaN1 H -1 Q K -NaN1
+E D NaN1 S Inf Q K NaN1
+
+# non-NaN / NaN - return the RHS with appropriate sign
+A Q -1 H NaN2 S K -NaN2
+N D -0 D -NaN2 D K NaN2
+P D -inf D -NaN0xbeef D K NaN0xbeef
+
+# Quiet and Quiet.  Return the left hand NaN with the appropriate sign.
+E D NaN1 Q NaN2 Q K NaN1
+A H -NaN1 H NaN2 H K -NaN1
+P D NaN0xdead D -NaN0xbeef D K -NaN0xdead
+N D -NaN1 D -NaN2 D K NaN1
+
+# Quiet and Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
+E D SNaN5 Q NaN4 Q X NaN5
+A H -NaN1 H SNaN2 H X -NaN1
+P Q SNaN0xdead S -SNaN0xbeef S X -NaN0xdead
+N Q -NaN0xdead Q -SNaN0xbeef H XI NaN0x00ad
+
+# Both Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
+E S SNaN0x25 Q SNaN0xdead H X NaN0x25
+A D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
+P Q SNaN1 S -SNaN2 S X -NaN1
+N Q -SNaN3 Q -SNaN4 H X NaN3
+
+###############
+#
+# Infinity / Infinity
+# Zero / Zero
+#
+###############
+
+E S Inf S Inf D X NaN
+A H Inf S -Inf D X -NaN
+P S -Inf S Inf Q X -NaN
+N Q -Inf S -Inf H X NaN
+
+N S 0 S 0 D X NaN
+A H 0 S -0 D X -NaN
+Z S -0 S 0 Q X -NaN
+E H -0 S -0 S X NaN
+
+###############
+#
+# Finite-Non-Zero / Zero
+#
+###############
+
+E S 5 S 0 D Z Inf
+A D 0x1p-1074 Q -0 H Z -Inf
+P S -0x1p100 S 0 Q Z -Inf
+N D -23 S -0 H Z Inf
+
+###############
+#
+# Finite / Infinity
+#
+###############
+
+E S 5 S Inf D K 0
+A D 0x1p-1074 Q -Inf H K -0
+P S -0 S Inf Q K -0
+N D -23 S -Inf H K 0
+
+###############
+#
+# Infinity / Zero
+#
+###############
+
+E S Inf S 0 D K Inf
+P D Inf S -0 S K -Inf
+N S -Inf S 0 Q K -Inf
+N D -Inf Q -0 H K Inf
+
+###############
+#
+# Zero / Finite
+#
+###############
+
+E S 0 S 1 D K 0
+P D 0 S -1 S K -0
+N S -0 S 50 Q K -0
+N D -0 D -0x1p-1074 H K 0
+
+###############
+#
+# Finite / Finite
+#
+###############
+
+# Exact division in single-precision
+
+E S 0x1f865cp0 S 0x944p0 S K 0x367p0
+E D 0x1f865cp0 Q -0x944p0 S K -0x367p0
+E Q -0x1f865cp0 S 0x944p0 S K -0x367p0
+E Q -0x1f865cp0 Q -0x944p0 D K 0x367p0
+
+E S 0xfb320p-4 S -0xd9.4p2 S K -0x25.0p1
+
+# Exact division in double-precision
+
+E D 0x0.8b6064570fa168p800 D 0x0.badeadf1p500 D K 0x0.beefe8p300
+E Q 0x0.8b6064570fa168p800 Q 0x0.badeadf1p500 D K 0x0.beefe8p300
+
+# Exact division with large precision and exponent
+
+E Q -0x0.a84f5a4693e1a774p-2 Q -0x0.badeadf1p-16000 Q K 0x0.39a4beadp16000
+
+# Division leaves a fraction of less than one-half before normalization
+E D 0x1.000005000005fp0 S 0x1.000002p0 S I 0x1.000002p0
+u D 0x1.000005000005fp0 S 0x1.000002p0 S I 0x1.000002p0
+d D 0x1.000005000005fp0 S 0x1.000002p0 S I 0x1.000002p0
+
+# Division leaves a fraction of exactly one-half before normalization
+E D 0x1.0000050000060p0 S 0x1.000002p0 S I 0x1.000004p0
+u D 0x1.0000050000060p0 S 0x1.000002p0 S I 0x1.000004p0
+d D 0x1.0000050000060p0 S 0x1.000002p0 S I 0x1.000002p0
+
+# Division leaves a fraction of exactly one-half before normalization
+E D 0x1.0000050000061p0 S 0x1.000002p0 S I 0x1.000004p0
+u D 0x1.0000050000061p0 S 0x1.000002p0 S I 0x1.000004p0
+d D 0x1.0000050000061p0 S 0x1.000002p0 S I 0x1.000004p0
+
+
+# Division leaves a fraction of one-half and an odd number.
+
+E S 0x1.000006p-126 S 2 S UI 0x1.000008p-127
+P S 0x1.000006p-126 S 2 S UI 0x1.000008p-127
+A S 0x1.000006p-126 S 2 S UI 0x1.000008p-127
+N S 0x1.000006p-126 S 2 S UI 0x1.000004p-127
+Z S 0x1.000006p-126 S 2 S UI 0x1.000004p-127
+
+# Same but negative
+
+E S 0x1.000006p-126 S -2 S UI -0x1.000008p-127
+P S 0x1.000006p-126 S -2 S UI -0x1.000004p-127
+A S 0x1.000006p-126 S -2 S UI -0x1.000008p-127
+N S 0x1.000006p-126 S -2 S UI -0x1.000008p-127
+Z S 0x1.000006p-126 S -2 S UI -0x1.000004p-127
+
+# Division leaves a fraction of one-half and an even number.
+
+E S 0x1.000002p-126 S 2 S UI 0x1.000000p-127
+P S 0x1.000002p-126 S 2 S UI 0x1.000004p-127
+A S 0x1.000002p-126 S 2 S UI 0x1.000004p-127
+N S 0x1.000002p-126 S 2 S UI 0x1.000000p-127
+Z S 0x1.000002p-126 S 2 S UI 0x1.000000p-127
+
+# Same but negative
+
+E S 0x1.000002p-126 S -2 S UI -0x1.000000p-127
+P S 0x1.000002p-126 S -2 S UI -0x1.000000p-127
+A S 0x1.000002p-126 S -2 S UI -0x1.000004p-127
+N S 0x1.000002p-126 S -2 S UI -0x1.000004p-127
+Z S 0x1.000002p-126 S -2 S UI -0x1.000000p-127
+
+E D 0x1.abcdefp3 D 0x2.987654321p-4 D I 0x1.49a4d195eaec7p+6

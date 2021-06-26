@@ -367,8 +367,12 @@ class FloatFormat:
         significand, shift_lf = shift_right(significand, rshift)
         exponent += rshift
 
-        # Combine the lost fractions; shift_lf is the more significant
-        lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
+        # Sanity check
+        assert rshift >= 0 or lost_fraction == LostFraction.EXACTLY_ZERO
+
+        # If we shifted, combine the lost fractions; shift_lf is the more significant
+        if rshift != 0:
+            lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
 
         # In case we detect tininess before rounding
         is_tiny = significand < self.int_bit
@@ -632,16 +636,17 @@ class FloatFormat:
             sig_value.e_biased += exponent
 
             if exponent >= 0:
-                scaled_value, lost_fraction = calc_fmt._multiply_finite(sig_value, pow5_value)
+                scaled_value, inexact_scaling = calc_fmt._multiply_finite(sig_value, pow5_value)
                 pow_HU_err = pow5_status != OpStatus.OK
             else:
-                scaled_value, lost_fraction = calc_fmt._divide_finite(sig_value, pow5_value)
+                scaled_value, div_status = calc_fmt._divide_finite(sig_value, pow5_value, env)
+                inexact_scaling = bool(div_status & OpStatus.INEXACT)
                 # Subnormals have less precision
                 if scaled_value.e_biased == 0:
-                    excess_precision += calc_fmt.precision - scaled_value.bit_length()
+                    excess_precision += calc_fmt.precision - scaled_value.significand.bit_length()
                     excess_precision = min(excess_precision, calc_fmt.precision)
                 # An extra half-ulp is lost in reciprocal of pow5
-                if pow5_status == OpStatus.OK and lost_fraction == LostFraction.EXACTLY_ZERO:
+                if pow5_status == OpStatus.OK and not inexact_scaling:
                     pow_HU_err = 0
                 else:
                     pow_HU_err = 2
@@ -652,12 +657,11 @@ class FloatFormat:
             #
             # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
             # Clinger.
-            inexact_multiply = lost_fraction != LostFraction.EXACTLY_ZERO
             sig_HU_err = sig_status != OpStatus.OK
             if sig_HU_err + pow_HU_err == 0:
-                HU_err = inexact_multiply * 2     # <= inexactMultiply half-ulps
+                HU_err = inexact_scaling * 2     # <= inexactMultiply half-ulps
             else:
-                HU_err = inexact_multiply + 2 * (sig_HU_err + pow_HU_err)
+                HU_err = inexact_scaling + 2 * (sig_HU_err + pow_HU_err)
 
             HU_distance = 2 * ulps_from_boundary(sig_value, excess_precision, round_to_nearest)
 
@@ -669,9 +673,6 @@ class FloatFormat:
             parts_count += parts_count // 2 + 1
 
     def _multiply_finite(self, lhs, rhs):
-        raise NotImplementedError
-
-    def _divide_finite(self, lhs, rhs):
         raise NotImplementedError
 
     ##
@@ -694,7 +695,8 @@ class FloatFormat:
         raise NotImplementedError
 
     def multiply(self, lhs, rhs, env):
-        '''Returns a (lhs * rhs, status) pair with dst_format as the format of the result.'''
+        '''Returns a (lhs * rhs, status) pair with self as the format of the result.'''
+        # Multiplication is commutative
         if lhs.e_biased == lhs.fmt.e_saturated:
             return self._multiply_special(lhs, rhs)
         if rhs.e_biased == rhs.fmt.e_saturated:
@@ -710,8 +712,6 @@ class FloatFormat:
 
         The LHS is a NaN or infinity.
         '''
-        assert lhs.e_biased == lhs.fmt.e_saturated
-
         sign = lhs.sign ^ rhs.sign
 
         if lhs.significand == 0:
@@ -730,8 +730,93 @@ class FloatFormat:
                              lhs.is_signalling() or rhs.is_signalling())
 
     def divide(self, lhs, rhs, env):
-        '''Returns a (lhs / rhs, status) pair with dst_format as the format of the result.'''
-        raise NotImplementedError
+        '''Returns a (lhs / rhs, status) pair with self as the format of the result.'''
+        sign = lhs.sign ^ rhs.sign
+
+        # Is the LHS is a NaN or infinity?
+        if lhs.e_biased == lhs.fmt.e_saturated:
+            if lhs.significand == 0:
+                # infinity / finite -> infinity
+                if rhs.is_finite():
+                    return self.make_infinity(sign), OpStatus.OK
+                # infinity / infinity -> NaN
+                if rhs.significand == 0:
+                    return self.make_NaN(sign, True, 0, True)
+                # infinity / NaN -> NaN
+                return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
+
+            # NaN / anything -> NaN, but need to catch signalling NaNs
+            return self.make_NaN(sign, True, lhs.NaN_payload(),
+                                 lhs.is_signalling() or rhs.is_signalling())
+
+        # LHS is finite.  Is the RHS a NaN or infinity?
+        if rhs.e_biased == rhs.fmt.e_saturated:
+            if rhs.significand == 0:
+                # finity / infinity -> zero
+                return self.make_zero(sign), OpStatus.OK
+
+            # finite / NaN -> NaN, but need to catch signalling NaNs
+            return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
+
+        # Both values are finite.
+        return self._divide_finite(lhs, rhs, env)
+
+    def _divide_finite(self, lhs, rhs, env):
+        '''Return a (lhs / rhs, status) pair), taking account of differences in exponents.  Self
+        is the format of the result.
+        '''
+        sign = lhs.sign ^ rhs.sign
+
+        # Division by zero?
+        if rhs.significand == 0:
+            # 0 / 0 -> NaN
+            if lhs.significand == 0:
+                return self.make_NaN(sign, True, 0, True)
+            # Finite / 0 -> Infinity
+            return self.make_infinity(sign), OpStatus.DIV_BY_ZERO
+
+        # LHS zero?
+        lhs_sig = lhs.significand
+        if lhs_sig == 0:
+            return self.make_zero(sign), OpStatus.OK
+
+        rhs_sig = rhs.significand
+        exponent = lhs.exponent() - rhs.exponent()
+
+        # Shift the lhs significand left until it is greater than the significand of the RHS
+        lshift = rhs_sig.bit_length() - lhs_sig.bit_length()
+        if lshift >= 0:
+            lhs_sig <<= lshift
+        else:
+            rhs_sig <<= -lshift
+        exponent -= lshift + (self.precision - 1)
+
+        if lhs_sig < rhs_sig:
+            lhs_sig <<= 1
+            exponent -= 1
+
+        assert lhs_sig >= rhs_sig
+
+        # Long division
+        quot = 0
+        for _n in range(self.precision):
+            quot <<= 1
+            if lhs_sig >= rhs_sig:
+                lhs_sig -= rhs_sig
+                quot |= 1
+            lhs_sig <<= 1
+
+        assert lhs_sig < rhs_sig
+
+        if lhs_sig == 0:
+            lost_fraction = LostFraction.EXACTLY_ZERO
+        elif lhs_sig < rhs_sig:
+            lost_fraction = LostFraction.LESS_THAN_HALF
+        elif lhs_sig == rhs_sig:
+            lost_fraction = LostFraction.EXACTLY_HALF
+        else:
+            lost_fraction = LostFraction.MORE_THAN_HALF
+        return self._normalize(sign, exponent, quot, lost_fraction, env)
 
     def sqrt(self, x, env):
         '''Returns a (sqrt(x), status) pair with dst_format as the format of the result.'''

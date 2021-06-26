@@ -359,6 +359,9 @@ class TestGeneralNonComputationalOps:
         assert value.sign is sign
         assert value.fmt is fmt
 
+
+class TestUnaryOps:
+
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
         parts = line.split()
@@ -420,27 +423,39 @@ class TestGeneralNonComputationalOps:
         assert result.to_parts() == answer.to_parts()
         assert stat == status
 
+
+def binary_operation(line, operation):
+    parts = line.split()
+    if len(parts) != 8:
+        assert False, f'bad line: {line}'
+    env_str, lhs_fmt, lhs, rhs_fmt, rhs, dst_fmt, status, answer = parts
+    env = env_string_to_env(env_str)
+
+    lhs_fmt = format_codes[lhs_fmt]
+    lhs, lhs_stat = lhs_fmt.from_string(lhs, std_env)
+    assert lhs_stat == OpStatus.OK
+
+    rhs_fmt = format_codes[rhs_fmt]
+    rhs, rhs_stat = rhs_fmt.from_string(rhs, std_env)
+    assert rhs_stat == OpStatus.OK
+
+    dst_fmt = format_codes[dst_fmt]
+    status = status_codes[status]
+    answer, ans_stat = dst_fmt.from_string(answer, std_env)
+    assert ans_stat == OpStatus.OK
+
+    operation = getattr(dst_fmt, operation)
+    result, stat = operation(lhs, rhs, env)
+    assert result.to_parts() == answer.to_parts()
+    assert stat == status
+
+
+class TestBinaryOps:
+
     @pytest.mark.parametrize('line', read_lines('multiply.txt'))
     def test_multiply(self, line):
-        parts = line.split()
-        if len(parts) != 8:
-            assert False, f'bad line: {line}'
-        env_str, lhs_fmt, lhs, rhs_fmt, rhs, dst_fmt, status, answer = parts
-        env = env_string_to_env(env_str)
+        binary_operation(line, 'multiply')
 
-        lhs_fmt = format_codes[lhs_fmt]
-        lhs, lhs_stat = lhs_fmt.from_string(lhs, std_env)
-        assert lhs_stat == OpStatus.OK
-
-        rhs_fmt = format_codes[rhs_fmt]
-        rhs, rhs_stat = rhs_fmt.from_string(rhs, std_env)
-        assert rhs_stat == OpStatus.OK
-
-        dst_fmt = format_codes[dst_fmt]
-        status = status_codes[status]
-        answer, ans_stat = dst_fmt.from_string(answer, std_env)
-        assert ans_stat == OpStatus.OK
-
-        result, stat = dst_fmt.multiply(lhs, rhs, env)
-        assert result.to_parts() == answer.to_parts()
-        assert stat == status
+    @pytest.mark.parametrize('line', read_lines('divide.txt'))
+    def test_divide(self, line):
+        binary_operation(line, 'divide')
