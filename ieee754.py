@@ -331,19 +331,31 @@ class FloatFormat:
 
            ± 2^exponent * significand
 
-        The status indicates if overflow, underflow or inexact.
+        of the given sign.  The status indicates if overflow, underflow or inexact.
 
         For example,
 
-           rounded_value(IEEEsingle, True, -3, 2)
+           make_real(IEEEsingle, True, -3, 2)
                -> -0.75, OpStatus.OK
-           rounded_value(IEEEsingle, True, 1, -200)
+           make_real(IEEEsingle, True, 1, -200)
                -> +0.0, OpStatus.UNDERFLOW | OpStatus.INEXACT
         '''
-        size = significand.bit_length()
-        if size == 0:
+        if significand == 0:
             # Return a correctly-signed zero
             return IEEEfloat(self, sign, 0, 0), OpStatus.OK
+
+        return self._normalize(sign, exponent, significand, LostFraction.EXACTLY_ZERO, env)
+
+    def _normalize(self, sign, exponent, significand, lost_fraction, env):
+        '''A calculation has led to a number of whose value is
+
+              ± 2^exponent * significand
+
+        of the given sign where significand is non-zero and lost_fraction ulps were lost.
+        Round and normalize the result returning a (result, status) pair.
+        '''
+        size = significand.bit_length()
+        assert size
 
         # Shifting the significand so the MSB is one gives us the natural shift.  There it
         # is followed by a decimal point, so the exponent must be adjusted to compensate.
@@ -352,8 +364,11 @@ class FloatFormat:
         rshift = max(size - self.precision, self.e_min - exponent)
 
         # Shift the significand and update the exponent
-        significand, lost_fraction = shift_right(significand, rshift)
+        significand, shift_lf = shift_right(significand, rshift)
         exponent += rshift
+
+        # Combine the lost fractions; shift_lf is the more significant
+        lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
 
         # In case we detect tininess before rounding
         is_tiny = significand < self.int_bit
