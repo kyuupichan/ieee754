@@ -8,8 +8,11 @@ import re
 from abc import ABC, abstractmethod
 from enum import IntFlag, IntEnum
 
+import attr
+
 
 __all__ = ('InterchangeKind', 'FloatClass', 'FloatEnv', 'FloatFormat', 'OpStatus', 'IEEEfloat',
+           'HexFormat',
            'RoundingMode', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
            'RoundTowardsNegative', 'RoundTowardsZero',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
@@ -107,6 +110,18 @@ def shift_right(significand, bits):
         result = significand >> bits
 
     return result, lost_bits_from_rshift(significand, bits)
+
+
+def lowest_set_bit(value):
+    # Returns the lowest set bit of the number, counting from 0
+    if value:
+        lsb = 0
+        mask = 1
+        while (value & mask) == 0:
+            mask <<= 1
+            lsb += 1
+        return lsb
+    return -1
 
 
 class RoundingMode(ABC):
@@ -840,6 +855,35 @@ x87double = FloatFormat(15, 53, InterchangeKind.NONE)
 x87single = FloatFormat(15, 24, InterchangeKind.NONE)
 
 
+@attr.s(slots=True)
+class HexFormat:
+    '''Controls the output of to_hex_format_string().'''
+    # Target precision in bits.  Finite non-zero numbers always have a 1 integer digit.
+    # So to display 7 hex digits after the decimal point, set this to 1 + 7*4 = 29.  Zero
+    # means display the number without loss of precision in the minimal number of digits.
+    # The exponent range is unconstrained.
+    precision = attr.ib()
+    # If True precede a numbers with the sign bit clear with a '+'.
+    force_sign = attr.ib(default=False)
+    # If True, the exponent is preceded by '+' if non-negative.
+    force_exp_sign = attr.ib(default=False)
+    # The number of hex-digits h in [-]0xh.hhhhp[+-]d.  If zero the minimal precision to
+    # display the number precisely is used instead.  If nothing would appear after the
+    # decimal point it is suppressed.  If the number cannot be represented exactly in the
+    # given number of digits then INEXACT is flagged.
+    hex_digit_count = attr.ib(default=0)
+    # The string output for infinity
+    inf = attr.ib(default='Inf')
+    # The string output for quiet NaNs
+    qNaN = attr.ib(default='NaN')
+    # The string output for signalling NaNs
+    sNaN = attr.ib(default='sNaN')
+    # If N, NaN payloads are omitted.  If X, they are output in hexadecimal.  If 'D' in
+    # decimal.  Examples of all 3 formats are: nan, nan255 and nan0xff for a quiet NaN
+    # with payload 255, respectively.
+    nan_payload = attr.ib(default='X')
+
+
 class IEEEfloat:
     # TODO: reconsider using an IEEE biased exponent internally.
 
@@ -973,15 +1017,17 @@ class IEEEfloat:
         return 2
 
     def exponent(self):
-        '''Return the arithmetic exponent of our significand interpreted as an integer.
-
-        Subnormal numbers mathematically have a biased exponent of 1 not 0.  Zero is only
-        chosen so the interchange format can unambiguously omit the integer bit.  So here
-        we must force it back to 1.
-        '''
+        '''Return the arithmetic exponent of our significand interpreted as an integer.'''
         assert self.is_finite()
 
         return max(1, self.e_biased) - self.fmt.e_bias - (self.fmt.precision - 1)
+
+    def msb_exponent(self):
+        '''Return the arithmetic exponent with our MSB acting as integer bit.'''
+        assert self.is_finite()
+
+        high_zeroes = self.fmt.precision - self.significand.bit_length()
+        return max(1, self.e_biased) - self.fmt.e_bias - high_zeroes
 
     def total_order(self, rhs):
         raise NotImplementedError
@@ -1070,6 +1116,91 @@ class IEEEfloat:
     ##
     ## General computational operations
     ##
+
+    def to_hex_format_string(self, hex_format, env):
+        '''Return a (hex_string, status) pair.
+
+        hex_string is a hexadecimal representation of the floating point value.  See the
+        docstring of HexFormat for output control.
+
+        There is ambiguity about what the leading hexadecimal digit should be.  This
+        implementation uses 1 for all finite non-zero numbers.
+
+        Zeroes are output with an exponent of 0.
+
+        This operation only flags INEXACT. Since the exponent range of the hexadecimal
+        output format is unconstrained, overflow and underflow do not happen.
+        '''
+        if not isinstance(hex_format, HexFormat):
+            raise TypeError('expected a HexSigSpec object')
+
+        sign = '-' if self.sign else '+' if hex_format.force_sign else ''
+        status = OpStatus.OK
+
+        if self.e_biased == self.fmt.e_saturated:
+            # Infinites and NaNs.
+            if self.significand == 0:
+                rest = hex_format.inf
+            else:
+                # Quiet and signalling NaNs
+                if hex_format.nan_payload == 'N':
+                    payload = ''
+                elif hex_format.nan_payload == 'D':
+                    payload = str(self.NaN_payload())
+                else:
+                    payload = hex(self.NaN_payload())
+                if self.is_signalling():
+                    rest = hex_format.sNaN + payload
+                else:
+                    rest = hex_format.qNaN + payload
+        else:
+            hex_sig, exponent, status = self._hex_significand(hex_format, env)
+            exp_sign = '+' if exponent >= 0 and hex_format.force_exp_sign else ''
+            rest = f'0x{hex_sig}p{exp_sign}{exponent}'
+
+        return sign + rest, status
+
+    def _hex_significand(self, hex_format, env):
+        # Significant bits
+        significand = self.significand
+        status = OpStatus.OK
+        exponent = self.msb_exponent()
+
+        # Shift right to lose precision if necessary
+        if hex_format.precision:
+            rshift = significand.bit_length() - hex_format.precision
+            significand, lost_fraction = shift_right(significand, rshift)
+            if lost_fraction != LostFraction.EXACTLY_ZERO:
+                status = OpStatus.INEXACT
+                if env.rounding_mode.rounds_away(lost_fraction, self.sign, bool(significand & 1)):
+                    significand += 1
+                    # If rounding caused the significand to gain a bit in length, shift it
+                    # back and increment the exponent
+                    if significand & (significand - 1) == 0:
+                        significand >>= 1
+                        exponent += 1
+
+        if significand == 0:
+            exponent = 0
+        else:
+            # Now shift left up to 3 bits so that the significand's MSB is the least
+            # significant bit of a nibble where it forms the integer digit
+            significand <<= (significand.bit_length() & 3) ^ 1
+
+        hex_str = f'{significand:x}'
+        precision = len(hex_str) * 4 - 3
+
+        # Add trailing zeros to achieve the target precision
+        if hex_format.precision:
+            hex_str += '0' * ((hex_format.precision - precision + 3) // 4)
+        elif precision > 1:
+            hex_str = hex_str.rstrip('0')
+
+        # Place the decimal point only if there are trailing digits
+        if len(hex_str) > 1:
+            hex_str = hex_str[0] + '.' + hex_str[1:]
+
+        return hex_str, exponent, status
 
     def to_quiet(self):
         '''Return a pair (result, status).

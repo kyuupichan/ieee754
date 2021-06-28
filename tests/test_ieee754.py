@@ -37,6 +37,10 @@ def read_significand(significand):
         return int(significand, 16)
     return int(significand)
 
+boolean_codes = {
+    'Y': True,
+    'N': False,
+}
 
 format_codes = {
     'H': IEEEhalf,
@@ -68,6 +72,15 @@ sign_codes = {
     '+': False,
     '-': True,
 }
+
+
+def to_hex_format(hex_format):
+    return HexFormat(
+        force_sign=boolean_codes[hex_format[0]],
+        force_exp_sign=boolean_codes[hex_format[1]],
+        nan_payload=hex_format[2],
+        precision=int(hex_format[3:]),
+    )
 
 
 # Test basic class functions before reading test files
@@ -421,6 +434,23 @@ class TestUnaryOps:
 
         result, stat = dst_fmt.convert(src_value, env)
         assert result.to_parts() == answer.to_parts()
+        assert stat == status
+
+    @pytest.mark.parametrize('line', read_lines('to_hex_format.txt'))
+    def test_to_hex_format(self, line):
+        parts = line.split()
+        if len(parts) != 6:
+            assert False, f'bad line: {line}'
+        hex_format, env_str, dst_fmt, in_str, status, answer = parts
+        hex_format = to_hex_format(hex_format)
+        env = env_string_to_env(env_str)
+        dst_fmt = format_codes[dst_fmt]
+        in_value, in_stat = dst_fmt.from_string(in_str, std_env)
+        assert in_stat == OpStatus.OK
+        status = status_codes[status]
+
+        result, stat = in_value.to_hex_format_string(hex_format, env)
+        assert result == answer
         assert stat == status
 
 
