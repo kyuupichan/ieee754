@@ -1,6 +1,7 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
 # Context:
-#   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
 #   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
 #   Underflow:  U=Always flag, otherwise only if inexact   (optional)
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=Invalid
@@ -8,7 +9,7 @@
 #
 # HexSigSpec: ForceSign ForceExpSign NaNPayload Rounding HexDigitCount (no spaces)
 # ForceSign: Y or N
-# NanPayload: N X or D.  None, Hex or Decimal.
+# NanPayload: F X or D.  None, Hex or Decimal.
 # HexDigitCount: a decimal number
 
 # Test format: HexFormat Context FloatFormat String Status String
@@ -21,23 +22,23 @@
 ###############
 
 NNN1 E S Nan K NaN
-NNX1 Z H Nan K NaN0x0
+NNX1 D H Nan K NaN0x0
 NND1 E Q Nan K NaN0
 
-YNN1 P D Nan K +NaN
-YYX1 N S Nan K +NaN0x0
-YND1 A H Nan K +NaN0
+YNN1 C D Nan K +NaN
+YYX1 F S Nan K +NaN0x0
+YND1 u H Nan K +NaN0
 
 NYN1 E D -Nan K -NaN
-NYX1 P Q Nan K NaN0x0
-NYD1 N S -Nan K -NaN0
+NYX1 C Q Nan K NaN0x0
+NYD1 F S -Nan K -NaN0
 
 YYN1 E S Nan0x123456 K +NaN
-YNX1 A D -Nan0x123456 K -NaN0x123456
+YNX1 u D -Nan0x123456 K -NaN0x123456
 YND1 E Q Nan0x123456 K +NaN1193046
 
 NNN1 E S sNan K sNaN
-YNX1 Z H sNan K +sNaN0x1
+YNX1 D H sNan K +sNaN0x1
 NND1 E Q -sNaN K -sNaN1
 
 ###############
@@ -91,8 +92,8 @@ NYN0 E D 0xab.cd0faba782f8p0 K 0x1.579a1f574f05fp+7
 ###############
 
 NNN25 E S 0x1.6789ap2 K 0x1.6789a0p2
-NYN37 Z S 0xa.cdef6p23 K 0x1.59bdec000p+26
-NNN57 P D -0xab.cd0faba782f8p0 K -0x1.579a1f574f05f0p7
+NYN37 D S 0xa.cdef6p23 K 0x1.59bdec000p+26
+NNN57 C D -0xab.cd0faba782f8p0 K -0x1.579a1f574f05f0p7
 
 ###############
 #
@@ -110,45 +111,45 @@ NNN9 E H 0x1.ffcp7 I 0x1.00p8
 NNN0 E D 0x1.678p0 K 0x1.678p0
 
 NNN49 E D -0xab.cd0faba782f8p0 I -0x1.579a1f574f06p7
-NNN49 Z D -0xab.cd0faba782f8p0 I -0x1.579a1f574f05p7
-NYN49 N D -0xab.cd0faba782f8p0 I -0x1.579a1f574f06p+7
+NNN49 D D -0xab.cd0faba782f8p0 I -0x1.579a1f574f05p7
+NYN49 F D -0xab.cd0faba782f8p0 I -0x1.579a1f574f06p+7
 
 NNN0 E S 0x1.ap-126 K 0x1.ap-126
 
 # Lost fraction is EXACTLY_HALF EVEN is up
 NNN9 E D 0x1.678p0 I 0x1.68p0
-NNN9 A D 0x1.678p0 I 0x1.68p0
-NNN9 P D 0x1.678p0 I 0x1.68p0
-NNN9 Z D 0x1.678p0 I 0x1.67p0
-NNN9 N D 0x1.678p0 I 0x1.67p0
+NNN9 u D 0x1.678p0 I 0x1.68p0
+NNN9 C D 0x1.678p0 I 0x1.68p0
+NNN9 D D 0x1.678p0 I 0x1.67p0
+NNN9 F D 0x1.678p0 I 0x1.67p0
 
 # Lost fraction is EXACTLY_HALF EVEN is down
 NNN9 E S 0x1.668p0 I 0x1.66p0
-NNN9 A S 0x1.668p0 I 0x1.67p0
-NNN9 P S 0x1.668p0 I 0x1.67p0
-NNN9 Z S 0x1.668p0 I 0x1.66p0
-NNN9 N S 0x1.668p0 I 0x1.66p0
+NNN9 u S 0x1.668p0 I 0x1.67p0
+NNN9 C S 0x1.668p0 I 0x1.67p0
+NNN9 D S 0x1.668p0 I 0x1.66p0
+NNN9 F S 0x1.668p0 I 0x1.66p0
 
 # Lost fraction is MORE_THAN_HALF
 NNN9 E S 0x1.18801p5 I 0x1.19p5
-NNN9 P S 0x1.18801p5 I 0x1.19p5
-NNN9 N S 0x1.18801p5 I 0x1.18p5
-NNN9 A S 0x1.18801p5 I 0x1.19p5
-NNN9 Z S 0x1.18801p5 I 0x1.18p5
+NNN9 C S 0x1.18801p5 I 0x1.19p5
+NNN9 F S 0x1.18801p5 I 0x1.18p5
+NNN9 u S 0x1.18801p5 I 0x1.19p5
+NNN9 D S 0x1.18801p5 I 0x1.18p5
 
 # Lost fraction is LESS_THAN_HALF
 NNN9 E S 0x1.187f1p5 I 0x1.18p5
-NNN9 P S 0x1.187f1p5 I 0x1.19p5
-NNN9 N S 0x1.187f1p5 I 0x1.18p5
-NNN9 A S 0x1.187f1p5 I 0x1.18p5
-NNN9 Z S 0x1.187f1p5 I 0x1.18p5
+NNN9 C S 0x1.187f1p5 I 0x1.19p5
+NNN9 F S 0x1.187f1p5 I 0x1.18p5
+NNN9 u S 0x1.187f1p5 I 0x1.18p5
+NNN9 D S 0x1.187f1p5 I 0x1.18p5
 
 # Lost fraction is LESS_THAN_HALF and -ve
 NNN9 E S -0x1.187f1p5 I -0x1.18p5
-NNN9 P S -0x1.187f1p5 I -0x1.18p5
-NNN9 N S -0x1.187f1p5 I -0x1.19p5
-NNN9 A S -0x1.187f1p5 I -0x1.18p5
-NNN9 Z S -0x1.187f1p5 I -0x1.18p5
+NNN9 C S -0x1.187f1p5 I -0x1.18p5
+NNN9 F S -0x1.187f1p5 I -0x1.19p5
+NNN9 u S -0x1.187f1p5 I -0x1.18p5
+NNN9 D S -0x1.187f1p5 I -0x1.18p5
 
 ###############
 #
@@ -157,10 +158,10 @@ NNN9 Z S -0x1.187f1p5 I -0x1.18p5
 ###############
 
 NNN0 E S 0x1.ap-127 K 0x1.ap-127
-NNN0 Z S 0x1.ap-146 K 0x1.ap-146
-NNN0 A S 0x1.cp-147 K 0x1.cp-147
-NNN0 P S 0x1.8p-148 K 0x1.8p-148
-NNN0 N S 0x1.0p-149 K 0x1p-149
+NNN0 D S 0x1.ap-146 K 0x1.ap-146
+NNN0 u S 0x1.cp-147 K 0x1.cp-147
+NNN0 C S 0x1.8p-148 K 0x1.8p-148
+NNN0 F S 0x1.0p-149 K 0x1p-149
 NNN5 E S 0x1.0p-149 K 0x1.0p-149
 
 ###############

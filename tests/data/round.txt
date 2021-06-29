@@ -1,6 +1,7 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
 # Context:
-#   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
 #   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
 #   Underflow:  U=Always flag, otherwise only if inexact   (optional)
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
@@ -17,140 +18,172 @@ S E 2 K 2
 S E 0x1000p0 K 0x1000p0
 
 S E 0x1.8p0 K 2
-S A 0x1.8p0 K 2
-S P 0x1.8p0 K 2
-S N 0x1.8p0 K 1
-S Z 0x1.8p0 K 1
+S U 0x1.8p0 K 2
+S C 0x1.8p0 K 2
+S F 0x1.8p0 K 1
+S D 0x1.8p0 K 1
+S d 0x1.8p0 K 1
+S u 0x1.8p0 K 2
 
 S E 0x2.8p0 K 2
-S A 0x2.8p0 K 3
-S P 0x2.8p0 K 3
-S N 0x2.8p0 K 2
-S Z 0x2.8p0 K 2
+S U 0x2.8p0 K 3
+S C 0x2.8p0 K 3
+S F 0x2.8p0 K 2
+S D 0x2.8p0 K 2
+S d 0x2.8p0 K 2
+S u 0x2.8p0 K 3
 
 S E -0x1.8p0 K -2
-S A -0x1.8p0 K -2
-S P -0x1.8p0 K -1
-S N -0x1.8p0 K -2
-S Z -0x1.8p0 K -1
+S U -0x1.8p0 K -2
+S C -0x1.8p0 K -1
+S F -0x1.8p0 K -2
+S D -0x1.8p0 K -1
+S d -0x1.8p0 K -1
+S u -0x1.8p0 K -2
 
 S E -0x2.8p0 K -2
-S A -0x2.8p0 K -3
-S P -0x2.8p0 K -2
-S N -0x2.8p0 K -3
-S Z -0x2.8p0 K -2
+S U -0x2.8p0 K -3
+S C -0x2.8p0 K -2
+S F -0x2.8p0 K -3
+S D -0x2.8p0 K -2
+S d -0x2.8p0 K -2
+S u -0x2.8p0 K -3
 
 S E 0x2.801p0 K 3
-S A 0x2.801p0 K 3
-S P 0x2.801p0 K 3
-S N 0x2.801p0 K 2
-S Z 0x2.801p0 K 2
+S U 0x2.801p0 K 3
+S C 0x2.801p0 K 3
+S F 0x2.801p0 K 2
+S D 0x2.801p0 K 2
+S d 0x2.801p0 K 3
+S u 0x2.801p0 K 3
 
   # Large
-S P 0x1.1p23 K 0x1.1p23
-S P 0x1p24 K 0x1p24
-S P 0x1p25 K 0x1p25
+S C 0x1.1p23 K 0x1.1p23
+S C 0x1p24 K 0x1p24
+S C 0x1p25 K 0x1p25
 
-#
-# Denormals
-#
+############
+##
+## Denormals
+##
+############
 
-S P 0x1p-127 K 1
+S C 0x1p-127 K 1
 S E 0x1p-127 K 0
-S P 0x1p-149 K 1
+S d 0x1p-127 K 0
+S u 0x1p-127 K 0
+S C 0x1p-149 K 1
 S E 0x1p-149 K 0
-S N -0x1p-127 K -1
+S F -0x1p-127 K -1
 S E -0x1p-127 K -0
-S N -0x1p-149 K -1
+S F -0x1p-149 K -1
 S E -0x1p-149 K -0
 
-#
-# Finite decimals
-#
+############
+##
+## Finite decimals
+##
+############
 
   # Positive half
 S E 0x1p-1 K 0
-D A 0x1p-1 K 1
-Q P 0x1p-1 K 1
-H N 0x1p-1 K 0
-S Z 0x1p-1 K 0
+D U 0x1p-1 K 1
+Q C 0x1p-1 K 1
+H F 0x1p-1 K 0
+S D 0x1p-1 K 0
+S d 0x1p-1 K 0
+S u 0x1p-1 K 1
 
   # Negative half
 H E -0x1p-1 K -0
-S A -0x1p-1 K -1
-D P -0x1p-1 K -0
-Q N -0x1p-1 K -1
-H Z -0x1p-1 K -0
+S U -0x1p-1 K -1
+D C -0x1p-1 K -0
+Q F -0x1p-1 K -1
+H D -0x1p-1 K -0
+S d -0x1p-1 K -0
+S u -0x1p-1 K -1
 
   # +0.25
 S E 0x1p-2 K 0
-D A 0x1p-2 K 0
-Q P 0x1p-2 K 1
-H N 0x1p-2 K 0
-S Z 0x1p-2 K 0
+D U 0x1p-2 K 1
+Q C 0x1p-2 K 1
+H F 0x1p-2 K 0
+S D 0x1p-2 K 0
+D d 0x1p-2 K 0
+D u 0x1p-2 K 0
 
   # -0.25
 H E -0x1p-2 K -0
-S A -0x1p-2 K -0
-D P -0x1p-2 K -0
-Q N -0x1p-2 K -1
-H Z -0x1p-2 K -0
+S U -0x1p-2 K -1
+D C -0x1p-2 K -0
+Q F -0x1p-2 K -1
+H D -0x1p-2 K -0
+H d -0x1p-2 K -0
+H u -0x1p-2 K -0
 
   # +0.75
 S E 0x3p-2 K 1
-D A 0x3p-2 K 1
-Q P 0x3p-2 K 1
-H N 0x3p-2 K 0
-S Z 0x3p-2 K 0
+D U 0x3p-2 K 1
+Q C 0x3p-2 K 1
+H F 0x3p-2 K 0
+S D 0x3p-2 K 0
+S d 0x3p-2 K 1
+S u 0x3p-2 K 1
 
   # -0.75
 H E -0x3p-2 K -1
-S A -0x3p-2 K -1
-D P -0x3p-2 K -0
-Q N -0x3p-2 K -1
-H Z -0x3p-2 K -0
+S U -0x3p-2 K -1
+D C -0x3p-2 K -0
+Q F -0x3p-2 K -1
+H D -0x3p-2 K -0
+H d -0x3p-2 K -1
+H u -0x3p-2 K -1
 
   # Large
 S E 0x7fffff.8p0 K 0x800000p0
-S A 0x7fffff.8p0 K 0x800000p0
-S P 0x7fffff.8p0 K 0x800000p0
-S N 0x7fffff.8p0 K 0x7fffffp0
-S Z 0x7fffff.8p0 K 0x7fffffp0
+S U 0x7fffff.8p0 K 0x800000p0
+S C 0x7fffff.8p0 K 0x800000p0
+S F 0x7fffff.8p0 K 0x7fffffp0
+S D 0x7fffff.8p0 K 0x7fffffp0
+S d 0x7fffff.8p0 K 0x7fffffp0
+S u 0x7fffff.8p0 K 0x800000p0
 
 S E 0x7ffffe.8p0 K 0x7ffffep0
-S A 0x7ffffe.8p0 K 0x7fffffp0
-S P 0x7ffffe.8p0 K 0x7fffffp0
-S N 0x7ffffe.8p0 K 0x7ffffep0
-S Z 0x7ffffe.8p0 K 0x7ffffep0
+S U 0x7ffffe.8p0 K 0x7fffffp0
+S C 0x7ffffe.8p0 K 0x7fffffp0
+S F 0x7ffffe.8p0 K 0x7ffffep0
+S D 0x7ffffe.8p0 K 0x7ffffep0
+S d 0x7ffffe.8p0 K 0x7ffffep0
+S u 0x7ffffe.8p0 K 0x7fffffp0
 
 #
 # Infinities
 #
 
 S E +Inf K +Infinity
-D A -Inf K -INF
-Q P -Inf K -Inf
-H N +Inf K +Inf
-H Z +Inf K +Inf
+D u -Inf K -INF
+Q C -Inf K -Inf
+H F +Inf K +Inf
+H D +Inf K +Inf
 
 #
 # Zeroes
 #
 
 S E 0x0p0 K 0
-D A -0x0p0 K -0
-Q P 0 K 0
-H P -0x0p0 K -0
-Q N 0x0p0 K 0
-H N -0 K -0
-H Z +0x0p0 K 0
+D u -0x0p0 K -0
+Q C 0 K 0
+H U -0x0p0 K -0
+Q d 0x0p0 K 0
+H F -0 K -0
+H D +0x0p0 K 0
 
 #
 # NaNs
 #
 
 S E NaN K NaN
-D A sNaN X NaN1
-Q P -NaN K -NaN
-H N SNAN X NaN1
-H Z -SNAN X -Nan1
+D u sNaN X NaN1
+Q C -NaN K -NaN
+H F SNAN X NaN1
+H D -SNAN X -Nan1

@@ -50,10 +50,12 @@ format_codes = {
 
 rounding_codes = {
     'E': ROUND_HALF_EVEN,
-    'A': ROUND_HALF_UP,
-    'P': ROUND_CEILING,
-    'N': ROUND_FLOOR,
-    'Z': ROUND_DOWN,
+    'C': ROUND_CEILING,
+    'F': ROUND_FLOOR,
+    'D': ROUND_DOWN,
+    'U': ROUND_UP,
+    'u': ROUND_HALF_UP,
+    'd': ROUND_HALF_DOWN,
 }
 
 status_codes = {
@@ -92,10 +94,10 @@ class TestGeneralNonComputationalOps:
     def test_make_zero(self, fmt, sign):
         value = fmt.make_zero(sign)
         if sign:
-            assert value.classify() == FloatClass.nZero
+            assert value.number_class() == '-Zero'
             assert value.is_negative()
         else:
-            assert value.classify() == FloatClass.pZero
+            assert value.number_class() == '+Zero'
             assert not value.is_negative()
         assert not value.is_normal()
         assert value.is_finite()
@@ -114,10 +116,10 @@ class TestGeneralNonComputationalOps:
     def test_make_infinity(self, fmt, sign):
         value = fmt.make_infinity(sign)
         if sign:
-            assert value.classify() == FloatClass.nInf
+            assert value.number_class() == '-Infinity'
             assert value.is_negative()
         else:
-            assert value.classify() == FloatClass.pInf
+            assert value.number_class() == '+Infinity'
             assert not value.is_negative()
         assert not value.is_normal()
         assert not value.is_finite()
@@ -143,9 +145,9 @@ class TestGeneralNonComputationalOps:
         else:
             assert status == OpStatus.OK
         if quiet:
-            assert value.classify() == FloatClass.qNaN
+            assert value.number_class() == 'NaN'
         else:
-            assert value.classify() == FloatClass.sNaN
+            assert value.number_class() == 'sNaN'
         if sign:
             assert value.is_negative()
         else:
@@ -213,17 +215,17 @@ class TestGeneralNonComputationalOps:
                 assert not value.is_normal()
                 assert value.is_subnormal()
                 if sign:
-                    assert value.classify() == FloatClass.nSubnormal
+                    assert value.number_class() == '-Subnormal'
                 else:
-                    assert value.classify() == FloatClass.pSubnormal
+                    assert value.number_class() == '+Subnormal'
             else:
                 assert status == OpStatus.OK
                 assert value.is_normal()
                 assert not value.is_subnormal()
                 if sign:
-                    assert value.classify() == FloatClass.nNormal
+                    assert value.number_class() == '-Normal'
                 else:
-                    assert value.classify() == FloatClass.pNormal
+                    assert value.number_class() == '+Normal'
             if sign:
                 assert value.is_negative()
             else:
@@ -408,9 +410,9 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) != 5:
             assert False, f'bad line: {line}'
-        fmt, context, value, status, answer = parts
+        fmt, rounding, value, status, answer = parts
         fmt = format_codes[fmt]
-        context = Context(rounding_codes[context], True, False)
+        context = Context(rounding_codes[rounding], True, False)
         value, stat = fmt.from_string(value, std_context)
         assert stat == OpStatus.OK
         status = status_codes[status]

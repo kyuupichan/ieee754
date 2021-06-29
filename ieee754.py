@@ -10,7 +10,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('InterchangeKind', 'FloatClass', 'Context', 'FloatFormat', 'OpStatus', 'IEEEfloat',
+__all__ = ('InterchangeKind', 'Context', 'FloatFormat', 'OpStatus', 'IEEEfloat',
            'HexFormat',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
@@ -59,20 +59,6 @@ class InterchangeKind(IntEnum):
     NONE = 0            # Not an interchange format, values cannot be packed or unpacked
     IMPLICIT = 1        # Pack with an implicit integer bit (IEEE)
     EXPLICIT = 2        # Pack with an explicit integer bit (x87 extended precision)
-
-
-class FloatClass(IntEnum):
-    '''All floating point numbers belong to precisely one class.'''
-    sNaN = 0          # Signalling NaN
-    qNaN = 1          # Quiet NaN
-    nInf = 2          # Negative infinity
-    nNormal = 3       # Negative normal
-    nSubnormal = 4    # Negative subnormal
-    nZero = 5         # Negative zero
-    pZero = 6         # Positive zero
-    pSubnormal = 7    # Positive subnormal
-    pNormal = 8       # Positive normal
-    pInf = 9          # Positive infinity
 
 
 # Operation status flags.  OVERFLOW is always returned with INEXACT.  UNDERFLOW, too, has
@@ -196,6 +182,7 @@ class Context:
         return False
 
     def round_to_nearest(self):
+        '''Return True if the rounding mode rounds to nearest (ignoring ties).'''
         return self.rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP}
 
 
@@ -880,26 +867,26 @@ class IEEEfloat:
     ## non-floating-point results.
     ##
 
-    def classify(self):
-        '''Return which FloatClass this number is.'''
+    def number_class(self):
+        '''Return a string describing the class of the number.'''
         # Zero or subnormal?
         if self.e_biased == 0:
             if self.significand:
-                return FloatClass.nSubnormal if self.sign else FloatClass.pSubnormal
-            return FloatClass.nZero if self.sign else FloatClass.pZero
+                return '-Subnormal' if self.sign else '+Subnormal'
+            return '-Zero' if self.sign else '+Zero'
 
         # Infinity or NaN?
         if self.e_biased == self.fmt.e_saturated:
             if self.significand:
                 if self.significand & self.fmt.quiet_bit:
-                    return FloatClass.qNaN
+                    return 'NaN'
                 else:
-                    return FloatClass.sNaN
+                    return 'sNaN'
             else:
-                return FloatClass.nInf if self.sign else FloatClass.pInf
+                return '-Infinity' if self.sign else '+Infinity'
 
         # Normal
-        return FloatClass.nNormal if self.sign else FloatClass.pNormal
+        return '-Normal' if self.sign else '+Normal'
 
     def to_parts(self):
         '''Returns a triple: (sign, exponent, significand).

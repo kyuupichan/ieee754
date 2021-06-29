@@ -1,6 +1,7 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
 # Context:
-#   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
 #   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
 #   Underflow:  U=Always flag, otherwise only if inexact   (optional)
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=Invalid
@@ -22,27 +23,27 @@ E D NaN1 H -1 Q K -NaN1
 E D NaN1 S Inf Q K NaN1
 
 # non-NaN * NaN - return the RHS with appropriate sign
-A Q -1 H NaN2 S K -NaN2
-N D -0 D -NaN2 D K NaN2
-P D -inf D -NaN0xbeef D K NaN0xbeef
+u Q -1 H NaN2 S K -NaN2
+F D -0 D -NaN2 D K NaN2
+C D -inf D -NaN0xbeef D K NaN0xbeef
 
 # Quiet and Quiet.  Return the left hand NaN with the appropriate sign.
 E D NaN1 Q NaN2 Q K NaN1
-A H -NaN1 H NaN2 H K -NaN1
-P D NaN0xdead D -NaN0xbeef D K -NaN0xdead
-N D -NaN1 D -NaN2 D K NaN1
+u H -NaN1 H NaN2 H K -NaN1
+C D NaN0xdead D -NaN0xbeef D K -NaN0xdead
+F D -NaN1 D -NaN2 D K NaN1
 
 # Quiet and Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
 E D SNaN5 Q NaN4 Q X NaN5
-A H -NaN1 H SNaN2 H X -NaN1
-P Q SNaN0xdead S -SNaN0xbeef S X -NaN0xdead
-N Q -NaN0xdead Q -SNaN0xbeef H XI NaN0x00ad
+u H -NaN1 H SNaN2 H X -NaN1
+C Q SNaN0xdead S -SNaN0xbeef S X -NaN0xdead
+F Q -NaN0xdead Q -SNaN0xbeef H XI NaN0x00ad
 
 # Both Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
 E S SNaN0x25 Q SNaN0xdead H X NaN0x25
-A D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
-P Q SNaN1 S -SNaN2 S X -NaN1
-N Q -SNaN3 Q -SNaN4 H X NaN3
+u D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
+C Q SNaN1 S -SNaN2 S X -NaN1
+F Q -SNaN3 Q -SNaN4 H X NaN3
 
 ###############
 #
@@ -51,13 +52,13 @@ N Q -SNaN3 Q -SNaN4 H X NaN3
 ###############
 
 E S 0 S Inf D X NaN
-A H 0 S -Inf D X -NaN
-P S -0 S Inf Q X -NaN
-N Q -0 S -Inf H X NaN
+u H 0 S -Inf D X -NaN
+C S -0 S Inf Q X -NaN
+F Q -0 S -Inf H X NaN
 
-N S Inf S 0 D X NaN
-A H Inf S -0 D X -NaN
-Z S -Inf S 0 Q X -NaN
+F S Inf S 0 D X NaN
+u H Inf S -0 D X -NaN
+D S -Inf S 0 Q X -NaN
 E H -Inf S -0 S X NaN
 
 ###############
@@ -68,18 +69,18 @@ E H -Inf S -0 S X NaN
 ###############
 
 E S 5 S Inf D K Inf
-A D 0x1p-1074 S -Inf H K -Inf
-P S -0x1p100 S Inf Q K -Inf
-N D -23 S -Inf H K Inf
+u D 0x1p-1074 S -Inf H K -Inf
+C S -0x1p100 S Inf Q K -Inf
+F D -23 S -Inf H K Inf
 
 E S Inf S 1 D K Inf
-A D Inf S -2 H K -Inf
-P S -Inf Q 3 Q K -Inf
-N D -Inf S -4 H K Inf
+u D Inf S -2 H K -Inf
+C S -Inf Q 3 Q K -Inf
+F D -Inf S -4 H K Inf
 
-N S Inf S Inf D K Inf
-A H Inf S -Inf D K -Inf
-Z S -Inf S Inf Q K -Inf
+F S Inf S Inf D K Inf
+u H Inf S -Inf D K -Inf
+D S -Inf S Inf Q K -Inf
 E Q -Inf Q -Inf S K Inf
 
 ###############
@@ -89,14 +90,14 @@ E Q -Inf Q -Inf S K Inf
 ###############
 
 E S 0 S 0 D K 0
-P D 0 S -0 H K -0
-N S -0 S 0 Q K -0
-N D -0 S -0 H K 0
+C D 0 S -0 H K -0
+F S -0 S 0 Q K -0
+F D -0 S -0 H K 0
 
 E S 0 S 1 H K 0
-P D 2 S -0 Q K -0
-N S -0 S 3 Q K -0
-N D -0x1p50 S -0 H K 0
+C D 2 S -0 Q K -0
+F S -0 S 3 Q K -0
+F D -0x1p50 S -0 H K 0
 
 ###############
 #
@@ -105,69 +106,69 @@ N D -0x1p50 S -0 H K 0
 ###############
 
 E D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
-A D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
-P D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf474p+100
-N D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
-Z D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
+u D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
+C D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf474p+100
+F D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
+D D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
 
 E S 0x1p-100 S 0x1p-100 S UI 0
-A S 0x1p-100 S 0x1p-100 S UI 0
-P S 0x1p-100 S 0x1p-100 S UI 0x1p-149
-N S 0x1p-100 S 0x1p-100 S UI 0
-Z S 0x1p-100 S 0x1p-100 S UI 0
+u S 0x1p-100 S 0x1p-100 S UI 0
+C S 0x1p-100 S 0x1p-100 S UI 0x1p-149
+F S 0x1p-100 S 0x1p-100 S UI 0
+D S 0x1p-100 S 0x1p-100 S UI 0
 
 E S -0x1p-100 S 0x1p-100 S UI -0
-A S -0x1p-100 S 0x1p-100 S UI -0
-P S 0x1p-100 S -0x1p-100 S UI -0
-N S -0x1p-100 S 0x1p-100 S UI -0x1p-149
-Z S 0x1p-100 S -0x1p-100 S UI -0
+u S -0x1p-100 S 0x1p-100 S UI -0
+C S 0x1p-100 S -0x1p-100 S UI -0
+F S -0x1p-100 S 0x1p-100 S UI -0x1p-149
+D S 0x1p-100 S -0x1p-100 S UI -0
 
 E S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
-A S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
-P S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
-N S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e14790p-129
-Z S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e14790p-129
+u S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
+C S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
+F S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e14790p-129
+D S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e14790p-129
 
 E S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
-A S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
-P S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
-N S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f30p-128
-Z S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f30p-128
+u S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
+C S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
+F S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f30p-128
+D S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f30p-128
 
 E S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
-A S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
-P S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f4p-129
-N S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
-Z S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
+u S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
+C S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f4p-129
+F S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
+D S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
 
 E S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
-A S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
-P S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4ba0p-129
-N S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
-Z S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
+u S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
+C S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4ba0p-129
+F S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
+D S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
 
 E S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
-A S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
-P S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
-N S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4b9ep-130
-Z S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4b9ep-130
+u S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
+C S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
+F S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4b9ep-130
+D S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4b9ep-130
 
 E S 4 D 5 Q K 20
 
 E Q 456 D 999 H VI Inf
-A Q 456 D 999 H VI Inf
-P Q 456 D 999 H VI Inf
-Z Q 456 D 999 H VI 65504
-N Q 456 D 999 H VI 65504
+u Q 456 D 999 H VI Inf
+C Q 456 D 999 H VI Inf
+D Q 456 D 999 H VI 65504
+F Q 456 D 999 H VI 65504
 
 E Q 456 D 99 H I 0xb060p0
-A Q 456 D 99 H I 0xb060p0
-P Q 456 D 99 H I 0xb060p0
-N Q 456 D 99 H I 0xb040p0
-Z Q 456 D 99 H I 0xb040p0
+u Q 456 D 99 H I 0xb060p0
+C Q 456 D 99 H I 0xb060p0
+F Q 456 D 99 H I 0xb040p0
+D Q 456 D 99 H I 0xb040p0
 
 E D 0x1.234567890123p0 S 0x1.23456p0 Q K 0x1.4b66d39fab0b77dc2p0
 E D 0x1.234567890123p0 S 0x1.23456p0 D I 0x1.4b66d39fab0b7p0
-P D 0x1.234567890123p0 S 0x1.23456p0 D I 0x1.4b66d39fab0b8p0
+C D 0x1.234567890123p0 S 0x1.23456p0 D I 0x1.4b66d39fab0b8p0
 E D 0x1.234567890123p0 S 0x1.23456p0 S I 0x1.4b66d4p0
 E D 0x1.234567890123p0 S 0x1.23456p0 H I 0x1.4b8p0
