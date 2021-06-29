@@ -13,7 +13,7 @@ import attr
 
 __all__ = ('InterchangeKind', 'FloatClass', 'Context', 'FloatFormat', 'OpStatus', 'IEEEfloat',
            'HexFormat',
-           'RoundingMode', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
+           'Rounding', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
            'RoundTowardsNegative', 'RoundTowardsZero',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single',)
@@ -124,7 +124,7 @@ def lowest_set_bit(value):
     return -1
 
 
-class RoundingMode(ABC):
+class Rounding(ABC):
     '''Rounding modes are implemented as derived classes.'''
 
     @classmethod
@@ -148,7 +148,7 @@ class RoundingMode(ABC):
         raise NotImplementedError
 
 
-class RoundTiesToEven(RoundingMode):
+class RoundTiesToEven(Rounding):
     '''Round-to-nearest with ties-to-even.'''
 
     @classmethod
@@ -163,7 +163,7 @@ class RoundTiesToEven(RoundingMode):
         return True
 
 
-class RoundTiesToAway(RoundingMode):
+class RoundTiesToAway(Rounding):
     '''Round-to-nearest with ties-to-away.'''
 
     @classmethod
@@ -176,7 +176,7 @@ class RoundTiesToAway(RoundingMode):
         return True
 
 
-class RoundTowardsPositive(RoundingMode):
+class RoundTowardsPositive(Rounding):
     '''Round towards positive infinity.'''
 
     @classmethod
@@ -189,7 +189,7 @@ class RoundTowardsPositive(RoundingMode):
         return not sign
 
 
-class RoundTowardsNegative(RoundingMode):
+class RoundTowardsNegative(Rounding):
     '''Round towards negative infinity.'''
 
     @classmethod
@@ -202,7 +202,7 @@ class RoundTowardsNegative(RoundingMode):
         return sign
 
 
-class RoundTowardsZero(RoundingMode):
+class RoundTowardsZero(Rounding):
 
     @classmethod
     def rounds_away(cls, _lost_fraction, _sign, _is_odd):
@@ -218,20 +218,19 @@ class Context:
     '''The execution context for operations.  Determines properties like rounding, how
     tininess is detected, etc.'''
 
-    __slots__ = ('rounding_mode', 'detect_tininess_after', 'always_flag_underflow')
+    __slots__ = ('rounding', 'detect_tininess_after', 'always_flag_underflow')
 
-    def __init__(self, rounding_mode, detect_tininess_after, always_flag_underflow):
+    def __init__(self, rounding, detect_tininess_after, always_flag_underflow):
         '''Floating point flags:
 
-        rounding_mode is one of the RoundingMode enumerations and controls rounding of inexact
-        results.
+        rounding is one of the Rounding classes and controls rounding of inexact results.
 
         If detect_tininess_after is True tininess is detected before rounding, otherwise after
 
         If always_flag_underflow is True then underflow is flagged whenever tininess is detected,
         otherwise it is only flagged if tininess is detected and the result is inexact.
         '''
-        self.rounding_mode = rounding_mode
+        self.rounding = rounding
         self.detect_tininess_after = detect_tininess_after
         self.always_flag_underflow = always_flag_underflow
 
@@ -395,7 +394,7 @@ class FloatFormat:
         is_tiny = significand < self.int_bit
 
         # Round
-        if context.rounding_mode.rounds_away(lost_fraction, sign, bool(significand & 1)):
+        if context.rounding.rounds_away(lost_fraction, sign, bool(significand & 1)):
             # Increment the significand
             significand += 1
             # If the significand now overflows, halve it and increment the exponent
@@ -406,7 +405,7 @@ class FloatFormat:
         # If the new exponent would be too big, then we overflow.  The result is either
         # infinity or the format's largest finite value depnding on the rounding mode.
         if exponent > self.e_max:
-            if context.rounding_mode.overflow_to_infinity(sign):
+            if context.rounding.overflow_to_infinity(sign):
                 result = self.make_infinity(sign)
             else:
                 result = self.make_largest_finite(sign)
@@ -630,7 +629,7 @@ class FloatFormat:
         '''
         pow5 = pow(5, abs(exponent))
         calc_context = Context(RoundTiesToEven, True, False)
-        round_to_nearest = context.rounding_mode in {RoundTiesToEven, RoundTiesToAway}
+        round_to_nearest = context.rounding in {RoundTiesToEven, RoundTiesToAway}
 
         def ulps_from_boundary(a, b, c):
             raise NotImplementedError
@@ -1174,8 +1173,7 @@ class IEEEfloat:
             significand, lost_fraction = shift_right(significand, rshift)
             if lost_fraction != LostFraction.EXACTLY_ZERO:
                 status = OpStatus.INEXACT
-                if context.rounding_mode.rounds_away(lost_fraction, self.sign,
-                                                     bool(significand & 1)):
+                if context.rounding.rounds_away(lost_fraction, self.sign, bool(significand & 1)):
                     significand += 1
                     # If rounding caused the significand to gain a bit in length, shift it
                     # back and increment the exponent
@@ -1230,7 +1228,7 @@ class IEEEfloat:
         '''
         return self.fmt.next_up(self, True)
 
-    def round(self, rounding_mode, exact=False):
+    def round(self, rounding, exact=False):
         '''Round to the nearest integer retaining the input floating point format and return a
         (value, status) pair.
 
@@ -1271,7 +1269,7 @@ class IEEEfloat:
 
         # Round
         e_biased = self.e_biased
-        if rounding_mode.rounds_away(lost_fraction, self.sign, bool(significand & lsb)):
+        if rounding.rounds_away(lost_fraction, self.sign, bool(significand & lsb)):
             if lsb <= self.fmt.int_bit:
                 significand += lsb
                 # If the significand now overflows, halve it and increment the exponent

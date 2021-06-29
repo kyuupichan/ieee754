@@ -9,8 +9,8 @@ from ieee754 import *
 
 std_context = Context(RoundTiesToEven, True, False)
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
-all_rounding_modes = (RoundTiesToEven, RoundTiesToAway, RoundTowardsZero,
-                      RoundTowardsPositive, RoundTowardsNegative)
+all_roundings = (RoundTiesToEven, RoundTiesToAway, RoundTowardsZero,
+                 RoundTowardsPositive, RoundTowardsNegative)
 
 
 def read_lines(filename):
@@ -250,23 +250,23 @@ class TestGeneralNonComputationalOps:
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('fmt, sign, two_bits, rounding_mode, dtar, afu',
+    @pytest.mark.parametrize('fmt, sign, two_bits, rounding, dtar, afu',
                              product(all_IEEE_fmts,
                                      (False, True),
                                      (1, 2, 3, ),
-                                     all_rounding_modes,
+                                     all_roundings,
                                      (False, True),
                                      (False, True),
                              ))
-    def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding_mode, dtar, afu):
+    def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding, dtar, afu):
         # Test that a value that loses two bits of precision underflows correctly
-        context = Context(rounding_mode, dtar, afu)
+        context = Context(rounding, dtar, afu)
         value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits, context)
-        underflows_to_zero = ((rounding_mode is RoundTiesToEven and two_bits in (1, 2))
-                              or (rounding_mode is RoundTiesToAway and two_bits == 1)
-                              or (rounding_mode is RoundTowardsPositive and sign)
-                              or (rounding_mode is RoundTowardsNegative and not sign)
-                              or (rounding_mode is RoundTowardsZero))
+        underflows_to_zero = ((rounding is RoundTiesToEven and two_bits in (1, 2))
+                              or (rounding is RoundTiesToAway and two_bits == 1)
+                              or (rounding is RoundTowardsPositive and sign)
+                              or (rounding is RoundTowardsNegative and not sign)
+                              or (rounding is RoundTowardsZero))
         if underflows_to_zero:
             assert status == OpStatus.INEXACT | OpStatus.UNDERFLOW
             assert value.is_zero()
@@ -277,13 +277,13 @@ class TestGeneralNonComputationalOps:
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('fmt, sign, rounding_mode',
+    @pytest.mark.parametrize('fmt, sign, rounding',
                              product(all_IEEE_fmts,
                                      (False, True),
-                                     all_rounding_modes,
+                                     all_roundings,
                              ))
-    def test_make_overflow(self, fmt, sign, rounding_mode):
-        context = Context(rounding_mode, True, False)
+    def test_make_overflow(self, fmt, sign, rounding):
+        context = Context(rounding, True, False)
         # First test the exponent that doesn't overflow but that one more would
         exponent = fmt.e_max
         value, status = fmt.make_real(sign, exponent, 1, context)
@@ -296,35 +296,35 @@ class TestGeneralNonComputationalOps:
         exponent += 1
         value, status = fmt.make_real(sign, exponent, 1, context)
         assert status == OpStatus.OVERFLOW | OpStatus.INEXACT
-        if (rounding_mode is RoundTiesToEven or rounding_mode is RoundTiesToAway
-                or (rounding_mode is RoundTowardsPositive and not sign)
-                or (rounding_mode is RoundTowardsNegative and sign)):
+        if (rounding is RoundTiesToEven or rounding is RoundTiesToAway
+                or (rounding is RoundTowardsPositive and not sign)
+                or (rounding is RoundTowardsNegative and sign)):
             assert value.is_infinite()
         else:
             assert value.is_normal()
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('fmt, sign, e_selector, two_bits, rounding_mode',
+    @pytest.mark.parametrize('fmt, sign, e_selector, two_bits, rounding',
                              product(all_IEEE_fmts,
                                      (False, True),
                                      range(0, 3),
                                      (0, 1, 2, 3, ),
-                                     all_rounding_modes,
+                                     all_roundings,
                              ))
-    def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding_mode):
+    def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding):
         # Test cases where rounding away causes significand to overflow
-        context = Context(rounding_mode, True, False)
+        context = Context(rounding, True, False)
         # Minimimum good, maximum good, overflows to infinity
         exponent = [fmt.e_min - 2, fmt.e_max - 3, fmt.e_max - 2][e_selector]
         # two extra bits in the significand
         significand = two_bits + (fmt.max_significand << 2)
         value, status = fmt.make_real(sign, exponent - (fmt.precision - 1), significand, context)
         rounds_away = (two_bits and
-                       ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
-                        or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
-                        or (rounding_mode is RoundTowardsPositive and not sign)
-                        or (rounding_mode is RoundTowardsNegative and sign)))
+                       ((rounding is RoundTiesToEven and two_bits in (2, 3))
+                        or (rounding is RoundTiesToAway and two_bits in (2, 3))
+                        or (rounding is RoundTowardsPositive and not sign)
+                        or (rounding is RoundTowardsNegative and sign)))
         if rounds_away:
             if e_selector == 2:
                 assert status == OpStatus.INEXACT | OpStatus.OVERFLOW
@@ -342,24 +342,24 @@ class TestGeneralNonComputationalOps:
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('fmt, sign, two_bits, rounding_mode',
+    @pytest.mark.parametrize('fmt, sign, two_bits, rounding',
                              product(all_IEEE_fmts,
                                      (False, True),
                                      (0, 1, 2, 3, ),
-                                     all_rounding_modes,
+                                     all_roundings,
                              ))
-    def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding_mode):
+    def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding):
         # Test cases where rounding away causes a subnormal to normalize
-        context = Context(rounding_mode, True, False)
+        context = Context(rounding, True, False)
         # an extra bit in the significand with two LSBs varying
         significand = two_bits + ((fmt.max_significand >> 1) << 2)
         value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand,
                                       context)
         rounds_away = (two_bits and
-                       ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
-                        or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
-                        or (rounding_mode is RoundTowardsPositive and not sign)
-                        or (rounding_mode is RoundTowardsNegative and sign)))
+                       ((rounding is RoundTiesToEven and two_bits in (2, 3))
+                        or (rounding is RoundTiesToAway and two_bits in (2, 3))
+                        or (rounding is RoundTowardsPositive and not sign)
+                        or (rounding is RoundTowardsNegative and sign)))
         if rounds_away:
             assert status == OpStatus.INEXACT
             assert value.is_normal()
@@ -407,14 +407,14 @@ class TestUnaryOps:
             assert False, f'bad line: {line}'
         fmt, context, value, status, answer = parts
         fmt = format_codes[fmt]
-        rounding_mode = rounding_codes[context]
+        rounding = rounding_codes[context]
         value, stat = fmt.from_string(value, std_context)
         assert stat == OpStatus.OK
         status = status_codes[status]
         answer, stat = fmt.from_string(answer, std_context)
         assert stat == OpStatus.OK
 
-        result, stat = value.round(rounding_mode)
+        result, stat = value.round(rounding)
         assert result.to_parts() == answer.to_parts()
         assert stat == status
 
