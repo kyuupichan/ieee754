@@ -5,7 +5,6 @@
 #
 
 import re
-from abc import ABC, abstractmethod
 from enum import IntFlag, IntEnum
 
 import attr
@@ -13,11 +12,20 @@ import attr
 
 __all__ = ('InterchangeKind', 'FloatClass', 'Context', 'FloatFormat', 'OpStatus', 'IEEEfloat',
            'HexFormat',
-           'Rounding', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
-           'RoundTowardsNegative', 'RoundTowardsZero',
+           'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
+           'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single',)
 
+
+# Rounding modes
+ROUND_CEILING   = 'ROUND_CEILING'       # Towards +infinity
+ROUND_FLOOR     = 'ROUND_FLOOR'         # Towards -infinity
+ROUND_DOWN      = 'ROUND_DOWN'          # Torwards zero
+ROUND_UP        = 'ROUND_UP'            # Away from zero
+ROUND_HALF_EVEN = 'ROUND_HALF_EVEN'     # To nearest with ties towards even
+ROUND_HALF_DOWN = 'ROUND_HALF_DOWN'     # To nearest with ties towards zero
+ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
 
 HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
 
@@ -124,96 +132,6 @@ def lowest_set_bit(value):
     return -1
 
 
-class Rounding(ABC):
-    '''Rounding modes are implemented as derived classes.'''
-
-    @classmethod
-    @abstractmethod
-    def rounds_away(cls, _lost_fraction, _sign, _is_odd):
-        '''Return True if, when an operation results in a lost fraction, the rounding mode
-        requires rounding away from zero (i.e. incrementing the significand).
-
-        sign is the sign of the number, and is_odd indicates if the LSB of the new
-        significand is set, which is needed for ties-to-even rounding.
-        '''
-        raise NotImplementedError
-
-    @classmethod
-    @abstractmethod
-    def overflow_to_infinity(cls, sign):
-        '''When the rounded result has an too high exponent, return True if the rounding mode
-        requires rounding to infinity.
-
-        sign is the sign of the number.'''
-        raise NotImplementedError
-
-
-class RoundTiesToEven(Rounding):
-    '''Round-to-nearest with ties-to-even.'''
-
-    @classmethod
-    def rounds_away(cls, lost_fraction, _sign, is_odd):
-        if lost_fraction == LostFraction.EXACTLY_HALF:
-            return is_odd
-        return lost_fraction == LostFraction.MORE_THAN_HALF
-
-    @classmethod
-    @abstractmethod
-    def overflow_to_infinity(cls, _sign):
-        return True
-
-
-class RoundTiesToAway(Rounding):
-    '''Round-to-nearest with ties-to-away.'''
-
-    @classmethod
-    def rounds_away(cls, lost_fraction, _sign, _is_odd):
-        return lost_fraction in {LostFraction.EXACTLY_HALF, LostFraction.MORE_THAN_HALF}
-
-    @classmethod
-    @abstractmethod
-    def overflow_to_infinity(cls, _sign):
-        return True
-
-
-class RoundTowardsPositive(Rounding):
-    '''Round towards positive infinity.'''
-
-    @classmethod
-    def rounds_away(cls, lost_fraction, sign, _is_odd):
-        return not sign and lost_fraction != LostFraction.EXACTLY_ZERO
-
-    @classmethod
-    @abstractmethod
-    def overflow_to_infinity(cls, sign):
-        return not sign
-
-
-class RoundTowardsNegative(Rounding):
-    '''Round towards negative infinity.'''
-
-    @classmethod
-    def rounds_away(cls, lost_fraction, sign, _is_odd):
-        return sign and lost_fraction != LostFraction.EXACTLY_ZERO
-
-    @classmethod
-    @abstractmethod
-    def overflow_to_infinity(cls, sign):
-        return sign
-
-
-class RoundTowardsZero(Rounding):
-
-    @classmethod
-    def rounds_away(cls, _lost_fraction, _sign, _is_odd):
-        return False
-
-    @classmethod
-    @abstractmethod
-    def overflow_to_infinity(cls, _sign):
-        return False
-
-
 class Context:
     '''The execution context for operations.  Determines properties like rounding, how
     tininess is detected, etc.'''
@@ -233,6 +151,52 @@ class Context:
         self.rounding = rounding
         self.detect_tininess_after = detect_tininess_after
         self.always_flag_underflow = always_flag_underflow
+
+    def round_up(self, lost_fraction, sign, is_odd):
+        '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
+        away from zero by incrementing the significand).
+
+        sign is the sign of the number, and is_odd indicates if the LSB of the new
+        significand is set, which is needed for ties-to-even rounding.
+        '''
+        if lost_fraction == LostFraction.EXACTLY_ZERO:
+            return False
+
+        rounding = self.rounding
+        if rounding == ROUND_HALF_EVEN:
+            if lost_fraction == LostFraction.EXACTLY_HALF:
+                return is_odd
+            return lost_fraction == LostFraction.MORE_THAN_HALF
+        if rounding == ROUND_CEILING:
+            return not sign
+        if rounding == ROUND_FLOOR:
+            return sign
+        if rounding == ROUND_DOWN:
+            return False
+        if rounding == ROUND_UP:
+            return True
+        if rounding == ROUND_HALF_DOWN:
+            return lost_fraction == LostFraction.MORE_THAN_HALF
+        # ROUND_HALF_UP
+        return lost_fraction != LostFraction.LESS_THAN_HALF
+
+    def overflow_to_infinity(self, sign):
+        '''When a rounded result has an too high exponent, return True if the rounding mode
+        requires rounding to infinity.
+
+        sign is the sign of the number.'''
+        rounding = self.rounding
+        if rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP, ROUND_UP}:
+            return True
+        if rounding == ROUND_CEILING:
+            return not sign
+        if rounding == ROUND_FLOOR:
+            return sign
+        # ROUND_DOWN
+        return False
+
+    def round_to_nearest(self):
+        return self.rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP}
 
 
 class IntFormat:
@@ -394,7 +358,7 @@ class FloatFormat:
         is_tiny = significand < self.int_bit
 
         # Round
-        if context.rounding.rounds_away(lost_fraction, sign, bool(significand & 1)):
+        if context.round_up(lost_fraction, sign, bool(significand & 1)):
             # Increment the significand
             significand += 1
             # If the significand now overflows, halve it and increment the exponent
@@ -403,9 +367,9 @@ class FloatFormat:
                 exponent += 1
 
         # If the new exponent would be too big, then we overflow.  The result is either
-        # infinity or the format's largest finite value depnding on the rounding mode.
+        # infinity or the format's largest finite value depending on the rounding mode.
         if exponent > self.e_max:
-            if context.rounding.overflow_to_infinity(sign):
+            if context.overflow_to_infinity(sign):
                 result = self.make_infinity(sign)
             else:
                 result = self.make_largest_finite(sign)
@@ -628,8 +592,8 @@ class FloatFormat:
              (-1)^sign * significand * 10^exponent
         '''
         pow5 = pow(5, abs(exponent))
-        calc_context = Context(RoundTiesToEven, True, False)
-        round_to_nearest = context.rounding in {RoundTiesToEven, RoundTiesToAway}
+        calc_context = Context(ROUND_HALF_EVEN, True, False)
+        round_to_nearest = context.round_to_nearest()
 
         def ulps_from_boundary(a, b, c):
             raise NotImplementedError
@@ -1173,7 +1137,7 @@ class IEEEfloat:
             significand, lost_fraction = shift_right(significand, rshift)
             if lost_fraction != LostFraction.EXACTLY_ZERO:
                 status = OpStatus.INEXACT
-                if context.rounding.rounds_away(lost_fraction, self.sign, bool(significand & 1)):
+                if context.round_up(lost_fraction, self.sign, bool(significand & 1)):
                     significand += 1
                     # If rounding caused the significand to gain a bit in length, shift it
                     # back and increment the exponent
@@ -1228,7 +1192,7 @@ class IEEEfloat:
         '''
         return self.fmt.next_up(self, True)
 
-    def round(self, rounding, exact=False):
+    def round(self, context, exact=False):
         '''Round to the nearest integer retaining the input floating point format and return a
         (value, status) pair.
 
@@ -1269,7 +1233,7 @@ class IEEEfloat:
 
         # Round
         e_biased = self.e_biased
-        if rounding.rounds_away(lost_fraction, self.sign, bool(significand & lsb)):
+        if context.round_up(lost_fraction, self.sign, bool(significand & lsb)):
             if lsb <= self.fmt.int_bit:
                 significand += lsb
                 # If the significand now overflows, halve it and increment the exponent

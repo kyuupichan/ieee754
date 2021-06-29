@@ -7,10 +7,10 @@ import pytest
 from ieee754 import *
 
 
-std_context = Context(RoundTiesToEven, True, False)
+std_context = Context(ROUND_HALF_EVEN, True, False)
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
-all_roundings = (RoundTiesToEven, RoundTiesToAway, RoundTowardsZero,
-                 RoundTowardsPositive, RoundTowardsNegative)
+all_roundings = (ROUND_CEILING, ROUND_FLOOR, ROUND_DOWN, ROUND_UP,
+                 ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_HALF_DOWN)
 
 
 def read_lines(filename):
@@ -27,7 +27,6 @@ def read_lines(filename):
 
 def context_string_to_context(context):
     rounding = rounding_codes[context[0]]
-    pos = 1
     detect_tininess_after = not 'B' in context
     always_detect_underflow = 'U' in context
     return Context(rounding, detect_tininess_after, always_detect_underflow)
@@ -50,11 +49,11 @@ format_codes = {
 }
 
 rounding_codes = {
-    'E': RoundTiesToEven,
-    'A': RoundTiesToAway,
-    'P': RoundTowardsPositive,
-    'N': RoundTowardsNegative,
-    'Z': RoundTowardsZero,
+    'E': ROUND_HALF_EVEN,
+    'A': ROUND_HALF_UP,
+    'P': ROUND_CEILING,
+    'N': ROUND_FLOOR,
+    'Z': ROUND_DOWN,
 }
 
 status_codes = {
@@ -197,7 +196,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_MSB_set(self, fmt, detect_tininess_after, always_flag_underflow, sign):
         '''Test MSB set with various exponents.'''
-        context = Context(RoundTiesToEven, detect_tininess_after, always_flag_underflow)
+        context = Context(ROUND_HALF_EVEN, detect_tininess_after, always_flag_underflow)
         significand = 1
         for exponent in (
                 fmt.e_min - (fmt.precision - 1),
@@ -262,11 +261,11 @@ class TestGeneralNonComputationalOps:
         # Test that a value that loses two bits of precision underflows correctly
         context = Context(rounding, dtar, afu)
         value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits, context)
-        underflows_to_zero = ((rounding is RoundTiesToEven and two_bits in (1, 2))
-                              or (rounding is RoundTiesToAway and two_bits == 1)
-                              or (rounding is RoundTowardsPositive and sign)
-                              or (rounding is RoundTowardsNegative and not sign)
-                              or (rounding is RoundTowardsZero))
+        underflows_to_zero = (rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN} and two_bits in (1, 2)
+                              or (rounding == ROUND_HALF_UP and two_bits == 1)
+                              or (rounding == ROUND_CEILING and sign)
+                              or (rounding == ROUND_FLOOR and not sign)
+                              or (rounding == ROUND_DOWN))
         if underflows_to_zero:
             assert status == OpStatus.INEXACT | OpStatus.UNDERFLOW
             assert value.is_zero()
@@ -296,9 +295,9 @@ class TestGeneralNonComputationalOps:
         exponent += 1
         value, status = fmt.make_real(sign, exponent, 1, context)
         assert status == OpStatus.OVERFLOW | OpStatus.INEXACT
-        if (rounding is RoundTiesToEven or rounding is RoundTiesToAway
-                or (rounding is RoundTowardsPositive and not sign)
-                or (rounding is RoundTowardsNegative and sign)):
+        if (rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP, ROUND_UP}
+                or (rounding == ROUND_CEILING and not sign)
+                or (rounding == ROUND_FLOOR and sign)):
             assert value.is_infinite()
         else:
             assert value.is_normal()
@@ -321,10 +320,12 @@ class TestGeneralNonComputationalOps:
         significand = two_bits + (fmt.max_significand << 2)
         value, status = fmt.make_real(sign, exponent - (fmt.precision - 1), significand, context)
         rounds_away = (two_bits and
-                       ((rounding is RoundTiesToEven and two_bits in (2, 3))
-                        or (rounding is RoundTiesToAway and two_bits in (2, 3))
-                        or (rounding is RoundTowardsPositive and not sign)
-                        or (rounding is RoundTowardsNegative and sign)))
+                       ((rounding == ROUND_HALF_EVEN and two_bits in (2, 3))
+                        or rounding == ROUND_UP
+                        or (rounding == ROUND_HALF_DOWN and two_bits == 3)
+                        or (rounding == ROUND_HALF_UP and two_bits in (2, 3))
+                        or (rounding == ROUND_CEILING and not sign)
+                        or (rounding == ROUND_FLOOR and sign)))
         if rounds_away:
             if e_selector == 2:
                 assert status == OpStatus.INEXACT | OpStatus.OVERFLOW
@@ -356,10 +357,12 @@ class TestGeneralNonComputationalOps:
         value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand,
                                       context)
         rounds_away = (two_bits and
-                       ((rounding is RoundTiesToEven and two_bits in (2, 3))
-                        or (rounding is RoundTiesToAway and two_bits in (2, 3))
-                        or (rounding is RoundTowardsPositive and not sign)
-                        or (rounding is RoundTowardsNegative and sign)))
+                       ((rounding == ROUND_HALF_EVEN and two_bits in (2, 3))
+                        or rounding == ROUND_UP
+                        or (rounding == ROUND_HALF_DOWN and two_bits == 3)
+                        or (rounding == ROUND_HALF_UP and two_bits in (2, 3))
+                        or (rounding == ROUND_CEILING and not sign)
+                        or (rounding == ROUND_FLOOR and sign)))
         if rounds_away:
             assert status == OpStatus.INEXACT
             assert value.is_normal()
@@ -407,14 +410,14 @@ class TestUnaryOps:
             assert False, f'bad line: {line}'
         fmt, context, value, status, answer = parts
         fmt = format_codes[fmt]
-        rounding = rounding_codes[context]
+        context = Context(rounding_codes[context], True, False)
         value, stat = fmt.from_string(value, std_context)
         assert stat == OpStatus.OK
         status = status_codes[status]
         answer, stat = fmt.from_string(answer, std_context)
         assert stat == OpStatus.OK
 
-        result, stat = value.round(rounding)
+        result, stat = value.round(context)
         assert result.to_parts() == answer.to_parts()
         assert stat == status
 
