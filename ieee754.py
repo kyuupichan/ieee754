@@ -221,7 +221,7 @@ class IntFormat:
 class FloatFormat:
     '''An IEEE-754 floating point format.'''
 
-    __slots__ = ('precision', 'e_width', 'interchange_kind', 'e_max', 'e_min', 'e_bias',
+    __slots__ = ('precision', 'interchange_kind', 'e_max', 'e_min', 'e_bias',
                  'e_saturated', 'size', 'int_bit', 'quiet_bit', 'max_significand')
 
     def __init__(self, e_width, precision, interchange_kind):
@@ -234,7 +234,6 @@ class FloatFormat:
         integer bit is implicit or explicit.
         '''
         self.precision = precision
-        self.e_width = e_width
         self.interchange_kind = interchange_kind
         # The largest e such that 2^e is representable.  The largest representable number
         # is 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.  Unbibased.
@@ -592,7 +591,7 @@ class FloatFormat:
         parts_count = (self.precision + 10) // 64 + 1
 
         while True:
-            # FIXME: choice of e_width
+            # FIXME: out of date constructor
             calc_fmt = FloatFormat(16, parts_count * 64, InterchangeKind.NONE)
             excess_precision = calc_fmt.precision - self.precision
 
