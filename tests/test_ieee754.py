@@ -7,7 +7,7 @@ import pytest
 from ieee754 import *
 
 
-std_env = FloatEnv(RoundTiesToEven, True, False)
+std_context = Context(RoundTiesToEven, True, False)
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
 all_rounding_modes = (RoundTiesToEven, RoundTiesToAway, RoundTowardsZero,
                       RoundTowardsPositive, RoundTowardsNegative)
@@ -25,12 +25,12 @@ def read_lines(filename):
                 result.append(line)
     return result
 
-def env_string_to_env(env_str):
-    rounding = rounding_codes[env_str[0]]
+def context_string_to_context(context):
+    rounding = rounding_codes[context[0]]
     pos = 1
-    detect_tininess_after = not 'B' in env_str
-    always_detect_underflow = 'U' in env_str
-    return FloatEnv(rounding, detect_tininess_after, always_detect_underflow)
+    detect_tininess_after = not 'B' in context
+    always_detect_underflow = 'U' in context
+    return Context(rounding, detect_tininess_after, always_detect_underflow)
 
 def read_significand(significand):
     if significand[:2] in ('0x', '0X'):
@@ -197,7 +197,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_MSB_set(self, fmt, detect_tininess_after, always_flag_underflow, sign):
         '''Test MSB set with various exponents.'''
-        env = FloatEnv(RoundTiesToEven, detect_tininess_after, always_flag_underflow)
+        context = Context(RoundTiesToEven, detect_tininess_after, always_flag_underflow)
         significand = 1
         for exponent in (
                 fmt.e_min - (fmt.precision - 1),
@@ -208,7 +208,7 @@ class TestGeneralNonComputationalOps:
                 1,
                 fmt.e_max
         ):
-            value, status = fmt.make_real(sign, exponent, significand, env)
+            value, status = fmt.make_real(sign, exponent, significand, context)
             if exponent < fmt.e_min:
                 assert status == (OpStatus.UNDERFLOW if always_flag_underflow else OpStatus.OK)
                 assert not value.is_normal()
@@ -244,7 +244,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_zero_significand(self, fmt, sign, exponent):
         # Test that a zero significand gives a zero regardless of exponent
-        value, status = fmt.make_real(sign, exponent, 0, std_env)
+        value, status = fmt.make_real(sign, exponent, 0, std_context)
         assert status == OpStatus.OK
         assert value.is_zero()
         assert value.sign is sign
@@ -260,8 +260,8 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding_mode, dtar, afu):
         # Test that a value that loses two bits of precision underflows correctly
-        env = FloatEnv(rounding_mode, dtar, afu)
-        value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits, env)
+        context = Context(rounding_mode, dtar, afu)
+        value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits, context)
         underflows_to_zero = ((rounding_mode is RoundTiesToEven and two_bits in (1, 2))
                               or (rounding_mode is RoundTiesToAway and two_bits == 1)
                               or (rounding_mode is RoundTowardsPositive and sign)
@@ -283,10 +283,10 @@ class TestGeneralNonComputationalOps:
                                      all_rounding_modes,
                              ))
     def test_make_overflow(self, fmt, sign, rounding_mode):
-        env = FloatEnv(rounding_mode, True, False)
+        context = Context(rounding_mode, True, False)
         # First test the exponent that doesn't overflow but that one more would
         exponent = fmt.e_max
-        value, status = fmt.make_real(sign, exponent, 1, env)
+        value, status = fmt.make_real(sign, exponent, 1, context)
         assert status == OpStatus.OK
         assert value.is_normal()
         assert value.sign is sign
@@ -294,7 +294,7 @@ class TestGeneralNonComputationalOps:
 
         # Increment the exponent.  Overflow now depends on rounding mode
         exponent += 1
-        value, status = fmt.make_real(sign, exponent, 1, env)
+        value, status = fmt.make_real(sign, exponent, 1, context)
         assert status == OpStatus.OVERFLOW | OpStatus.INEXACT
         if (rounding_mode is RoundTiesToEven or rounding_mode is RoundTiesToAway
                 or (rounding_mode is RoundTowardsPositive and not sign)
@@ -314,12 +314,12 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding_mode):
         # Test cases where rounding away causes significand to overflow
-        env = FloatEnv(rounding_mode, True, False)
+        context = Context(rounding_mode, True, False)
         # Minimimum good, maximum good, overflows to infinity
         exponent = [fmt.e_min - 2, fmt.e_max - 3, fmt.e_max - 2][e_selector]
         # two extra bits in the significand
         significand = two_bits + (fmt.max_significand << 2)
-        value, status = fmt.make_real(sign, exponent - (fmt.precision - 1), significand, env)
+        value, status = fmt.make_real(sign, exponent - (fmt.precision - 1), significand, context)
         rounds_away = (two_bits and
                        ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
                         or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
@@ -350,10 +350,11 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding_mode):
         # Test cases where rounding away causes a subnormal to normalize
-        env = FloatEnv(rounding_mode, True, False)
+        context = Context(rounding_mode, True, False)
         # an extra bit in the significand with two LSBs varying
         significand = two_bits + ((fmt.max_significand >> 1) << 2)
-        value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand, env)
+        value, status = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand,
+                                      context)
         rounds_away = (two_bits and
                        ((rounding_mode is RoundTiesToEven and two_bits in (2, 3))
                         or (rounding_mode is RoundTiesToAway and two_bits in (2, 3))
@@ -381,11 +382,11 @@ class TestUnaryOps:
         if len(parts) == 1:
             hex_str, = parts
             with pytest.raises(SyntaxError):
-                IEEEsingle.from_string(hex_str, std_env)
+                IEEEsingle.from_string(hex_str, std_context)
         elif len(parts) == 7:
-            fmt, env_str, hex_str, status, sign, exponent, significand = parts
+            fmt, context, hex_str, status, sign, exponent, significand = parts
             fmt = format_codes[fmt]
-            env = env_string_to_env(env_str)
+            context = context_string_to_context(context)
             status = status_codes[status]
             sign = sign_codes[sign]
             try:
@@ -393,7 +394,7 @@ class TestUnaryOps:
             except ValueError:
                 pass
             significand = read_significand(significand)
-            value, stat = fmt.from_string(hex_str, env)
+            value, stat = fmt.from_string(hex_str, context)
             assert value.to_parts() == (sign, exponent, significand)
             assert stat == status
         else:
@@ -404,13 +405,13 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) != 5:
             assert False, f'bad line: {line}'
-        fmt, env_str, value, status, answer = parts
+        fmt, context, value, status, answer = parts
         fmt = format_codes[fmt]
-        rounding_mode = rounding_codes[env_str]
-        value, stat = fmt.from_string(value, std_env)
+        rounding_mode = rounding_codes[context]
+        value, stat = fmt.from_string(value, std_context)
         assert stat == OpStatus.OK
         status = status_codes[status]
-        answer, stat = fmt.from_string(answer, std_env)
+        answer, stat = fmt.from_string(answer, std_context)
         assert stat == OpStatus.OK
 
         result, stat = value.round(rounding_mode)
@@ -422,17 +423,17 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) != 6:
             assert False, f'bad line: {line}'
-        src_fmt, env_str, src_value, dst_fmt, status, answer = parts
+        src_fmt, context, src_value, dst_fmt, status, answer = parts
         src_fmt = format_codes[src_fmt]
-        env = env_string_to_env(env_str)
-        src_value, src_stat = src_fmt.from_string(src_value, std_env)
+        context = context_string_to_context(context)
+        src_value, src_stat = src_fmt.from_string(src_value, std_context)
         assert src_stat == OpStatus.OK
         dst_fmt = format_codes[dst_fmt]
         status = status_codes[status]
-        answer, ans_stat = dst_fmt.from_string(answer, std_env)
+        answer, ans_stat = dst_fmt.from_string(answer, std_context)
         assert ans_stat == OpStatus.OK
 
-        result, stat = dst_fmt.convert(src_value, env)
+        result, stat = dst_fmt.convert(src_value, context)
         assert result.to_parts() == answer.to_parts()
         assert stat == status
 
@@ -441,15 +442,15 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) != 6:
             assert False, f'bad line: {line}'
-        hex_format, env_str, dst_fmt, in_str, status, answer = parts
+        hex_format, context, dst_fmt, in_str, status, answer = parts
         hex_format = to_hex_format(hex_format)
-        env = env_string_to_env(env_str)
+        context = context_string_to_context(context)
         dst_fmt = format_codes[dst_fmt]
-        in_value, in_stat = dst_fmt.from_string(in_str, std_env)
+        in_value, in_stat = dst_fmt.from_string(in_str, std_context)
         assert in_stat == OpStatus.OK
         status = status_codes[status]
 
-        result, stat = in_value.to_hex_format_string(hex_format, env)
+        result, stat = in_value.to_hex_format_string(hex_format, context)
         assert result == answer
         assert stat == status
 
@@ -458,24 +459,24 @@ def binary_operation(line, operation):
     parts = line.split()
     if len(parts) != 8:
         assert False, f'bad line: {line}'
-    env_str, lhs_fmt, lhs, rhs_fmt, rhs, dst_fmt, status, answer = parts
-    env = env_string_to_env(env_str)
+    context, lhs_fmt, lhs, rhs_fmt, rhs, dst_fmt, status, answer = parts
+    context = context_string_to_context(context)
 
     lhs_fmt = format_codes[lhs_fmt]
-    lhs, lhs_stat = lhs_fmt.from_string(lhs, std_env)
+    lhs, lhs_stat = lhs_fmt.from_string(lhs, std_context)
     assert lhs_stat == OpStatus.OK
 
     rhs_fmt = format_codes[rhs_fmt]
-    rhs, rhs_stat = rhs_fmt.from_string(rhs, std_env)
+    rhs, rhs_stat = rhs_fmt.from_string(rhs, std_context)
     assert rhs_stat == OpStatus.OK
 
     dst_fmt = format_codes[dst_fmt]
     status = status_codes[status]
-    answer, ans_stat = dst_fmt.from_string(answer, std_env)
+    answer, ans_stat = dst_fmt.from_string(answer, std_context)
     assert ans_stat == OpStatus.OK
 
     operation = getattr(dst_fmt, operation)
-    result, stat = operation(lhs, rhs, env)
+    result, stat = operation(lhs, rhs, context)
     assert result.to_parts() == answer.to_parts()
     assert stat == status
 

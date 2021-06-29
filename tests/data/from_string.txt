@@ -1,5 +1,5 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
-# Envirnement:
+# Context:
 #   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
 #   Tininess:   B=Detect before rounding, otherwise detect after
 #   Underflow:  U=Always flag, otherwise only if inexact
@@ -7,7 +7,7 @@
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
 # Sign: + or -
 
-# Test format: FloatFormat Env String Status Sign Exponent Significand
+# Test format: FloatFormat Context String Status Sign Exponent Significand
 #              String Error
 
 #
@@ -158,7 +158,7 @@ H E 0x1p-24 K + -24 1
 Q E 0x1p-16494 K + -16494 1
 
 #
-# Subnormals rounding.  Test many rounding modes and env settings
+# Subnormals rounding.  Test many rounding modes and context settings
 #
 
 D E 0x1.fffffffffffffp-1023 I + -1074 0x10000000000000

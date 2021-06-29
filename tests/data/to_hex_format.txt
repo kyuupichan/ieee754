@@ -1,5 +1,5 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
-# Envirnement:
+# Context:
 #   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
 #   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
 #   Underflow:  U=Always flag, otherwise only if inexact   (optional)
@@ -11,7 +11,7 @@
 # NanPayload: N X or D.  None, Hex or Decimal.
 # HexDigitCount: a decimal number
 
-# Test format: HexFormat Env FloatFormat String Status String
+# Test format: HexFormat Context FloatFormat String Status String
 
 
 ###############

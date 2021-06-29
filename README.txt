@@ -46,12 +46,12 @@ Python attempting a similar goal, so if nothing else this fills a gap in the mar
 Once complete this library, in both Python and C++, should implement the following (*
 indicates new features not present in the original C++ code):
 
-  - all relevant operations to take a floating point environment and be correctly
-    rounded.  The FP environment specifies:
+  - all relevant operations to take a floating point context and be correctly
+    rounded.  The context specifies:
      - the rounding mode (all five IEEE rounding modes are supported)
      * whether tininess is detected before or after rounding
      * whether underflow is flagged if tiny, or only if tiny and inexact
-  - reporting of status flags as per IEEE-754 as modified by the environment
+  - reporting of status flags as per IEEE-754 as modified by the context
   - quiet and signalling NaNs and their payloads
   - arbitrary floating point formats, i.e. arbitrary exponent widths and significand
     precisions, for all operations

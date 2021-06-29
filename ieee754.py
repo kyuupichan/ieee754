@@ -11,7 +11,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('InterchangeKind', 'FloatClass', 'FloatEnv', 'FloatFormat', 'OpStatus', 'IEEEfloat',
+__all__ = ('InterchangeKind', 'FloatClass', 'Context', 'FloatFormat', 'OpStatus', 'IEEEfloat',
            'HexFormat',
            'RoundingMode', 'RoundTiesToEven', 'RoundTiesToAway', 'RoundTowardsPositive',
            'RoundTowardsNegative', 'RoundTowardsZero',
@@ -68,8 +68,8 @@ class FloatClass(IntEnum):
 
 
 # Operation status flags.  OVERFLOW is always returned with INEXACT.  UNDERFLOW, too, has
-# INEXACT unless the environment always_flag_underflow bit is set, in which case UNDERFLOW
-# may stand alone as per IEEE-754.
+# INEXACT unless the always_flag_underflow bit is set in the context, in which case
+# UNDERFLOW may stand alone as per IEEE-754.
 class OpStatus(IntFlag):
     OK          = 0
     INVALID     = 0x01
@@ -214,12 +214,14 @@ class RoundTowardsZero(RoundingMode):
         return False
 
 
-class FloatEnv:
+class Context:
+    '''The execution context for operations.  Determines properties like rounding, how
+    tininess is detected, etc.'''
 
     __slots__ = ('rounding_mode', 'detect_tininess_after', 'always_flag_underflow')
 
     def __init__(self, rounding_mode, detect_tininess_after, always_flag_underflow):
-        '''Floating point environment flags:
+        '''Floating point flags:
 
         rounding_mode is one of the RoundingMode enumerations and controls rounding of inexact
         results.
@@ -338,10 +340,10 @@ class FloatFormat:
             status |= OpStatus.INVALID
         return IEEEfloat(self, sign, self.e_saturated, adj_payload), status
 
-    def make_real(self, sign, exponent, significand, env):
+    def make_real(self, sign, exponent, significand, context):
         '''Return a (value, status) pair.
 
-        The floating point number is the correctly-rounded (according to env) value of the
+        The floating point number is the correctly-rounded (by the context) value of the
         infinitely precise result
 
            ± 2^exponent * significand
@@ -359,9 +361,9 @@ class FloatFormat:
             # Return a correctly-signed zero
             return IEEEfloat(self, sign, 0, 0), OpStatus.OK
 
-        return self._normalize(sign, exponent, significand, LostFraction.EXACTLY_ZERO, env)
+        return self._normalize(sign, exponent, significand, LostFraction.EXACTLY_ZERO, context)
 
-    def _normalize(self, sign, exponent, significand, lost_fraction, env):
+    def _normalize(self, sign, exponent, significand, lost_fraction, context):
         '''A calculation has led to a number of whose value is
 
               ± 2^exponent * significand
@@ -393,7 +395,7 @@ class FloatFormat:
         is_tiny = significand < self.int_bit
 
         # Round
-        if env.rounding_mode.rounds_away(lost_fraction, sign, bool(significand & 1)):
+        if context.rounding_mode.rounds_away(lost_fraction, sign, bool(significand & 1)):
             # Increment the significand
             significand += 1
             # If the significand now overflows, halve it and increment the exponent
@@ -404,14 +406,14 @@ class FloatFormat:
         # If the new exponent would be too big, then we overflow.  The result is either
         # infinity or the format's largest finite value depnding on the rounding mode.
         if exponent > self.e_max:
-            if env.rounding_mode.overflow_to_infinity(sign):
+            if context.rounding_mode.overflow_to_infinity(sign):
                 result = self.make_infinity(sign)
             else:
                 result = self.make_largest_finite(sign)
             return result, OpStatus.OVERFLOW | OpStatus.INEXACT
 
         # Detect tininess after rounding if appropriate
-        if env.detect_tininess_after:
+        if context.detect_tininess_after:
             is_tiny = significand < self.int_bit
 
         # Denormals require exponent of zero
@@ -419,7 +421,7 @@ class FloatFormat:
 
         status = OpStatus.OK if lost_fraction == LostFraction.EXACTLY_ZERO else OpStatus.INEXACT
 
-        if is_tiny and (env.always_flag_underflow or status == OpStatus.INEXACT):
+        if is_tiny and (context.always_flag_underflow or status == OpStatus.INEXACT):
             status |= OpStatus.UNDERFLOW
 
         return IEEEfloat(self, sign, exponent + self.e_bias, significand), status
@@ -466,10 +468,10 @@ class FloatFormat:
 
         return IEEEfloat(self, sign ^ flip_sign, e_biased, significand), status
 
-    def convert(self, value, env):
+    def convert(self, value, context):
         '''Return a (result, status) pair.
 
-        Convert a floating point value to this format rounding according to env.'''
+        Convert a floating point value to this format rounding according to context.'''
         if value.e_biased == value.fmt.e_saturated:
             # Infinities
             if value.significand == 0:
@@ -482,7 +484,7 @@ class FloatFormat:
         if value.significand == 0:
             return self.make_zero(value.sign), OpStatus.OK
 
-        return self.make_real(value.sign, value.exponent(), value.significand, env)
+        return self.make_real(value.sign, value.exponent(), value.significand, context)
 
     def pack(self, sign, biased_exponent, significand, endianness='little'):
         '''Returns a floating point value encoded as bytes of the given endianness.'''
@@ -534,13 +536,13 @@ class FloatFormat:
         sign = bool(value & (self.e_saturated + 1))
         return sign, biased_exponent, significand
 
-    def from_string(self, string, env):
+    def from_string(self, string, context):
         '''Convert a string to a rounded floating number of this format.'''
         if HEX_SIGNIFICAND_PREFIX.match(string):
-            return self._from_hex_significand_string(string, env)
-        return self._from_decimal_string(string, env)
+            return self._from_hex_significand_string(string, context)
+        return self._from_decimal_string(string, context)
 
-    def _from_hex_significand_string(self, string, env):
+    def _from_hex_significand_string(self, string, context):
         '''Convert a string with hexadecimal significand to a rounded floating number of this
         format.
         '''
@@ -562,9 +564,9 @@ class FloatFormat:
             significand = int((groups[1] + fraction) or '0', 16)
             exponent -= len(fraction) * 4
 
-        return self.make_real(sign, exponent, significand, env)
+        return self.make_real(sign, exponent, significand, context)
 
-    def _from_decimal_string(self, string, env):
+    def _from_decimal_string(self, string, context):
         '''Converts a string with a hexadecimal significand to a floating number of the
         required format.
 
@@ -598,11 +600,11 @@ class FloatFormat:
                 exponent -= len(fraction)
 
             if exponent == 0:
-                return self.make_real(sign, 0, significand, env)
+                return self.make_real(sign, 0, significand, context)
             raise NotImplementedError
 
             # Now the value is significand * 10^exponent.
-            return self._decimal_to_binary(sign, exponent, significand, env)
+            return self._decimal_to_binary(sign, exponent, significand, context)
 
         # groups[7] matches infinities
         if groups[7] is not None:
@@ -621,14 +623,14 @@ class FloatFormat:
             payload = 1 - is_quiet
         return self.make_NaN(sign, is_quiet, payload, False)
 
-    def _decimal_to_binary(self, sign, exponent, significand, env):
+    def _decimal_to_binary(self, sign, exponent, significand, context):
         '''Return a correctly-rounded binary value of
 
              (-1)^sign * significand * 10^exponent
         '''
         pow5 = pow(5, abs(exponent))
-        calc_env = FloatEnv(RoundTiesToEven, True, False)
-        round_to_nearest = env.rounding_mode in {RoundTiesToEven, RoundTiesToAway}
+        calc_context = Context(RoundTiesToEven, True, False)
+        round_to_nearest = context.rounding_mode in {RoundTiesToEven, RoundTiesToAway}
 
         def ulps_from_boundary(a, b, c):
             raise NotImplementedError
@@ -644,8 +646,8 @@ class FloatFormat:
             calc_fmt = FloatFormat(16, parts_count * 64, InterchangeKind.NONE)
             excess_precision = calc_fmt.precision - self.precision
 
-            sig_status, sig_value = calc_fmt.make_real(sign, 0, significand, calc_env)
-            pow5_status, pow5_value = calc_fmt.make_real(False, 0, pow5, calc_env)
+            sig_status, sig_value = calc_fmt.make_real(sign, 0, significand, calc_context)
+            pow5_status, pow5_value = calc_fmt.make_real(False, 0, pow5, calc_context)
 
             # Because 10^n = 5^n * 2^n.   FIXME: check for out-of-range exponents.
             sig_value.e_biased += exponent
@@ -654,7 +656,7 @@ class FloatFormat:
                 scaled_value, inexact_scaling = calc_fmt._multiply_finite(sig_value, pow5_value)
                 pow_HU_err = pow5_status != OpStatus.OK
             else:
-                scaled_value, div_status = calc_fmt._divide_finite(sig_value, pow5_value, env)
+                scaled_value, div_status = calc_fmt._divide_finite(sig_value, pow5_value, context)
                 inexact_scaling = bool(div_status & OpStatus.INEXACT)
                 # Subnormals have less precision
                 if scaled_value.e_biased == 0:
@@ -682,7 +684,7 @@ class FloatFormat:
 
             # If we truncate now are we guaranteed to round correctly?
             if HU_distance >= HU_err:
-                return self.convert(scaled_value, env)
+                return self.convert(scaled_value, context)
 
             # Increase precision and try again
             parts_count += parts_count // 2 + 1
@@ -695,21 +697,21 @@ class FloatFormat:
     ## the destination format is self.
     ##
 
-    def from_int(self, x, env):
+    def from_int(self, x, context):
         '''Convert the integer x to this floating point format, rounding if necessary.  Returns a
         (value, status) pair.
         '''
         raise NotImplementedError
 
-    def add(self, lhs, rhs, env):
+    def add(self, lhs, rhs, context):
         '''Returns a (lhs + rhs, status) pair with dst_format as the format of the result.'''
         raise NotImplementedError
 
-    def subtract(self, lhs, rhs, env):
+    def subtract(self, lhs, rhs, context):
         '''Returns a (lhs - rhs, status) pair with dst_format as the format of the result.'''
         raise NotImplementedError
 
-    def multiply(self, lhs, rhs, env):
+    def multiply(self, lhs, rhs, context):
         '''Returns a (lhs * rhs, status) pair with self as the format of the result.'''
         # Multiplication is commutative
         if lhs.e_biased == lhs.fmt.e_saturated:
@@ -720,7 +722,7 @@ class FloatFormat:
         # Both numbers are finite.
         sign = lhs.sign ^ rhs.sign
         exponent = lhs.exponent() + rhs.exponent()
-        return self.make_real(sign, exponent, lhs.significand * rhs.significand, env)
+        return self.make_real(sign, exponent, lhs.significand * rhs.significand, context)
 
     def _multiply_special(self, lhs, rhs):
         '''Return a (lhs * rhs, status) pair with self as the format of the result.
@@ -744,7 +746,7 @@ class FloatFormat:
         return self.make_NaN(sign, True, lhs.NaN_payload(),
                              lhs.is_signalling() or rhs.is_signalling())
 
-    def divide(self, lhs, rhs, env):
+    def divide(self, lhs, rhs, context):
         '''Returns a (lhs / rhs, status) pair with self as the format of the result.'''
         sign = lhs.sign ^ rhs.sign
 
@@ -774,9 +776,9 @@ class FloatFormat:
             return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
 
         # Both values are finite.
-        return self._divide_finite(lhs, rhs, env)
+        return self._divide_finite(lhs, rhs, context)
 
-    def _divide_finite(self, lhs, rhs, env):
+    def _divide_finite(self, lhs, rhs, context):
         '''Return a (lhs / rhs, status) pair), taking account of differences in exponents.  Self
         is the format of the result.
         '''
@@ -831,13 +833,13 @@ class FloatFormat:
             lost_fraction = LostFraction.EXACTLY_HALF
         else:
             lost_fraction = LostFraction.MORE_THAN_HALF
-        return self._normalize(sign, exponent, quot, lost_fraction, env)
+        return self._normalize(sign, exponent, quot, lost_fraction, context)
 
-    def sqrt(self, x, env):
+    def sqrt(self, x, context):
         '''Returns a (sqrt(x), status) pair with dst_format as the format of the result.'''
         raise NotImplementedError
 
-    def fma(self, lhs, rhs, addend, env):
+    def fma(self, lhs, rhs, addend, context):
         '''Returns a (lhs * rhs + addend, status) pair with dst_format as the format of the
         result.'''
         raise NotImplementedError
@@ -1093,7 +1095,7 @@ class IEEEfloat:
     ## logBFormat operations (logBFormat is an integer format)
     ##
 
-    def scalb(self, N, env):
+    def scalb(self, N, context):
         '''Returns a pair (scalb(x, N), status).
 
         The result is x * 2^N for integral values N, correctly-rounded. and in the format of
@@ -1102,7 +1104,7 @@ class IEEEfloat:
         '''
         raise NotImplementedError
 
-    def logb(self, env):
+    def logb(self, context):
         '''Return a pair (log2(x), status).
 
         The result is the exponent e of x, a signed integer, when represented with
@@ -1117,7 +1119,7 @@ class IEEEfloat:
     ## General computational operations
     ##
 
-    def to_hex_format_string(self, hex_format, env):
+    def to_hex_format_string(self, hex_format, context):
         '''Return a (hex_string, status) pair.
 
         hex_string is a hexadecimal representation of the floating point value.  See the
@@ -1154,13 +1156,13 @@ class IEEEfloat:
                 else:
                     rest = hex_format.qNaN + payload
         else:
-            hex_sig, exponent, status = self._hex_significand(hex_format, env)
+            hex_sig, exponent, status = self._hex_significand(hex_format, context)
             exp_sign = '+' if exponent >= 0 and hex_format.force_exp_sign else ''
             rest = f'0x{hex_sig}p{exp_sign}{exponent}'
 
         return sign + rest, status
 
-    def _hex_significand(self, hex_format, env):
+    def _hex_significand(self, hex_format, context):
         # Significant bits
         significand = self.significand
         status = OpStatus.OK
@@ -1172,7 +1174,8 @@ class IEEEfloat:
             significand, lost_fraction = shift_right(significand, rshift)
             if lost_fraction != LostFraction.EXACTLY_ZERO:
                 status = OpStatus.INEXACT
-                if env.rounding_mode.rounds_away(lost_fraction, self.sign, bool(significand & 1)):
+                if context.rounding_mode.rounds_away(lost_fraction, self.sign,
+                                                     bool(significand & 1)):
                     significand += 1
                     # If rounding caused the significand to gain a bit in length, shift it
                     # back and increment the exponent
@@ -1286,13 +1289,13 @@ class IEEEfloat:
 
         return IEEEfloat(self.fmt, self.sign, e_biased, significand), status
 
-    def to_int(self, int_format, env):
+    def to_int(self, int_format, context):
         '''Returns a (int(lhs), status) pair correctly-rounded with int_format the integer format
         of the result.
         '''
         raise NotImplementedError
 
-    def to_integral(self, flt_format, env):
+    def to_integral(self, flt_format, context):
         '''Returns a (lhs, status) pair correctly-rounded with flt_format the floating point
         format of the result.
         '''

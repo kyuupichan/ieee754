@@ -1,12 +1,12 @@
 # FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
-# Envirnement:
+# Context:
 #   Rounding:   E=TiesToEven A=TiesToAway P=TowardsPositive N=TowardsNegative Z=TowardsZero
 #   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
 #   Underflow:  U=Always flag, otherwise only if inexact   (optional)
 # Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=Invalid
 # Sign: + or -
 
-# Test format: Env LHSFormat LHS RHSFormat RHS DstFormat Status String
+# Test format: Context LHSFormat LHS RHSFormat RHS DstFormat Status String
 
 
 ###############
