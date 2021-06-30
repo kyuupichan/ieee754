@@ -193,6 +193,10 @@ class Context:
     def clear_traps(self):
         self.traps = 0
 
+    def copy(self):
+        '''Return a copy of the context.'''
+        return Context(self.rounding, self.flags, self.traps)
+
     def set_flags(self, flags):
         self.flags |= flags
         if self.traps & flags:
@@ -201,13 +205,11 @@ class Context:
     def on_normalised_finite(self, is_tiny_before, is_tiny_after, is_inexact):
         '''Call after normalisation of a finite number to set flags appropriately.'''
         if is_tiny_after:
-            assert is_tiny_before
             if is_inexact:
                 self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
             else:
                 self.set_flags(Flags.SUBNORMAL)
         elif is_tiny_before:
-            assert is_inexact
             self.set_flags(Flags.SUBNORMAL | Flags.INEXACT)
         elif is_inexact:
             self.set_flags(Flags.INEXACT)
@@ -240,20 +242,27 @@ class Context:
         # ROUND_HALF_UP
         return lost_fraction != LostFraction.LESS_THAN_HALF
 
-    def overflow_to_infinity(self, sign):
-        '''When a rounded result has an too high exponent, return True if the rounding mode
-        requires rounding to infinity.
+    def overflow_value(self, binary_format, sign):
+        '''Call when an overflow occurs on a number of the given format and sign, because
+        the rounded result would have too large an exponent.
 
-        sign is the sign of the number.'''
+        Flags overflow and returns the result, which is signed and either the largest
+        finite number or infinity depending on the rounding mode.'''
+        self.set_flags(Flags.OVERFLOW | Flags.INEXACT)
+
         rounding = self.rounding
         if rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP, ROUND_UP}:
-            return True
-        if rounding == ROUND_CEILING:
-            return not sign
-        if rounding == ROUND_FLOOR:
-            return sign
-        # ROUND_DOWN
-        return False
+            is_up = True
+        elif rounding == ROUND_CEILING:
+            is_up = not sign
+        elif rounding == ROUND_FLOOR:
+            is_up = sign
+        else: # ROUND_DOWN
+            is_up = False
+
+        if is_up:
+            return binary_format.make_infinity(sign)
+        return binary_format.make_largest_finite(sign)
 
     def round_to_nearest(self):
         '''Return True if the rounding mode rounds to nearest (ignoring ties).'''
@@ -465,12 +474,7 @@ class BinaryFormat:
         # If the new exponent would be too big, then we overflow.  The result is either
         # infinity or the format's largest finite value depending on the rounding mode.
         if exponent > self.e_max:
-            context.set_flags(Flags.OVERFLOW | Flags.INEXACT)
-            if context.overflow_to_infinity(sign):
-                result = self.make_infinity(sign)
-            else:
-                result = self.make_largest_finite(sign)
-            return result
+            return context.overflow_value(self, sign)
 
         is_tiny_after = significand < self.int_bit
 
