@@ -25,13 +25,11 @@ def read_lines(filename):
     return result
 
 def std_context():
-    return Context(ROUND_HALF_EVEN, True, False)
+    return Context(ROUND_HALF_EVEN)
 
 def context_string_to_context(context):
-    rounding = rounding_codes[context[0]]
-    detect_tininess_after = not 'B' in context
-    always_detect_underflow = 'U' in context
-    return Context(rounding, detect_tininess_after, always_detect_underflow)
+    rounding = rounding_codes[context]
+    return Context(rounding)
 
 def read_significand(significand):
     if significand[:2] in ('0x', '0X'):
@@ -61,14 +59,15 @@ rounding_codes = {
 }
 
 status_codes = {
-    'K': OpStatus.OK,
-    'VI': OpStatus.OVERFLOW | OpStatus.INEXACT,
-    'U': OpStatus.UNDERFLOW,
-    'UI': OpStatus.UNDERFLOW | OpStatus.INEXACT,
-    'I': OpStatus.INEXACT,
-    'Z': OpStatus.DIV_BY_ZERO,
-    'X': OpStatus.INVALID,
-    'XI': OpStatus.INVALID | OpStatus.INEXACT,
+    'K': 0,
+    'VI': Flags.OVERFLOW | Flags.INEXACT,
+    'S': Flags.SUBNORMAL,
+    'SI': Flags.SUBNORMAL | Flags.INEXACT,
+    'U': Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT,
+    'I': Flags.INEXACT,
+    'Z': Flags.DIV_BY_ZERO,
+    'X': Flags.INVALID,
+    'XI': Flags.INVALID | Flags.INEXACT,
 }
 
 sign_codes = {
@@ -84,6 +83,133 @@ def to_hex_format(hex_format):
         nan_payload=hex_format[2],
         precision=int(hex_format[3:]),
     )
+
+
+class TestTraps:
+
+    def test_div_by_zero(self):
+        context = Context(traps=Flags.DIV_BY_ZERO)
+        lhs = IEEEsingle.make_real(False, 0, 1, context)
+        rhs = IEEEsingle.make_zero(False)
+        assert not context.flags
+        assert issubclass(DivisionByZero, ZeroDivisionError)
+        with pytest.raises(DivisionByZero):
+            IEEEsingle.divide(lhs, rhs, context)
+        assert context.flags == Flags.DIV_BY_ZERO
+        context.clear_flags()
+        assert not context.flags
+        context.clear_traps()
+        result = IEEEsingle.divide(lhs, rhs, context)
+        assert result.is_infinite()
+        assert context.flags == Flags.DIV_BY_ZERO
+
+    def test_inexact(self):
+        context = Context(traps=Flags.INEXACT)
+        lhs = IEEEsingle.make_real(False, 0, 1, context)
+        rhs = IEEEsingle.make_real(False, 0, 3, context)
+        with pytest.raises(Inexact):
+            IEEEsingle.divide(lhs, rhs, context)
+        assert context.flags == Flags.INEXACT
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEsingle.divide(lhs, rhs, context)
+        assert result.is_finite()
+        assert context.flags == Flags.INEXACT
+
+    def test_invalid_operation(self):
+        context = Context(traps=Flags.INVALID)
+        lhs = IEEEsingle.make_zero(False)
+        rhs = IEEEsingle.make_zero(False)
+        with pytest.raises(InvalidOperation):
+            IEEEsingle.divide(lhs, rhs, context)
+        assert context.flags == Flags.INVALID
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEsingle.divide(lhs, rhs, context)
+        assert result.is_NaN()
+        assert context.flags == Flags.INVALID
+
+    def test_invalid_operation_inexact(self):
+        context = Context(traps=Flags.INVALID)
+        lhs = IEEEdouble.make_NaN(False, False, 0x123456789, context, False)
+        assert not context.flags
+        assert issubclass(InvalidOperationInexact, InvalidOperation)
+        assert issubclass(InvalidOperationInexact, Inexact)
+        with pytest.raises(InvalidOperationInexact):
+            IEEEsingle.convert(lhs, context)
+        assert context.flags == Flags.INVALID | Flags.INEXACT
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEsingle.convert(lhs, context)
+        assert result.is_NaN()
+        assert context.flags == Flags.INVALID | Flags.INEXACT
+
+    def test_overflow(self):
+        context = Context(traps=Flags.OVERFLOW)
+        lhs = IEEEsingle.make_real(False, 0, 1, context)
+        rhs = IEEEsingle.make_real(False, -140, 1, context)
+        assert context.flags == Flags.SUBNORMAL
+        context.clear_flags()
+        assert issubclass(Overflow, Inexact)
+        with pytest.raises(Overflow):
+            IEEEsingle.divide(lhs, rhs, context)
+        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEsingle.divide(lhs, rhs, context)
+        assert result.is_infinite()
+        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+
+    def test_subnormal_exact(self):
+        context = Context(traps=Flags.SUBNORMAL)
+        assert issubclass(SubnormalExact, Subnormal)
+        assert not issubclass(SubnormalExact, Inexact)
+        with pytest.raises(SubnormalExact):
+            IEEEsingle.make_real(False, -140, 1, context)
+        assert context.flags == Flags.SUBNORMAL
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEsingle.make_real(False, -140, 1, context)
+        assert result.is_subnormal()
+        assert context.flags == Flags.SUBNORMAL
+
+    def test_subnormal_inexact(self):
+        # This is a rare case - the result must be rounded to normal, otherwise Underflow
+        # would be raised
+        context = Context(traps=Flags.SUBNORMAL)
+        assert issubclass(SubnormalInexact, Subnormal)
+        assert issubclass(SubnormalInexact, Inexact)
+        with pytest.raises(SubnormalInexact):
+            IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
+        assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
+        assert result.is_normal()
+        assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
+
+    def test_underflow_to_non_zero(self):
+        context = Context(traps=Flags.UNDERFLOW)
+        assert issubclass(Underflow, SubnormalInexact)
+        with pytest.raises(Underflow):
+            IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
+        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
+        assert result.is_subnormal()
+        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+
+    def test_underflow_to_zero(self):
+        context = Context(traps=Flags.UNDERFLOW)
+        with pytest.raises(Underflow):
+            IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
+        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+        context.clear_flags()
+        context.clear_traps()
+        result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
+        assert result.is_zero()
+        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
 
 
 # Test basic class functions before reading test files
@@ -143,10 +269,10 @@ class TestGeneralNonComputationalOps:
         context = std_context()
         value = fmt.make_NaN(sign, quiet, payload, context, False)
         if payload == 0 and not quiet:
-            assert context.flags == OpStatus.INEXACT
+            assert context.flags == Flags.INEXACT
             payload = 1
         else:
-            assert context.flags == OpStatus.OK
+            assert context.flags == 0
         if quiet:
             assert value.number_class() == 'NaN'
         else:
@@ -195,13 +321,10 @@ class TestGeneralNonComputationalOps:
         with pytest.raises(TypeError):
             fmt.make_NaN(sign, False, 1.2, context, False)
 
-    @pytest.mark.parametrize('fmt, detect_tininess_after, always_flag_underflow, sign',
-                             product(all_IEEE_fmts,
-                                     (False, True),
-                                     (False, True),
-                                     (False, True),
+    @pytest.mark.parametrize('fmt, sign',
+                             product(all_IEEE_fmts, (False, True),
                              ))
-    def test_make_real_MSB_set(self, fmt, detect_tininess_after, always_flag_underflow, sign):
+    def test_make_real_MSB_set(self, fmt, sign):
         '''Test MSB set with various exponents.'''
         significand = 1
         for exponent in (
@@ -213,11 +336,10 @@ class TestGeneralNonComputationalOps:
                 1,
                 fmt.e_max
         ):
-            context = Context(ROUND_HALF_EVEN, detect_tininess_after, always_flag_underflow)
+            context = Context(ROUND_HALF_EVEN)
             value = fmt.make_real(sign, exponent, significand, context)
             if exponent < fmt.e_min:
-                assert context.flags == (OpStatus.UNDERFLOW if always_flag_underflow
-                                         else OpStatus.OK)
+                assert context.flags == Flags.SUBNORMAL
                 assert not value.is_normal()
                 assert value.is_subnormal()
                 if sign:
@@ -225,7 +347,7 @@ class TestGeneralNonComputationalOps:
                 else:
                     assert value.number_class() == '+Subnormal'
             else:
-                assert context.flags == OpStatus.OK
+                assert context.flags == 0
                 assert value.is_normal()
                 assert not value.is_subnormal()
                 if sign:
@@ -253,33 +375,30 @@ class TestGeneralNonComputationalOps:
         # Test that a zero significand gives a zero regardless of exponent
         context = std_context()
         value = fmt.make_real(sign, exponent, 0, context)
-        assert context.flags == OpStatus.OK
+        assert context.flags == 0
         assert value.is_zero()
         assert value.sign is sign
         assert value.fmt is fmt
 
-    @pytest.mark.parametrize('fmt, sign, two_bits, rounding, dtar, afu',
+    @pytest.mark.parametrize('fmt, sign, two_bits, rounding',
                              product(all_IEEE_fmts,
                                      (False, True),
                                      (1, 2, 3, ),
                                      all_roundings,
-                                     (False, True),
-                                     (False, True),
                              ))
-    def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding, dtar, afu):
+    def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding):
         # Test that a value that loses two bits of precision underflows correctly
-        context = Context(rounding, dtar, afu)
+        context = Context(rounding)
         value = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits, context)
         underflows_to_zero = (rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN} and two_bits in (1, 2)
                               or (rounding == ROUND_HALF_UP and two_bits == 1)
                               or (rounding == ROUND_CEILING and sign)
                               or (rounding == ROUND_FLOOR and not sign)
                               or (rounding == ROUND_DOWN))
+        assert context.flags == Flags.INEXACT | Flags.UNDERFLOW | Flags.SUBNORMAL
         if underflows_to_zero:
-            assert context.flags == OpStatus.INEXACT | OpStatus.UNDERFLOW
             assert value.is_zero()
         else:
-            assert context.flags == OpStatus.INEXACT | OpStatus.UNDERFLOW
             assert value.is_subnormal()
             assert value.significand == 1
         assert value.sign is sign
@@ -291,11 +410,11 @@ class TestGeneralNonComputationalOps:
                                      all_roundings,
                              ))
     def test_make_overflow(self, fmt, sign, rounding):
-        context = Context(rounding, True, False)
+        context = Context(rounding)
         # First test the exponent that doesn't overflow but that one more would
         exponent = fmt.e_max
         value = fmt.make_real(sign, exponent, 1, context)
-        assert context.flags == OpStatus.OK
+        assert context.flags == 0
         assert value.is_normal()
         assert value.sign is sign
         assert value.fmt is fmt
@@ -303,7 +422,7 @@ class TestGeneralNonComputationalOps:
         # Increment the exponent.  Overflow now depends on rounding mode
         exponent += 1
         value = fmt.make_real(sign, exponent, 1, context)
-        assert context.flags == OpStatus.OVERFLOW | OpStatus.INEXACT
+        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
         if (rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP, ROUND_UP}
                 or (rounding == ROUND_CEILING and not sign)
                 or (rounding == ROUND_FLOOR and sign)):
@@ -322,7 +441,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding):
         # Test cases where rounding away causes significand to overflow
-        context = Context(rounding, True, False)
+        context = Context(rounding)
         # Minimimum good, maximum good, overflows to infinity
         exponent = [fmt.e_min - 2, fmt.e_max - 3, fmt.e_max - 2][e_selector]
         # two extra bits in the significand
@@ -337,15 +456,15 @@ class TestGeneralNonComputationalOps:
                         or (rounding == ROUND_FLOOR and sign)))
         if rounds_away:
             if e_selector == 2:
-                assert context.flags == OpStatus.INEXACT | OpStatus.OVERFLOW
+                assert context.flags == Flags.INEXACT | Flags.OVERFLOW
                 assert value.is_infinite()
             else:
-                assert context.flags == OpStatus.INEXACT
+                assert context.flags == Flags.INEXACT
                 assert value.is_normal()
                 assert value.significand == fmt.int_bit
                 assert value.e_biased == exponent + fmt.e_bias + 3
         else:
-            assert context.flags == (OpStatus.INEXACT if two_bits else OpStatus.OK)
+            assert context.flags == (Flags.INEXACT if two_bits else 0)
             assert value.is_normal()
             assert value.significand == fmt.max_significand
             assert value.e_biased == exponent + fmt.e_bias + 2
@@ -360,7 +479,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding):
         # Test cases where rounding away causes a subnormal to normalize
-        context = Context(rounding, True, False)
+        context = Context(rounding)
         # an extra bit in the significand with two LSBs varying
         significand = two_bits + ((fmt.max_significand >> 1) << 2)
         value = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand, context)
@@ -372,13 +491,15 @@ class TestGeneralNonComputationalOps:
                         or (rounding == ROUND_CEILING and not sign)
                         or (rounding == ROUND_FLOOR and sign)))
         if rounds_away:
-            assert context.flags == OpStatus.INEXACT
+            assert context.flags == Flags.INEXACT | Flags.SUBNORMAL
             assert value.is_normal()
             assert value.significand == fmt.int_bit
             assert value.e_biased == 1
         else:
-            assert context.flags == (OpStatus.INEXACT | OpStatus.UNDERFLOW
-                                     if two_bits else OpStatus.OK)
+            if two_bits == 0:
+                assert context.flags == Flags.SUBNORMAL
+            else:
+                assert context.flags == Flags.INEXACT | Flags.UNDERFLOW | Flags.SUBNORMAL
             assert value.is_subnormal()
             assert value.significand == fmt.int_bit - 1
             assert value.e_biased == 1
@@ -419,13 +540,13 @@ class TestUnaryOps:
             assert False, f'bad line: {line}'
         fmt, rounding, value, status, answer = parts
         fmt = format_codes[fmt]
-        context = Context(rounding_codes[rounding], True, False)
+        context = Context(rounding_codes[rounding])
         input_context = std_context()
         value = fmt.from_string(value, input_context)
-        assert input_context.flags == OpStatus.OK
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
         status = status_codes[status]
         answer = fmt.from_string(answer, input_context)
-        assert input_context.flags == OpStatus.OK
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
 
         result = value.round(context)
         assert result.to_parts() == answer.to_parts()
@@ -441,11 +562,11 @@ class TestUnaryOps:
         context = context_string_to_context(context)
         input_context = std_context()
         src_value = src_fmt.from_string(src_value, input_context)
-        assert input_context.flags == OpStatus.OK
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
         dst_fmt = format_codes[dst_fmt]
         status = status_codes[status]
         answer = dst_fmt.from_string(answer, input_context)
-        assert input_context.flags == OpStatus.OK
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
 
         result = dst_fmt.convert(src_value, context)
         assert result.to_parts() == answer.to_parts()
@@ -462,7 +583,7 @@ class TestUnaryOps:
         dst_fmt = format_codes[dst_fmt]
         input_context = std_context()
         in_value = dst_fmt.from_string(in_str, input_context)
-        assert input_context.flags == OpStatus.OK
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
         status = status_codes[status]
 
         result = in_value.to_hex_format_string(hex_format, context)
@@ -480,16 +601,16 @@ def binary_operation(line, operation):
     lhs_fmt = format_codes[lhs_fmt]
     input_context = std_context()
     lhs = lhs_fmt.from_string(lhs, input_context)
-    assert input_context.flags == OpStatus.OK
+    assert input_context.flags & ~Flags.SUBNORMAL == 0
 
     rhs_fmt = format_codes[rhs_fmt]
     rhs = rhs_fmt.from_string(rhs, input_context)
-    assert input_context.flags == OpStatus.OK
+    assert input_context.flags & ~Flags.SUBNORMAL == 0
 
     dst_fmt = format_codes[dst_fmt]
     status = status_codes[status]
     answer = dst_fmt.from_string(answer, input_context)
-    assert input_context.flags == OpStatus.OK
+    assert input_context.flags & ~Flags.SUBNORMAL == 0
 
     operation = getattr(dst_fmt, operation)
     result = operation(lhs, rhs, context)

@@ -10,8 +10,9 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('Context', 'BinaryFormat', 'OpStatus', 'IEEEfloat',
-           'HexFormat',
+__all__ = ('Context', 'BinaryFormat', 'Flags', 'IEEEfloat', 'HexFormat',
+           'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
+           'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
@@ -64,17 +65,15 @@ DEC_FLOAT_REGEX = re.compile(
 )
 
 
-# Operation status flags.  OVERFLOW is always returned with INEXACT.  UNDERFLOW, too, has
-# INEXACT unless the always_flag_underflow bit is set in the context, in which case
-# UNDERFLOW may stand alone as per IEEE-754.
-class OpStatus(IntFlag):
-    OK          = 0
+# Operation status flags.
+class Flags(IntFlag):
     INVALID     = 0x01
     DIV_BY_ZERO = 0x02
     OVERFLOW    = 0x04
-    UNDERFLOW   = 0x08
-    INEXACT     = 0x10
-    SUBNORMAL   = 0x20
+    SUBNORMAL   = 0x08
+    UNDERFLOW   = 0x10
+    INEXACT     = 0x20
+
 
 # When precision is lost during a calculation this indicates what fraction of the LSB the
 # lost bits represented.  It essentially combines the roles of 'guard' and 'sticky' bits.
@@ -121,56 +120,97 @@ def lowest_set_bit(value):
     return -1
 
 
+class BinaryError(ArithmeticError):
+    '''All traps subclass from this.'''
+
+
+class DivisionByZero(BinaryError, ZeroDivisionError):
+    '''Division by zero.'''
+
+
+class Inexact(BinaryError):
+    '''The result cannot be represented precisely.'''
+
+
+class InvalidOperation(BinaryError):
+    '''Invalid operation, e.g. 0 / 0 or any non-quiet operation on a signallying NaN.'''
+
+
+class InvalidOperationInexact(InvalidOperation, Inexact):
+    '''An operation on a signalling NaN results in a quiet NaN with a different payload.'''
+
+
+class Overflow(Inexact):
+    '''If after rounding the result would have an exponent exceeding e_max.  The result is
+    either infinity or the signed finite value of greatest magnitude, depending on the
+    rounding mode and sign.'''
+
+
+class Subnormal(BinaryError):
+    '''Before rounding the result had an exponent less than e_min.'''
+
+
+class SubnormalExact(Subnormal):
+    '''The result is exact and has an exponent less than e_min.'''
+
+
+class SubnormalInexact(Inexact, Subnormal):
+    '''Before rounding the result was inexact and had an exponent less than e_min.'''
+
+
+class Underflow(SubnormalInexact):
+    '''The result is inexact and has an exponent less than e_min, or is zero, after rounding.'''
+
+
+flag_map = {
+    Flags.INEXACT: Inexact,
+    Flags.INVALID: InvalidOperation,
+    Flags.INVALID | Flags.INEXACT: InvalidOperationInexact,
+    Flags.DIV_BY_ZERO: DivisionByZero,
+    Flags.OVERFLOW | Flags.INEXACT: Overflow,
+    Flags.SUBNORMAL: SubnormalExact,
+    Flags.SUBNORMAL | Flags.INEXACT: SubnormalInexact,
+    Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT: Underflow,
+}
+
+
 class Context:
-    '''The execution context for operations.  Determines properties like rounding, how
-    tininess is detected, etc.'''
+    '''The execution context for operations.  Carries the rounding mode, status flags and
+    traps.
+    '''
 
-    __slots__ = ('rounding', 'detect_tininess_after', 'always_flag_underflow', 'flags')
+    __slots__ = ('rounding', 'flags', 'traps')
 
-    def __init__(self, rounding, detect_tininess_after, always_flag_underflow):
-        '''Floating point flags:
-
-        rounding is one of the Rounding classes and controls rounding of inexact results.
-
-        If detect_tininess_after is True tininess is detected before rounding, otherwise after
-
-        If always_flag_underflow is True then underflow is flagged whenever tininess is detected,
-        otherwise it is only flagged if tininess is detected and the result is inexact.
-        '''
-        self.rounding = rounding
-        self.detect_tininess_after = detect_tininess_after
-        self.always_flag_underflow = always_flag_underflow
-        self.flags = 0
+    def __init__(self, rounding=None, flags=None, traps=None):
+        '''rounding is one of the ROUND_ constants and controls rounding of inexact results.'''
+        self.rounding = rounding or ROUND_HALF_EVEN
+        self.flags = flags or 0
+        self.traps = traps or 0
 
     def clear_flags(self):
         self.flags = 0
 
-    def on_overflow(self):
-        self.flags |= OpStatus.OVERFLOW | OpStatus.INEXACT
+    def clear_traps(self):
+        self.traps = 0
 
-    def on_division_by_zero(self):
-        self.flags |= OpStatus.DIV_BY_ZERO
+    def set_flags(self, flags):
+        self.flags |= flags
+        if self.traps & flags:
+            raise flag_map[flags]
 
-    def on_invalid_operation(self):
-        self.flags |= OpStatus.INVALID
-
-    def on_underflow(self, is_inexact):
-        if is_inexact:
-            self.flags |= OpStatus.UNDERFLOW | OpStatus.INEXACT
-        else:
-            self.flags |= OpStatus.UNDERFLOW
-
-    def on_inexact(self):
-        self.flags |= OpStatus.INEXACT
-
-    def on_subnormal(self):
-        self.flags |= OpStatus.SUBNORMAL
-
-    def on_normalised(self, is_tiny, is_inexact):
-        if is_tiny and (self.always_flag_underflow or is_inexact):
-            self.on_underflow(is_inexact)
+    def on_normalised_finite(self, is_tiny_before, is_tiny_after, is_inexact):
+        '''Call after normalisation of a finite number to set flags appropriately.'''
+        if is_tiny_after:
+            assert is_tiny_before
+            if is_inexact:
+                self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
+            else:
+                self.set_flags(Flags.SUBNORMAL)
+        elif is_tiny_before:
+            assert is_inexact
+            self.set_flags(Flags.SUBNORMAL | Flags.INEXACT)
         elif is_inexact:
-            self.on_inexact()
+            self.set_flags(Flags.INEXACT)
 
     def round_up(self, lost_fraction, sign, is_odd):
         '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
@@ -244,10 +284,10 @@ class IntFormat:
         if not isinstance(value, int):
             raise TypeError('clamp takes an integer')
         if value > self.max_int:
-            context.on_overflow()
+            context.set_flags(Flags.OVERFLOW | Flags.INEXACT)
             return self.max_int
         if value < self.min_int:
-            context.on_overflow()
+            context.set_flags(Flags.OVERFLOW | Flags.INEXACT)
             return self.min_int
         return value
 
@@ -357,10 +397,10 @@ class BinaryFormat:
             adj_payload |= self.quiet_bit
         else:
             adj_payload = max(adj_payload, 1)
+        flags = Flags.INEXACT if adj_payload & mask != payload else 0
         if flag_invalid:
-            context.on_invalid_operation()
-        if adj_payload & mask != payload:
-            context.on_inexact()
+            flags |= Flags.INVALID
+        context.set_flags(flags)
         return IEEEfloat(self, sign, 0, adj_payload)
 
     def make_real(self, sign, exponent, significand, context):
@@ -410,8 +450,8 @@ class BinaryFormat:
         if rshift != 0:
             lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
 
-        # In case we detect tininess before rounding
-        is_tiny = significand < self.int_bit
+        is_tiny_before = significand < self.int_bit
+        is_inexact = lost_fraction != LostFraction.EXACTLY_ZERO
 
         # Round
         if context.round_up(lost_fraction, sign, bool(significand & 1)):
@@ -425,18 +465,16 @@ class BinaryFormat:
         # If the new exponent would be too big, then we overflow.  The result is either
         # infinity or the format's largest finite value depending on the rounding mode.
         if exponent > self.e_max:
-            context.on_overflow()
+            context.set_flags(Flags.OVERFLOW | Flags.INEXACT)
             if context.overflow_to_infinity(sign):
                 result = self.make_infinity(sign)
             else:
                 result = self.make_largest_finite(sign)
             return result
 
-        # Detect tininess after rounding if appropriate
-        if context.detect_tininess_after:
-            is_tiny = significand < self.int_bit
+        is_tiny_after = significand < self.int_bit
 
-        context.on_normalised(is_tiny, lost_fraction != LostFraction.EXACTLY_ZERO)
+        context.on_normalised_finite(is_tiny_before, is_tiny_after, is_inexact)
 
         return IEEEfloat(self, sign, exponent + self.e_bias, significand)
 
@@ -479,7 +517,7 @@ class BinaryFormat:
             # Signalling NaNs are converted to quiet.
             elif significand < self.quiet_bit:
                 significand |= self.quiet_bit
-                context.on_invalid_operation()
+                context.set_flags(Flags.INVALID)
 
         return IEEEfloat(self, sign ^ flip_sign, e_biased, significand)
 
@@ -662,7 +700,7 @@ class BinaryFormat:
              (-1)^sign * significand * 10^exponent
         '''
         pow5 = pow(5, abs(exponent))
-        calc_context = Context(ROUND_HALF_EVEN, True, False)
+        calc_context = Context(ROUND_HALF_EVEN)
         round_to_nearest = context.round_to_nearest()
 
         def ulps_from_boundary(a, b, c):
@@ -687,16 +725,16 @@ class BinaryFormat:
 
             if exponent >= 0:
                 scaled_value, inexact_scaling = calc_fmt._multiply_finite(sig_value, pow5_value)
-                pow_HU_err = pow5_status != OpStatus.OK
+                pow_HU_err = pow5_status != Flags.OK
             else:
                 scaled_value, div_status = calc_fmt._divide_finite(sig_value, pow5_value, context)
-                inexact_scaling = bool(div_status & OpStatus.INEXACT)
+                inexact_scaling = bool(div_status & Flags.INEXACT)
                 # Subnormals have less precision
                 if scaled_value.e_biased == 0:
                     excess_precision += calc_fmt.precision - scaled_value.significand.bit_length()
                     excess_precision = min(excess_precision, calc_fmt.precision)
                 # An extra half-ulp is lost in reciprocal of pow5
-                if pow5_status == OpStatus.OK and not inexact_scaling:
+                if pow5_status == Flags.OK and not inexact_scaling:
                     pow_HU_err = 0
                 else:
                     pow_HU_err = 2
@@ -707,7 +745,7 @@ class BinaryFormat:
             #
             # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
             # Clinger.
-            sig_HU_err = sig_status != OpStatus.OK
+            sig_HU_err = sig_status != Flags.OK
             if sig_HU_err + pow_HU_err == 0:
                 HU_err = inexact_scaling * 2     # <= inexactMultiply half-ulps
             else:
@@ -816,7 +854,7 @@ class BinaryFormat:
             if lhs.significand == 0:
                 return self.make_NaN(sign, True, 0, context, True)
             # Finite / 0 -> Infinity
-            context.on_division_by_zero()
+            context.set_flags(Flags.DIV_BY_ZERO)
             return self.make_infinity(sign)
 
         # LHS zero?
@@ -850,7 +888,7 @@ class BinaryFormat:
                 quot |= 1
             lhs_sig <<= 1
 
-        assert lhs_sig < rhs_sig
+        assert (lhs_sig >> 1) < rhs_sig
 
         if lhs_sig == 0:
             lost_fraction = LostFraction.EXACTLY_ZERO
@@ -1184,7 +1222,7 @@ class IEEEfloat:
             rshift = significand.bit_length() - hex_format.precision
             significand, lost_fraction = shift_right(significand, rshift)
             if lost_fraction != LostFraction.EXACTLY_ZERO:
-                context.on_inexact()
+                context.set_flags(Flags.INEXACT)
                 if context.round_up(lost_fraction, self.sign, bool(significand & 1)):
                     significand += 1
                     # If rounding caused the significand to gain a bit in length, shift it
@@ -1220,7 +1258,7 @@ class IEEEfloat:
         an invalid operation is flagged).
         '''
         if self.is_signalling():
-            context.on_invalid_operation()
+            context.set_flags(Flags.INVALID)
             return IEEEfloat(self.fmt, self.sign, self.e_biased,
                              self.significand | self.fmt.quiet_bit)
         return self.copy()
@@ -1291,7 +1329,7 @@ class IEEEfloat:
                 e_biased = self.fmt.e_bias
 
         if exact and lost_fraction != LostFraction.EXACTLY_ZERO:
-            context.on_inexact()
+            context.set_flags(Flags.INEXACT)
 
         return IEEEfloat(self.fmt, self.sign, e_biased, significand)
 

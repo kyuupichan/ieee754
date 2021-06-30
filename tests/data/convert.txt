@@ -2,9 +2,7 @@
 # Context:
 #   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
 #             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
-#   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
-#   Underflow:  U=Always flag, otherwise only if inexact   (optional)
-# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
 # Sign: + or -
 
 # Test format: SourceFormat Context String DestFormat Status String
@@ -61,23 +59,16 @@ Q E 1 H K 1
 S E 0x1.ff4p-14 H K 0x1.ff4p-14       # Normal number in H with H precision bits
 S E 0x1.ff2p-14 H I 0x1.ff0p-14       # Loses the LSB on conversion
 S u 0x1.ff2p-14 H I 0x1.ff4p-14       # Rounds up the LSB on conversion
-S E -0x1p-15 H K -0x1p-15             # Subnormal in H
-S EBU -0x1p-15 H U -0x1p-15           # Subnormal in H detect tininess before and flag
-S EB -0x1p-15 H K -0x1p-15            # Subnormal in H detect tininess before flag if inexact
-S E -0x1p-24 H K -0x1p-24             # Minimal subnormal in H
-S EB -0x1p-24 H K -0x1p-24            # Minimal subnormal in H
-S EBU -0x1p-24 H U -0x1p-24           # Minimal subnormal in H
-S E -0x1.11p-24 H UI -0x1p-24         # Minimal inexact subnormal in H
-S EB -0x1.11p-24 H UI -0x1p-24        # Minimal inexact subnormal in H
-S EBU -0x1.11p-24 H UI -0x1p-24       # Minimal inexact subnormal in H
-S EU -0x1.11p-24 H UI -0x1p-24        # Minimal inexact subnormal in H
+S E -0x1p-15 H S -0x1p-15             # Subnormal in H
+S E -0x1p-24 H S -0x1p-24             # Minimal subnormal in H
+S E -0x1.11p-24 H U -0x1p-24          # Minimal inexact subnormal in H
 
 #
 # Narrowing conversions: Subnormal -> Zero
 #
 
-D E -0x1p-25 H UI -0                  # Underflows to zero
-Q EBU -0x1p-25 H UI -0                # Underflows to zero
+D E -0x1p-25 H U -0                  # Underflows to zero
+Q E -0x1p-25 H U -0                  # Underflows to zero
 
 #
 # Widening conversions: Normal -> Normal

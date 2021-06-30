@@ -2,9 +2,7 @@
 # Context:
 #   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
 #             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
-#   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
-#   Underflow:  U=Always flag, otherwise only if inexact   (optional)
-# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=Invalid
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
 # Sign: + or -
 
 # Test format: Context LHSFormat LHS RHSFormat RHS DstFormat Status String
@@ -111,47 +109,47 @@ C D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf474p+100
 F D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
 D D 0x1.567abc234109ep156 D 0x1.0478fedbca987p-56 D I 0x1.5c76858fcf473p+100
 
-E S 0x1p-100 S 0x1p-100 S UI 0
-u S 0x1p-100 S 0x1p-100 S UI 0
-C S 0x1p-100 S 0x1p-100 S UI 0x1p-149
-F S 0x1p-100 S 0x1p-100 S UI 0
-D S 0x1p-100 S 0x1p-100 S UI 0
+E S 0x1p-100 S 0x1p-100 S U 0
+u S 0x1p-100 S 0x1p-100 S U 0
+C S 0x1p-100 S 0x1p-100 S U 0x1p-149
+F S 0x1p-100 S 0x1p-100 S U 0
+D S 0x1p-100 S 0x1p-100 S U 0
 
-E S -0x1p-100 S 0x1p-100 S UI -0
-u S -0x1p-100 S 0x1p-100 S UI -0
-C S 0x1p-100 S -0x1p-100 S UI -0
-F S -0x1p-100 S 0x1p-100 S UI -0x1p-149
-D S 0x1p-100 S -0x1p-100 S UI -0
+E S -0x1p-100 S 0x1p-100 S U -0
+u S -0x1p-100 S 0x1p-100 S U -0
+C S 0x1p-100 S -0x1p-100 S U -0
+F S -0x1p-100 S 0x1p-100 S U -0x1p-149
+D S 0x1p-100 S -0x1p-100 S U -0
 
-E S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
-u S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
-C S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e147a0p-129
-F S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e14790p-129
-D S 0x1.2p-126 S 0x1.abcdep-3 S UI 0x1.e14790p-129
+E S 0x1.2p-126 S 0x1.abcdep-3 S U 0x1.e147a0p-129
+u S 0x1.2p-126 S 0x1.abcdep-3 S U 0x1.e147a0p-129
+C S 0x1.2p-126 S 0x1.abcdep-3 S U 0x1.e147a0p-129
+F S 0x1.2p-126 S 0x1.abcdep-3 S U 0x1.e14790p-129
+D S 0x1.2p-126 S 0x1.abcdep-3 S U 0x1.e14790p-129
 
-E S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
-u S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
-C S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f38p-128
-F S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f30p-128
-D S 0x1.22p-126 S 0x1.abcdep-2 S UI 0x1.e49f30p-128
+E S 0x1.22p-126 S 0x1.abcdep-2 S U 0x1.e49f38p-128
+u S 0x1.22p-126 S 0x1.abcdep-2 S U 0x1.e49f38p-128
+C S 0x1.22p-126 S 0x1.abcdep-2 S U 0x1.e49f38p-128
+F S 0x1.22p-126 S 0x1.abcdep-2 S U 0x1.e49f30p-128
+D S 0x1.22p-126 S 0x1.abcdep-2 S U 0x1.e49f30p-128
 
-E S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
-u S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
-C S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f4p-129
-F S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
-D S 0x1.22p-126 S 0x1.abcdep-3 S UI 0x1.e49f3p-129
+E S 0x1.22p-126 S 0x1.abcdep-3 S U 0x1.e49f3p-129
+u S 0x1.22p-126 S 0x1.abcdep-3 S U 0x1.e49f3p-129
+C S 0x1.22p-126 S 0x1.abcdep-3 S U 0x1.e49f4p-129
+F S 0x1.22p-126 S 0x1.abcdep-3 S U 0x1.e49f3p-129
+D S 0x1.22p-126 S 0x1.abcdep-3 S U 0x1.e49f3p-129
 
-E S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
-u S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
-C S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4ba0p-129
-F S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
-D S 0x1.221p-126 S 0x1.abcdep-3 S UI 0x1.e4b9fp-129
+E S 0x1.221p-126 S 0x1.abcdep-3 S U 0x1.e4b9fp-129
+u S 0x1.221p-126 S 0x1.abcdep-3 S U 0x1.e4b9fp-129
+C S 0x1.221p-126 S 0x1.abcdep-3 S U 0x1.e4ba0p-129
+F S 0x1.221p-126 S 0x1.abcdep-3 S U 0x1.e4b9fp-129
+D S 0x1.221p-126 S 0x1.abcdep-3 S U 0x1.e4b9fp-129
 
-E S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
-u S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
-C S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4ba0p-130
-F S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4b9ep-130
-D S 0x1.221p-126 S 0x1.abcdep-4 S UI 0x1.e4b9ep-130
+E S 0x1.221p-126 S 0x1.abcdep-4 S U 0x1.e4ba0p-130
+u S 0x1.221p-126 S 0x1.abcdep-4 S U 0x1.e4ba0p-130
+C S 0x1.221p-126 S 0x1.abcdep-4 S U 0x1.e4ba0p-130
+F S 0x1.221p-126 S 0x1.abcdep-4 S U 0x1.e4b9ep-130
+D S 0x1.221p-126 S 0x1.abcdep-4 S U 0x1.e4b9ep-130
 
 E S 4 D 5 Q K 20
 

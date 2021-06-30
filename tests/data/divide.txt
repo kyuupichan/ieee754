@@ -2,9 +2,7 @@
 # Context:
 #   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
 #             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
-#   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
-#   Underflow:  U=Always flag, otherwise only if inexact   (optional)
-# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=Invalid
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
 # Sign: + or -
 
 # Test format: Context LHSFormat LHS RHSFormat RHS DstFormat Status String
@@ -148,34 +146,35 @@ d D 0x1.0000050000061p0 S 0x1.000002p0 S I 0x1.000004p0
 
 # Division leaves a fraction of one-half and an odd number.
 
-E S 0x1.000006p-126 S 2 S UI 0x1.000008p-127
-C S 0x1.000006p-126 S 2 S UI 0x1.000008p-127
-u S 0x1.000006p-126 S 2 S UI 0x1.000008p-127
-F S 0x1.000006p-126 S 2 S UI 0x1.000004p-127
-D S 0x1.000006p-126 S 2 S UI 0x1.000004p-127
+E S 0x1.000006p-126 S 2 S U 0x1.000008p-127
+C S 0x1.000006p-126 S 2 S U 0x1.000008p-127
+u S 0x1.000006p-126 S 2 S U 0x1.000008p-127
+F S 0x1.000006p-126 S 2 S U 0x1.000004p-127
+D S 0x1.000006p-126 S 2 S U 0x1.000004p-127
 
 # Same but negative
 
-E S 0x1.000006p-126 S -2 S UI -0x1.000008p-127
-C S 0x1.000006p-126 S -2 S UI -0x1.000004p-127
-u S 0x1.000006p-126 S -2 S UI -0x1.000008p-127
-F S 0x1.000006p-126 S -2 S UI -0x1.000008p-127
-D S 0x1.000006p-126 S -2 S UI -0x1.000004p-127
+E S 0x1.000006p-126 S -2 S U -0x1.000008p-127
+C S 0x1.000006p-126 S -2 S U -0x1.000004p-127
+u S 0x1.000006p-126 S -2 S U -0x1.000008p-127
+F S 0x1.000006p-126 S -2 S U -0x1.000008p-127
+D S 0x1.000006p-126 S -2 S U -0x1.000004p-127
 
 # Division leaves a fraction of one-half and an even number.
 
-E S 0x1.000002p-126 S 2 S UI 0x1.000000p-127
-C S 0x1.000002p-126 S 2 S UI 0x1.000004p-127
-u S 0x1.000002p-126 S 2 S UI 0x1.000004p-127
-F S 0x1.000002p-126 S 2 S UI 0x1.000000p-127
-D S 0x1.000002p-126 S 2 S UI 0x1.000000p-127
+E S 0x1.000002p-126 S 2 S U 0x1.000000p-127
+C S 0x1.000002p-126 S 2 S U 0x1.000004p-127
+u S 0x1.000002p-126 S 2 S U 0x1.000004p-127
+F S 0x1.000002p-126 S 2 S U 0x1.000000p-127
+D S 0x1.000002p-126 S 2 S U 0x1.000000p-127
 
 # Same but negative
 
-E S 0x1.000002p-126 S -2 S UI -0x1.000000p-127
-C S 0x1.000002p-126 S -2 S UI -0x1.000000p-127
-u S 0x1.000002p-126 S -2 S UI -0x1.000004p-127
-F S 0x1.000002p-126 S -2 S UI -0x1.000004p-127
-D S 0x1.000002p-126 S -2 S UI -0x1.000000p-127
+E S 0x1.000002p-126 S -2 S U -0x1.000000p-127
+C S 0x1.000002p-126 S -2 S U -0x1.000000p-127
+u S 0x1.000002p-126 S -2 S U -0x1.000004p-127
+F S 0x1.000002p-126 S -2 S U -0x1.000004p-127
+D S 0x1.000002p-126 S -2 S U -0x1.000000p-127
 
 E D 0x1.abcdefp3 D 0x2.987654321p-4 D I 0x1.49a4d195eaec7p+6
+E S 1 S 3 D I 0x1.5555555555555p-2

@@ -2,9 +2,7 @@
 # Context:
 #   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
 #             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
-#   Tininess:   B=Detect before rounding, otherwise detect after   (optional)
-#   Underflow:  U=Always flag, otherwise only if inexact   (optional)
-# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
 # Sign: + or -
 
 # Test format: FloatFormat Rounding String Status String
