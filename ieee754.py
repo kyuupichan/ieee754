@@ -10,7 +10,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('InterchangeKind', 'Context', 'FloatFormat', 'OpStatus', 'IEEEfloat',
+__all__ = ('Context', 'BinaryFormat', 'OpStatus', 'IEEEfloat',
            'HexFormat',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
@@ -52,13 +52,6 @@ DEC_FLOAT_REGEX = re.compile(
     '((s?)nan((0x[0-9a-f]+)|([0-9]+))?))$',
     re.ASCII | re.IGNORECASE
 )
-
-
-class InterchangeKind(IntEnum):
-    '''Descibes if and how floating point numbers in this format can be interchaged.'''
-    NONE = 0            # Not an interchange format, values cannot be packed or unpacked
-    IMPLICIT = 1        # Pack with an implicit integer bit (IEEE)
-    EXPLICIT = 2        # Pack with an explicit integer bit (x87 extended precision)
 
 
 # Operation status flags.  OVERFLOW is always returned with INEXACT.  UNDERFLOW, too, has
@@ -218,57 +211,96 @@ class IntFormat:
         return value, OpStatus.OK
 
 
-class FloatFormat:
-    '''An IEEE-754 floating point format.'''
+class BinaryFormat:
+    '''An IEEE-754 binary floating point format.  Does not require e_min = 1 - e_max.'''
 
-    __slots__ = ('precision', 'interchange_kind', 'e_max', 'e_min', 'e_bias',
-                 'e_saturated', 'size', 'int_bit', 'quiet_bit', 'max_significand')
+    __slots__ = ('precision', 'e_max', 'e_min',
+                 'e_bias', 'int_bit', 'quiet_bit', 'max_significand', 'fmt_width')
 
-    def __init__(self, e_width, precision, interchange_kind):
-        '''e_width is the exponent width in bits.
+    def __init__(self, precision, e_max, e_min):
+        '''precision is the number of bits in the significand including an explicit integer bit.
 
-        precision is the number of bits in the significand including an explicit integer
-        bit.
+        e_max is largest e such that 2^e is representable; the largest representable
+        number is then 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.
 
-        interchange_kind describes if this is an interchange format, and if so if the
-        integer bit is implicit or explicit.
+        e_min is the smallest e such that 2^e is not a subnormal number.  The smallest
+        subnormal number is then 2^(e_min - (precision - 1)).
+
+        Internal Representation
+        -----------------------
+
+        Our internal representation stores the exponent as a non-negative number.  This
+        requires adding a bias, which like in IEEE-754 is 1 - e_min.  Then the actual
+        binary exponent of e_min is stored internally as 1.
+
+        Subnormal numbers and zeroes are stored with an exponent of 1 (whereas IEEE-754
+        uses an exponent of zero).  They can be distinguished from normal numbers with an
+        exponent of e_min because the integer bit is not set in the significand.  A
+        significand of zero represents a zero floating point number.
+
+        Our internal representation uses an exponent of 0 to represent infinities and NaNs
+        (note IEEE interchange formats use e_max + 1).  The iteger bit is always cleared
+        and a payload of zero represents infinity.  The quiet NaN bit is the bit below the
+        integer bit.
+
+        The advantage of this representation is that the following holds for all finite
+        numbers
+
+                  value = (-1)^sign * significand * 2^(exponent-bias).
+
+        and NaNs and infinites are easily tested for by comparing the exponent with zero.
+
+        A binary format is permitted to be an interchange format if all the following are
+        true:
+
+           a) e_min = 1 - e_max
+
+           b) e_max + 1 is a power of 2.  This means that IEEE-754 interchange format
+              exponents use all values in an exponent field of with e_width bits.
+
+           c) The number of bits (1 + e_width + precision), i.e. including the sign bit,
+              is a multiple of 16, so that the format can be written as an even number of
+              bytes.  Alternatively if (2 + e_width + precision) is a multiple of 16, then
+              the format is presumed to have an explicit integer bit (as per Intel x87
+              extended precision numbers).
         '''
         self.precision = precision
-        self.interchange_kind = interchange_kind
-        # The largest e such that 2^e is representable.  The largest representable number
-        # is 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.  Unbibased.
-        self.e_max = (1 << e_width - 1) - 1
-        # The smallest e such that 2^e is a normalized number.  Unbiased.
-        self.e_min = 1 - self.e_max
-        # The exponent bias
-        self.e_bias = self.e_max
-        # The biased exponent for infinities and NaNs has all bits 1
-        self.e_saturated = (1 << e_width) - 1
-        # The number of bytes needed to encode an FP number.  A sign bit, the exponent,
-        # and the significand.
-        if interchange_kind == InterchangeKind.NONE:
-            self.size = None
-        else:
-            self.size = (1 + e_width + (interchange_kind == InterchangeKind.EXPLICIT)
-                         + (self.precision - 1) + 7) // 8
-        # The integer bit (MSB) in the significand
-        self.int_bit = 1 << self.precision - 1
-        # The quiet bit in NaNs
-        self.quiet_bit = self.int_bit >> 1
-        # Significands are unsigned bitstrings of precision bits
-        self.max_significand = (1 << self.precision) - 1
+        self.e_max = e_max
+        self.e_min = e_min
+
+        # Store these as handy pre-calculated values
+        self.e_bias = 1 - e_min
+        self.int_bit = 1 << (precision - 1)
+        self.quiet_bit = 1 << (precision - 2)
+        self.max_significand = (1 << precision) - 1
+
+        # Are we an interchange format?  If not, fmt_width is zero, otherwise it is the
+        # format width in bits (the sign bit, the exponent and the significand excluding
+        # the integer bit).  Only interchange formats can be packed to and unpacked from
+        # binary bytes.
+        self.fmt_width = 0
+        if e_min == 1 - e_max and (e_max + 1) & e_max == 0:
+            e_width = e_max.bit_length() + 1
+            fmt_width = 1 + e_width + precision
+            if 0 <= (fmt_width + 1) % 16 <= 1:
+                self.fmt_width = fmt_width
+
+    @classmethod
+    def from_exponent_width(cls, precision, e_width):
+        e_max = (1 << (e_width - 1)) - 1
+        return cls(precision, e_max, 1 - e_max)
 
     def make_zero(self, sign):
         '''Returns a zero of the given sign.'''
-        return IEEEfloat(self, sign, 0, 0)
+        return IEEEfloat(self, sign, 1, 0)
 
     def make_infinity(self, sign):
         '''Returns an infinity of the given sign.'''
-        return IEEEfloat(self, sign, self.e_saturated, 0)
+        return IEEEfloat(self, sign, 0, 0)
 
     def make_largest_finite(self, sign):
         '''Returns the finite number of maximal magnitude with the given sign.'''
-        return IEEEfloat(self, sign, self.e_saturated - 1, self.max_significand)
+        return IEEEfloat(self, sign, self.e_max + self.e_bias, self.max_significand)
 
     def make_NaN(self, sign, is_quiet, payload, flag_invalid):
         '''Return a (value, status) pair.
@@ -287,7 +319,7 @@ class FloatFormat:
         status = OpStatus.OK if adj_payload & mask == payload else OpStatus.INEXACT
         if flag_invalid:
             status |= OpStatus.INVALID
-        return IEEEfloat(self, sign, self.e_saturated, adj_payload), status
+        return IEEEfloat(self, sign, 0, adj_payload), status
 
     def make_real(self, sign, exponent, significand, context):
         '''Return a (value, status) pair.
@@ -308,7 +340,7 @@ class FloatFormat:
         '''
         if significand == 0:
             # Return a correctly-signed zero
-            return IEEEfloat(self, sign, 0, 0), OpStatus.OK
+            return self.make_zero(sign), OpStatus.OK
 
         return self._normalize(sign, exponent, significand, LostFraction.EXACTLY_ZERO, context)
 
@@ -365,9 +397,6 @@ class FloatFormat:
         if context.detect_tininess_after:
             is_tiny = significand < self.int_bit
 
-        # Denormals require exponent of zero
-        exponent -= significand < self.int_bit
-
         status = OpStatus.OK if lost_fraction == LostFraction.EXACTLY_ZERO else OpStatus.INEXACT
 
         if is_tiny and (context.always_flag_underflow or status == OpStatus.INEXACT):
@@ -387,33 +416,35 @@ class FloatFormat:
         significand = value.significand
         status = OpStatus.OK
 
-        if e_biased == self.e_saturated:
-            # Negative infinity becomes largest negative number; positive infinity unchanged
-            if significand == 0:
-                if sign:
-                    significand = self.max_significand
-                    e_biased -= 1
-            # Signalling NaNs are converted to quiet.
-            elif significand < self.quiet_bit:
-                significand |= self.quiet_bit
-                status = OpStatus.INVALID
-        else:
+        if e_biased:
             # Increment the significand of positive numbers, decrement the significand of
             # negative numbers.  Negative zero is the only number whose sign flips.
             if sign and significand:
-                significand -= 1
-                if e_biased and significand < self.int_bit:
+                if significand == self.int_bit and e_biased > 1:
+                    significand = self.max_significand
                     e_biased -= 1
-                    if e_biased:
-                        significand |= self.int_bit
+                else:
+                    significand -= 1
             else:
                 sign = False
                 significand += 1
                 if significand > self.max_significand:
                     significand >>= 1
                     e_biased += 1
-                    if e_biased == self.e_saturated:
+                    # Overflow to infinity?
+                    if e_biased > self.e_max:
+                        e_biased = 0
                         significand = 0
+        else:
+            # Negative infinity becomes largest negative number; positive infinity unchanged
+            if significand == 0:
+                if sign:
+                    significand = self.max_significand
+                    e_biased = self.e_max
+            # Signalling NaNs are converted to quiet.
+            elif significand < self.quiet_bit:
+                significand |= self.quiet_bit
+                status = OpStatus.INVALID
 
         return IEEEfloat(self, sign ^ flip_sign, e_biased, significand), status
 
@@ -421,68 +452,87 @@ class FloatFormat:
         '''Return a (result, status) pair.
 
         Convert a floating point value to this format rounding according to context.'''
-        if value.e_biased == value.fmt.e_saturated:
-            # Infinities
-            if value.significand == 0:
-                return self.make_infinity(value.sign), OpStatus.OK
+        if value.e_biased:
+            if value.significand:
+                return self.make_real(value.sign, value.exponent(), value.significand, context)
 
+            # Zeroes
+            return self.make_zero(value.sign), OpStatus.OK
+
+        if value.significand:
             # NaNs
             return self.make_NaN(value.sign, True, value.NaN_payload(), value.is_signalling())
 
-        # Zeroes
-        if value.significand == 0:
-            return self.make_zero(value.sign), OpStatus.OK
-
-        return self.make_real(value.sign, value.exponent(), value.significand, context)
+        # Infinities
+        return self.make_infinity(value.sign), OpStatus.OK
 
     def pack(self, sign, biased_exponent, significand, endianness='little'):
         '''Returns a floating point value encoded as bytes of the given endianness.'''
-        if self.size is None:
+        if not self.fmt_width:
             raise RuntimeError('not an interchange format')
         if not 0 <= significand <= self.max_significand:
             raise ValueError('significand out of range')
-        if not 0 <= biased_exponent <= self.e_saturated:
+        if not 0 <= biased_exponent <= self.e_max + self.e_bias:
             raise ValueError('biased exponent out of range')
+
         # Build up the bit representation
-        value = biased_exponent + (self.e_saturated + 1) if sign else 0
-        if self.interchange_kind == InterchangeKind.EXPLICIT:
-            # Remove integer bit for non-canonical infinities and NaNs
-            if significand >= self.int_bit and biased_exponent in (0, self.e_saturated):
-                significand -= self.int_bit
-            shift = self.precision
-        else:
-            # Remove the integer bit if implicit
+        implicit_integer_bit = (self.fmt_width % 8 == 0)
+        lshift = self.precision - implicit_integer_bit
+
+        # Normalize to an interchange format exponent
+        if biased_exponent == 0:
             if significand >= self.int_bit:
-                if biased_exponent in (0, self.e_saturated):
-                    raise ValueError('integer bit is set for infinity / NaN')
+                raise ValueError('integer bit is set for infinity / NaN')
+            exponent = self.e_max + self.e_bias + 1
+        else:
+            if significand < self.int_bit:
+                exponent = 0
+            elif implicit_integer_bit:
+                # Remove explicit integer bit
                 significand -= self.int_bit
-            shift = self.precision - 1
-        value = (value << shift) + significand
+
+        value = exponent
+        if sign:
+            value += (self.e_max + 1) << 1
+        value = (value << lshift) + significand
         return value.to_bytes(self.size, endianness)
 
     def unpack(self, binary, endianness='little'):
-        '''Decode a binary encoding to a (sign, biased_exponent, significand) tuple.'''
-        if self.size is None:
+        '''Decode a binary encoding to a (sign, biased_exponent, significand) tuple.
+
+        If the integer bit is explicit, normalize invalid encodings but set the invalid
+        operation flag.
+        '''
+        if not self.fmt_width:
             raise RuntimeError('not an interchange format')
-        if len(binary) != self.size:
-            raise ValueError(f'expected {self.size} bytes to unpack; got {len(binary)}')
+        size = (self.fmt_width + 1) // 8
+        if len(binary) != size:
+            raise ValueError(f'expected {size} bytes to unpack; got {len(binary)}')
         value = int.from_bytes(binary, endianness)
 
         significand = value & self.max_significand
-        if self.interchange_kind == InterchangeKind.EXPLICIT:
-            value >>= self.precision
-        else:
-            value >>= self.precision - 1
-        biased_exponent = value & self.e_saturated
-        # Ensure the implict integer bit is set for normal numbers and that it is cleared
-        # for denormals, zeros, infinities and NaNs (Intel calls the weird values that
-        # occur if we don't do this psuedo-denormals, psuedo-infinities, pseudo-NaNs and
-        # unnormals).
-        if 0 < biased_exponent < self.e_saturated:
+        implicit_integer_bit = (self.fmt_width % 8 == 0)
+        value >>= self.precision - implicit_integer_bit
+        biased_exponent = value & ((self.e_max + 1) << 1)
+        sign = value != biased_exponent
+
+        # Normalize to our internal format exponent
+        if biased_exponent == 0:
+            # Integer bit should not be set on subnormals
+            if significand >= self.int_bit:
+                # FIXME: flag invalid operation
+                significand -= self.int_bit
+            biased_exponent = 1
+        elif biased_exponent == self.e_max + self.e_bias + 1:
+            # Infinities and NaNs.  The integer bit should not be set.
+            if significand >= self.int_bit:
+                # FIXME: flag invalid operation
+                significand -= self.int_bit
+            biased_exponent = 0
+        elif not implicit_integer_bit and significand < self.int_bit:
+            # FIXME: flag invalid operation
             significand |= self.int_bit
-        else:
-            significand &= (self.int_bit - 1)
-        sign = bool(value & (self.e_saturated + 1))
+
         return sign, biased_exponent, significand
 
     def from_string(self, string, context):
@@ -592,7 +642,7 @@ class FloatFormat:
 
         while True:
             # FIXME: out of date constructor
-            calc_fmt = FloatFormat(16, parts_count * 64, InterchangeKind.NONE)
+            calc_fmt = BinaryFormat(16, parts_count * 64, InterchangeKind.NONE)
             excess_precision = calc_fmt.precision - self.precision
 
             sig_status, sig_value = calc_fmt.make_real(sign, 0, significand, calc_context)
@@ -663,9 +713,9 @@ class FloatFormat:
     def multiply(self, lhs, rhs, context):
         '''Returns a (lhs * rhs, status) pair with self as the format of the result.'''
         # Multiplication is commutative
-        if lhs.e_biased == lhs.fmt.e_saturated:
+        if lhs.e_biased == 0:
             return self._multiply_special(lhs, rhs)
-        if rhs.e_biased == rhs.fmt.e_saturated:
+        if rhs.e_biased == 0:
             return self._multiply_special(rhs, lhs)
 
         # Both numbers are finite.
@@ -700,7 +750,7 @@ class FloatFormat:
         sign = lhs.sign ^ rhs.sign
 
         # Is the LHS is a NaN or infinity?
-        if lhs.e_biased == lhs.fmt.e_saturated:
+        if lhs.e_biased == 0:
             if lhs.significand == 0:
                 # infinity / finite -> infinity
                 if rhs.is_finite():
@@ -716,7 +766,7 @@ class FloatFormat:
                                  lhs.is_signalling() or rhs.is_signalling())
 
         # LHS is finite.  Is the RHS a NaN or infinity?
-        if rhs.e_biased == rhs.fmt.e_saturated:
+        if rhs.e_biased == 0:
             if rhs.significand == 0:
                 # finity / infinity -> zero
                 return self.make_zero(sign), OpStatus.OK
@@ -794,16 +844,16 @@ class FloatFormat:
         raise NotImplementedError
 
 
-IEEEhalf = FloatFormat(5, 11, InterchangeKind.IMPLICIT)
-IEEEsingle = FloatFormat(8, 24, InterchangeKind.IMPLICIT)
-IEEEdouble = FloatFormat(11, 53, InterchangeKind.IMPLICIT)
-IEEEquad = FloatFormat(15, 113, InterchangeKind.IMPLICIT)
-#IEEEoctuple = FloatFormat(18, 237, InterchangeKind.IMPLICIT)
+IEEEhalf = BinaryFormat.from_exponent_width(11, 5)
+IEEEsingle = BinaryFormat.from_exponent_width(24, 8)
+IEEEdouble = BinaryFormat.from_exponent_width(53, 11)
+IEEEquad = BinaryFormat.from_exponent_width(113, 15)
+#IEEEoctuple = BinaryFormat.from_exponent_width(237, 18)
 # 80387 floating point takes place with a wide exponent range but rounds to single, double
 # or extended precision.  It also has an explicit integer bit.
-x87extended = FloatFormat(15, 64, InterchangeKind.EXPLICIT)
-x87double = FloatFormat(15, 53, InterchangeKind.NONE)
-x87single = FloatFormat(15, 24, InterchangeKind.NONE)
+x87extended = BinaryFormat.from_exponent_width(64, 15)
+x87double = BinaryFormat.from_exponent_width(53, 15)
+x87single = BinaryFormat.from_exponent_width(24, 15)
 
 
 @attr.s(slots=True)
@@ -836,8 +886,6 @@ class HexFormat:
 
 
 class IEEEfloat:
-    # TODO: reconsider using an IEEE biased exponent internally.
-
     def __init__(self, fmt, sign, biased_exponent, significand):
         '''Create a floating point number with the given format, sign, biased exponent and
         significand.  For NaNs - saturing exponents with non-zero signficands - we interpret
@@ -847,11 +895,11 @@ class IEEEfloat:
             raise TypeError('biased exponent must be an integer')
         if not isinstance(significand, int):
             raise TypeError('significand must be an integer')
-        if not 0 <= biased_exponent <= fmt.e_saturated:
+        if not 0 <= biased_exponent <= fmt.e_max + fmt.e_bias:
             raise ValueError(f'biased exponent {biased_exponent:,d} out of range')
-        if biased_exponent in (0, fmt.e_saturated):
+        if biased_exponent == 0:
             if not 0 <= significand < fmt.int_bit:
-                raise ValueError(f'significand {significand:,d} out of range for non-normal')
+                raise ValueError(f'significand {significand:,d} out of range for non-finite')
         else:
             if not 0 <= significand <= fmt.max_significand:
                 raise ValueError(f'significand {significand:,d} out of range')
@@ -860,6 +908,7 @@ class IEEEfloat:
         self.e_biased = biased_exponent
         # The significand as an unsigned integer, or payload including quiet bit for NaNs
         self.significand = significand
+        print(self.sign, self.e_biased, self.significand)
 
     ##
     ## Non-computational operations.  These are never exceptional so simply return their
@@ -868,24 +917,20 @@ class IEEEfloat:
 
     def number_class(self):
         '''Return a string describing the class of the number.'''
-        # Zero or subnormal?
-        if self.e_biased == 0:
+        # Finite?
+        if self.e_biased:
             if self.significand:
-                return '-Subnormal' if self.sign else '+Subnormal'
+                if self.e_biased == 1 and self.significand < self.fmt.int_bit:
+                    return '-Subnormal' if self.sign else '+Subnormal'
+                # Normal
+                return '-Normal' if self.sign else '+Normal'
+
             return '-Zero' if self.sign else '+Zero'
 
-        # Infinity or NaN?
-        if self.e_biased == self.fmt.e_saturated:
-            if self.significand:
-                if self.significand & self.fmt.quiet_bit:
-                    return 'NaN'
-                else:
-                    return 'sNaN'
-            else:
-                return '-Infinity' if self.sign else '+Infinity'
+        if self.significand:
+            return 'NaN' if self.significand & self.fmt.quiet_bit else 'sNaN'
 
-        # Normal
-        return '-Normal' if self.sign else '+Normal'
+        return '-Infinity' if self.sign else '+Infinity'
 
     def to_parts(self):
         '''Returns a triple: (sign, exponent, significand).
@@ -898,12 +943,13 @@ class IEEEfloat:
         quiet bit).
         '''
         significand = self.significand
-        if self.e_biased == self.fmt.e_saturated:
+        if self.e_biased == 0:
             # NaNs and infinities
             if significand == 0:
                 exponent = 'I'
             elif significand & self.fmt.quiet_bit:
                 exponent = 'Q'
+                print(significand, self.fmt.quiet_bit)
                 significand -= self.fmt.quiet_bit
             else:
                 exponent = 'S'
@@ -919,7 +965,7 @@ class IEEEfloat:
         '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''
         if not self.is_NaN():
             raise RuntimeError(f'NaN_payload called on a non-NaN: {self.to_parts()}')
-        return self.significand & self.fmt.quiet_bit - 1
+        return self.significand & (self.fmt.quiet_bit - 1)
 
     def is_negative(self):
         '''Return True if the sign bit is set.'''
@@ -927,27 +973,27 @@ class IEEEfloat:
 
     def is_normal(self):
         '''Return True if the value is finite, non-zero and not denormal.'''
-        return 0 < self.e_biased < self.fmt.e_saturated
+        return self.significand & self.fmt.int_bit
 
     def is_finite(self):
         '''Return True if the value is finite.'''
-        return self.e_biased < self.fmt.e_saturated
+        return bool(self.e_biased)
 
     def is_zero(self):
         '''Return True if the value is zero regardless of sign.'''
-        return not self.e_biased and not self.significand
+        return self.e_biased == 1 and not self.significand
 
     def is_subnormal(self):
         '''Return True if the value is subnormal.'''
-        return not self.e_biased and self.significand
+        return self.e_biased == 1 and 0 < self.significand < self.fmt.int_bit
 
     def is_infinite(self):
         '''Return True if the value is infinite.'''
-        return self.e_biased == self.fmt.e_saturated and not self.significand
+        return self.e_biased == 0 and not self.significand
 
     def is_NaN(self):
         '''Return True if this is a NaN of any kind.'''
-        return self.e_biased == self.fmt.e_saturated and self.significand
+        return self.e_biased == 0 and self.significand
 
     def is_signalling(self):
         '''Return True if and only if this is a signalling NaN.'''
@@ -961,7 +1007,7 @@ class IEEEfloat:
     # Not in IEEE-754
     def is_finite_non_zero(self):
         '''Return True if the value is finite and non-zero.'''
-        return self.e_biased < self.fmt.e_saturated and (self.e_biased or self.significand)
+        return self.e_biased and self.significand
 
     def radix(self):
         '''We're binary!'''
@@ -971,14 +1017,14 @@ class IEEEfloat:
         '''Return the arithmetic exponent of our significand interpreted as an integer.'''
         assert self.is_finite()
 
-        return max(1, self.e_biased) - self.fmt.e_bias - (self.fmt.precision - 1)
+        return self.e_biased - self.fmt.e_bias - (self.fmt.precision - 1)
 
     def msb_exponent(self):
         '''Return the arithmetic exponent with our MSB acting as integer bit.'''
         assert self.is_finite()
 
         high_zeroes = self.fmt.precision - self.significand.bit_length()
-        return max(1, self.e_biased) - self.fmt.e_bias - high_zeroes
+        return self.e_biased - self.fmt.e_bias - high_zeroes
 
     def total_order(self, rhs):
         raise NotImplementedError
@@ -1088,7 +1134,7 @@ class IEEEfloat:
         sign = '-' if self.sign else '+' if hex_format.force_sign else ''
         status = OpStatus.OK
 
-        if self.e_biased == self.fmt.e_saturated:
+        if self.e_biased == 0:
             # Infinites and NaNs.
             if self.significand == 0:
                 rest = hex_format.inf
@@ -1189,7 +1235,7 @@ class IEEEfloat:
         This function implmements all six functions whose names begin with "roundToIntegral"
         in the IEEE-754 standard.
         '''
-        if self.e_biased == self.fmt.e_saturated:
+        if self.e_biased == 0:
             # Quiet NaNs and infinites stay unchanged; signalling NaNs are converted to quiet.
             return self.to_quiet()
 

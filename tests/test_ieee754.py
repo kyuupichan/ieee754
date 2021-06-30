@@ -374,7 +374,7 @@ class TestGeneralNonComputationalOps:
             assert status == (OpStatus.INEXACT | OpStatus.UNDERFLOW if two_bits else OpStatus.OK)
             assert value.is_subnormal()
             assert value.significand == fmt.int_bit - 1
-            assert value.e_biased == 0
+            assert value.e_biased == 1
         assert value.sign is sign
         assert value.fmt is fmt
 
