@@ -27,6 +27,16 @@ ROUND_HALF_EVEN = 'ROUND_HALF_EVEN'     # To nearest with ties towards even
 ROUND_HALF_DOWN = 'ROUND_HALF_DOWN'     # To nearest with ties towards zero
 ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
 
+
+# Traps / floating point status flags
+INVALID_OPERATION = 0x01         # Various invalid operations, e.g. Inf - Inf, 0 / 0
+DIVISION_BY_ZERO  = 0x02         # e.g. finite nnumber / 0; also occurs for other operations
+INEXACT           = 0x04         # If precise result cannot be expressed and needs rounding
+SUBNORMAL         = 0x80         # Before rounding
+OVERFLOW          = 0x10         # After rounding, implies INEXACT
+UNDERFLOW         = 0x20         # After rounding; implies SUBNORMAL and INEXACT
+
+
 HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
 
 HEX_SIGNIFICAND_REGEX = re.compile(
@@ -64,7 +74,7 @@ class OpStatus(IntFlag):
     OVERFLOW    = 0x04
     UNDERFLOW   = 0x08
     INEXACT     = 0x10
-
+    SUBNORMAL   = 0x20
 
 # When precision is lost during a calculation this indicates what fraction of the LSB the
 # lost bits represented.  It essentially combines the roles of 'guard' and 'sticky' bits.
@@ -115,7 +125,7 @@ class Context:
     '''The execution context for operations.  Determines properties like rounding, how
     tininess is detected, etc.'''
 
-    __slots__ = ('rounding', 'detect_tininess_after', 'always_flag_underflow')
+    __slots__ = ('rounding', 'detect_tininess_after', 'always_flag_underflow', 'flags')
 
     def __init__(self, rounding, detect_tininess_after, always_flag_underflow):
         '''Floating point flags:
@@ -130,6 +140,37 @@ class Context:
         self.rounding = rounding
         self.detect_tininess_after = detect_tininess_after
         self.always_flag_underflow = always_flag_underflow
+        self.flags = 0
+
+    def clear_flags(self):
+        self.flags = 0
+
+    def on_overflow(self):
+        self.flags |= OpStatus.OVERFLOW | OpStatus.INEXACT
+
+    def on_division_by_zero(self):
+        self.flags |= OpStatus.DIV_BY_ZERO
+
+    def on_invalid_operation(self):
+        self.flags |= OpStatus.INVALID
+
+    def on_underflow(self, is_inexact):
+        if is_inexact:
+            self.flags |= OpStatus.UNDERFLOW | OpStatus.INEXACT
+        else:
+            self.flags |= OpStatus.UNDERFLOW
+
+    def on_inexact(self):
+        self.flags |= OpStatus.INEXACT
+
+    def on_subnormal(self):
+        self.flags |= OpStatus.SUBNORMAL
+
+    def on_normalised(self, is_tiny, is_inexact):
+        if is_tiny and (self.always_flag_underflow or is_inexact):
+            self.on_underflow(is_inexact)
+        elif is_inexact:
+            self.on_inexact()
 
     def round_up(self, lost_fraction, sign, is_odd):
         '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
@@ -198,17 +239,17 @@ class IntFormat:
             self.min_int = 0
             self.max_int = (1 << width) - 1
 
-    def clamp(self, value):
-        '''Returns a (result, status) pair.
-
-        The result is value, but forced to the range.'''
+    def clamp(self, value, context):
+        '''Clamp the value to being in-range and return it.'''
         if not isinstance(value, int):
             raise TypeError('clamp takes an integer')
         if value > self.max_int:
-            return self.max_int, OpStatus.OVERFLOW
+            context.on_overflow()
+            return self.max_int
         if value < self.min_int:
-            return self.min_int, OpStatus.OVERFLOW
-        return value, OpStatus.OK
+            context.on_overflow()
+            return self.min_int
+        return value
 
 
 class BinaryFormat:
@@ -302,11 +343,11 @@ class BinaryFormat:
         '''Returns the finite number of maximal magnitude with the given sign.'''
         return IEEEfloat(self, sign, self.e_max + self.e_bias, self.max_significand)
 
-    def make_NaN(self, sign, is_quiet, payload, flag_invalid):
-        '''Return a (value, status) pair.
+    def make_NaN(self, sign, is_quiet, payload, context, flag_invalid):
+        '''Return a NaN with the given sign and payload; the NaN is quiet iff is_quiet.
 
-        The value is a NaN with the given payload; the NaN is quiet iff is_quiet.
-        If no payload bits are lost the status is OK, otherwise INEXACT.
+        If flag_invalid is true, invalid operation is flagged.  If payload bits are lost,
+        or payload is 0 and is_quiet is False, then INEXACT is flagged.
         '''
         if payload < 0:
             raise ValueError(f'NaN payload cannot be negative: {payload}')
@@ -316,16 +357,15 @@ class BinaryFormat:
             adj_payload |= self.quiet_bit
         else:
             adj_payload = max(adj_payload, 1)
-        status = OpStatus.OK if adj_payload & mask == payload else OpStatus.INEXACT
         if flag_invalid:
-            status |= OpStatus.INVALID
-        return IEEEfloat(self, sign, 0, adj_payload), status
+            context.on_invalid_operation()
+        if adj_payload & mask != payload:
+            context.on_inexact()
+        return IEEEfloat(self, sign, 0, adj_payload)
 
     def make_real(self, sign, exponent, significand, context):
-        '''Return a (value, status) pair.
-
-        The floating point number is the correctly-rounded (by the context) value of the
-        infinitely precise result
+        '''Return a floating point number that is the correctly-rounded (by the context) value of
+        the infinitely precise result.
 
            ± 2^exponent * significand
 
@@ -333,14 +373,12 @@ class BinaryFormat:
 
         For example,
 
-           make_real(IEEEsingle, True, -3, 2)
-               -> -0.75, OpStatus.OK
-           make_real(IEEEsingle, True, 1, -200)
-               -> +0.0, OpStatus.UNDERFLOW | OpStatus.INEXACT
+           make_real(IEEEsingle, True, -3, 2) -> -0.75
+           make_real(IEEEsingle, True, 1, -200) -> +0.0 and sets the UNDERFLOW and INEXACT flags.
         '''
         if significand == 0:
             # Return a correctly-signed zero
-            return self.make_zero(sign), OpStatus.OK
+            return self.make_zero(sign)
 
         return self._normalize(sign, exponent, significand, LostFraction.EXACTLY_ZERO, context)
 
@@ -350,7 +388,7 @@ class BinaryFormat:
               ± 2^exponent * significand
 
         of the given sign where significand is non-zero and lost_fraction ulps were lost.
-        Round and normalize the result returning a (result, status) pair.
+        Return the rounded and normalised result.
         '''
         size = significand.bit_length()
         assert size
@@ -387,24 +425,22 @@ class BinaryFormat:
         # If the new exponent would be too big, then we overflow.  The result is either
         # infinity or the format's largest finite value depending on the rounding mode.
         if exponent > self.e_max:
+            context.on_overflow()
             if context.overflow_to_infinity(sign):
                 result = self.make_infinity(sign)
             else:
                 result = self.make_largest_finite(sign)
-            return result, OpStatus.OVERFLOW | OpStatus.INEXACT
+            return result
 
         # Detect tininess after rounding if appropriate
         if context.detect_tininess_after:
             is_tiny = significand < self.int_bit
 
-        status = OpStatus.OK if lost_fraction == LostFraction.EXACTLY_ZERO else OpStatus.INEXACT
+        context.on_normalised(is_tiny, lost_fraction != LostFraction.EXACTLY_ZERO)
 
-        if is_tiny and (context.always_flag_underflow or status == OpStatus.INEXACT):
-            status |= OpStatus.UNDERFLOW
+        return IEEEfloat(self, sign, exponent + self.e_bias, significand)
 
-        return IEEEfloat(self, sign, exponent + self.e_bias, significand), status
-
-    def next_up(self, value, flip_sign):
+    def _next_up(self, value, context, flip_sign):
         '''Return the smallest floating point value (unless operating on a positive infinity or
         NaN) that compares greater than the one whose parts are given.
 
@@ -414,7 +450,6 @@ class BinaryFormat:
         sign = value.sign ^ flip_sign
         e_biased = value.e_biased
         significand = value.significand
-        status = OpStatus.OK
 
         if e_biased:
             # Increment the significand of positive numbers, decrement the significand of
@@ -444,27 +479,26 @@ class BinaryFormat:
             # Signalling NaNs are converted to quiet.
             elif significand < self.quiet_bit:
                 significand |= self.quiet_bit
-                status = OpStatus.INVALID
+                context.on_invalid_operation()
 
-        return IEEEfloat(self, sign ^ flip_sign, e_biased, significand), status
+        return IEEEfloat(self, sign ^ flip_sign, e_biased, significand)
 
     def convert(self, value, context):
-        '''Return a (result, status) pair.
-
-        Convert a floating point value to this format rounding according to context.'''
+        '''Return the value converted to this format and rounding if necessary.'''
         if value.e_biased:
             if value.significand:
                 return self.make_real(value.sign, value.exponent(), value.significand, context)
 
             # Zeroes
-            return self.make_zero(value.sign), OpStatus.OK
+            return self.make_zero(value.sign)
 
         if value.significand:
             # NaNs
-            return self.make_NaN(value.sign, True, value.NaN_payload(), value.is_signalling())
+            return self.make_NaN(value.sign, True, value.NaN_payload(), context,
+                                 value.is_signalling())
 
         # Infinities
-        return self.make_infinity(value.sign), OpStatus.OK
+        return self.make_infinity(value.sign)
 
     def pack(self, sign, biased_exponent, significand, endianness='little'):
         '''Returns a floating point value encoded as bytes of the given endianness.'''
@@ -495,7 +529,7 @@ class BinaryFormat:
         if sign:
             value += (self.e_max + 1) << 1
         value = (value << lshift) + significand
-        return value.to_bytes(self.size, endianness)
+        return value.to_bytes((self.fmt_width + 1) // 8, endianness)
 
     def unpack(self, binary, endianness='little'):
         '''Decode a binary encoding to a (sign, biased_exponent, significand) tuple.
@@ -607,7 +641,7 @@ class BinaryFormat:
 
         # groups[7] matches infinities
         if groups[7] is not None:
-            return self.make_infinity(sign), OpStatus.OK
+            return self.make_infinity(sign)
 
         # groups[9] matches NaNs.  groups[10] is 's', 'S' or ''; the s indicates a
         # signalling NaN.  The payload is in groups[11], and duplicated in groups[12] if
@@ -620,7 +654,7 @@ class BinaryFormat:
             payload = int(groups[13])
         else:
             payload = 1 - is_quiet
-        return self.make_NaN(sign, is_quiet, payload, False)
+        return self.make_NaN(sign, is_quiet, payload, context, False)
 
     def _decimal_to_binary(self, sign, exponent, significand, context):
         '''Return a correctly-rounded binary value of
@@ -642,7 +676,7 @@ class BinaryFormat:
 
         while True:
             # FIXME: out of date constructor
-            calc_fmt = BinaryFormat(16, parts_count * 64, InterchangeKind.NONE)
+            calc_fmt = BinaryFormat.from_exponent_width(parts_count * 64, 16)
             excess_precision = calc_fmt.precision - self.precision
 
             sig_status, sig_value = calc_fmt.make_real(sign, 0, significand, calc_context)
@@ -697,56 +731,51 @@ class BinaryFormat:
     ##
 
     def from_int(self, x, context):
-        '''Convert the integer x to this floating point format, rounding if necessary.  Returns a
-        (value, status) pair.
-        '''
+        '''Return the integer x converted to this floating point format, rounding if necessary.'''
         raise NotImplementedError
 
     def add(self, lhs, rhs, context):
-        '''Returns a (lhs + rhs, status) pair with dst_format as the format of the result.'''
+        '''Return the sum LHS + RHS in this format.'''
         raise NotImplementedError
 
     def subtract(self, lhs, rhs, context):
-        '''Returns a (lhs - rhs, status) pair with dst_format as the format of the result.'''
+        '''Return the difference LHS - RHS in this format.'''
         raise NotImplementedError
 
     def multiply(self, lhs, rhs, context):
-        '''Returns a (lhs * rhs, status) pair with self as the format of the result.'''
+        '''Returns the product of LHS and RHS in this format.'''
         # Multiplication is commutative
         if lhs.e_biased == 0:
-            return self._multiply_special(lhs, rhs)
+            return self._multiply_special(lhs, rhs, context)
         if rhs.e_biased == 0:
-            return self._multiply_special(rhs, lhs)
+            return self._multiply_special(rhs, lhs, context)
 
         # Both numbers are finite.
         sign = lhs.sign ^ rhs.sign
         exponent = lhs.exponent() + rhs.exponent()
         return self.make_real(sign, exponent, lhs.significand * rhs.significand, context)
 
-    def _multiply_special(self, lhs, rhs):
-        '''Return a (lhs * rhs, status) pair with self as the format of the result.
-
-        The LHS is a NaN or infinity.
-        '''
+    def _multiply_special(self, lhs, rhs, context):
+        '''Return a lhs * rhs where the LHS is a NaN or infinity.'''
         sign = lhs.sign ^ rhs.sign
 
         if lhs.significand == 0:
             # infinity * zero -> NaN
             if rhs.is_zero():
-                return self.make_NaN(sign, True, 0, True)
+                return self.make_NaN(sign, True, 0, context, True)
             # infinity * NaN -> NaN
             if rhs.is_NaN():
-                return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
+                return self.make_NaN(sign, True, rhs.NaN_payload(), context, rhs.is_signalling())
             # infinity * infinity -> infinity
             # infinity * finite-non-zero -> infinity
-            return self.make_infinity(sign), OpStatus.OK
+            return self.make_infinity(sign)
 
         # NaN * anything -> NaN, but need to catch signalling NaNs
-        return self.make_NaN(sign, True, lhs.NaN_payload(),
+        return self.make_NaN(sign, True, lhs.NaN_payload(), context,
                              lhs.is_signalling() or rhs.is_signalling())
 
     def divide(self, lhs, rhs, context):
-        '''Returns a (lhs / rhs, status) pair with self as the format of the result.'''
+        '''Return lhs / rhs in this format.'''
         sign = lhs.sign ^ rhs.sign
 
         # Is the LHS is a NaN or infinity?
@@ -754,47 +783,46 @@ class BinaryFormat:
             if lhs.significand == 0:
                 # infinity / finite -> infinity
                 if rhs.is_finite():
-                    return self.make_infinity(sign), OpStatus.OK
+                    return self.make_infinity(sign)
                 # infinity / infinity -> NaN
                 if rhs.significand == 0:
-                    return self.make_NaN(sign, True, 0, True)
+                    return self.make_NaN(sign, True, 0, context, True)
                 # infinity / NaN -> NaN
-                return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
+                return self.make_NaN(sign, True, rhs.NaN_payload(), context, rhs.is_signalling())
 
             # NaN / anything -> NaN, but need to catch signalling NaNs
-            return self.make_NaN(sign, True, lhs.NaN_payload(),
+            return self.make_NaN(sign, True, lhs.NaN_payload(), context,
                                  lhs.is_signalling() or rhs.is_signalling())
 
         # LHS is finite.  Is the RHS a NaN or infinity?
         if rhs.e_biased == 0:
             if rhs.significand == 0:
                 # finity / infinity -> zero
-                return self.make_zero(sign), OpStatus.OK
+                return self.make_zero(sign)
 
             # finite / NaN -> NaN, but need to catch signalling NaNs
-            return self.make_NaN(sign, True, rhs.NaN_payload(), rhs.is_signalling())
+            return self.make_NaN(sign, True, rhs.NaN_payload(), context, rhs.is_signalling())
 
         # Both values are finite.
         return self._divide_finite(lhs, rhs, context)
 
     def _divide_finite(self, lhs, rhs, context):
-        '''Return a (lhs / rhs, status) pair), taking account of differences in exponents.  Self
-        is the format of the result.
-        '''
+        '''Return lhs / rhs, both finite numbers, in this format.'''
         sign = lhs.sign ^ rhs.sign
 
         # Division by zero?
         if rhs.significand == 0:
             # 0 / 0 -> NaN
             if lhs.significand == 0:
-                return self.make_NaN(sign, True, 0, True)
+                return self.make_NaN(sign, True, 0, context, True)
             # Finite / 0 -> Infinity
-            return self.make_infinity(sign), OpStatus.DIV_BY_ZERO
+            context.on_division_by_zero()
+            return self.make_infinity(sign)
 
         # LHS zero?
         lhs_sig = lhs.significand
         if lhs_sig == 0:
-            return self.make_zero(sign), OpStatus.OK
+            return self.make_zero(sign)
 
         rhs_sig = rhs.significand
         exponent = lhs.exponent() - rhs.exponent()
@@ -835,12 +863,11 @@ class BinaryFormat:
         return self._normalize(sign, exponent, quot, lost_fraction, context)
 
     def sqrt(self, x, context):
-        '''Returns a (sqrt(x), status) pair with dst_format as the format of the result.'''
+        '''Return sqrt(x) in this format.'''
         raise NotImplementedError
 
     def fma(self, lhs, rhs, addend, context):
-        '''Returns a (lhs * rhs + addend, status) pair with dst_format as the format of the
-        result.'''
+        '''Returns lhs * rhs + addend in this format.'''
         raise NotImplementedError
 
 
@@ -908,7 +935,6 @@ class IEEEfloat:
         self.e_biased = biased_exponent
         # The significand as an unsigned integer, or payload including quiet bit for NaNs
         self.significand = significand
-        print(self.sign, self.e_biased, self.significand)
 
     ##
     ## Non-computational operations.  These are never exceptional so simply return their
@@ -949,7 +975,6 @@ class IEEEfloat:
                 exponent = 'I'
             elif significand & self.fmt.quiet_bit:
                 exponent = 'Q'
-                print(significand, self.fmt.quiet_bit)
                 significand -= self.fmt.quiet_bit
             else:
                 exponent = 'S'
@@ -1070,8 +1095,8 @@ class IEEEfloat:
     ## Format is preserved and the result is in-place.
     ##
 
-    def remainder(self, rhs):
-        '''Set to the reaminder when divided by rhs.  Returns OpStatus.OK.
+    def remainder(self, rhs, context):
+        '''Set to the reaminder when divided by rhs.
 
         If rhs != 0, the remainder is defined for finite operands as r = lhs - rhs * n,
         where n is the integer nearest the exact number lhs / rhs with round-to-even
@@ -1091,22 +1116,17 @@ class IEEEfloat:
     ##
 
     def scalb(self, N, context):
-        '''Returns a pair (scalb(x, N), status).
-
-        The result is x * 2^N for integral values N, correctly-rounded. and in the format of
+        '''Return x * 2^N for integral values N, correctly-rounded. and in the format of
         x.  For non-zero values of N, scalb(±0, N) is ±0 and scalb(±∞) is ±∞.  For zero values
         of N, scalb(x, N) is x.
         '''
         raise NotImplementedError
 
     def logb(self, context):
-        '''Return a pair (log2(x), status).
-
-        The result is the exponent e of x, a signed integer, when represented with
-        infinite range and minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is
-        positive and finite.  logb(1) is +0.  logb(NaN), logb(∞) and logb(0) return
-        implementation-defined values outside the range ±2 * (emax + p - 1) and signal the
-        invalid operation exception.
+        '''Return the exponent e of x, a signed integer, when represented with infinite range and
+        minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is positive and finite.
+        logb(1) is +0.  logb(NaN), logb(∞) and logb(0) return implementation-defined
+        values outside the range ±2 * (emax + p - 1) and flag an invalid operation.
         '''
         raise NotImplementedError
 
@@ -1115,10 +1135,8 @@ class IEEEfloat:
     ##
 
     def to_hex_format_string(self, hex_format, context):
-        '''Return a (hex_string, status) pair.
-
-        hex_string is a hexadecimal representation of the floating point value.  See the
-        docstring of HexFormat for output control.
+        '''Return a hex_string that is a hexadecimal representation of the floating point value.
+        See the docstring of HexFormat for output control.
 
         There is ambiguity about what the leading hexadecimal digit should be.  This
         implementation uses 1 for all finite non-zero numbers.
@@ -1132,7 +1150,6 @@ class IEEEfloat:
             raise TypeError('expected a HexSigSpec object')
 
         sign = '-' if self.sign else '+' if hex_format.force_sign else ''
-        status = OpStatus.OK
 
         if self.e_biased == 0:
             # Infinites and NaNs.
@@ -1151,16 +1168,15 @@ class IEEEfloat:
                 else:
                     rest = hex_format.qNaN + payload
         else:
-            hex_sig, exponent, status = self._hex_significand(hex_format, context)
+            hex_sig, exponent = self._hex_significand(hex_format, context)
             exp_sign = '+' if exponent >= 0 and hex_format.force_exp_sign else ''
             rest = f'0x{hex_sig}p{exp_sign}{exponent}'
 
-        return sign + rest, status
+        return sign + rest
 
     def _hex_significand(self, hex_format, context):
         # Significant bits
         significand = self.significand
-        status = OpStatus.OK
         exponent = self.msb_exponent()
 
         # Shift right to lose precision if necessary
@@ -1168,7 +1184,7 @@ class IEEEfloat:
             rshift = significand.bit_length() - hex_format.precision
             significand, lost_fraction = shift_right(significand, rshift)
             if lost_fraction != LostFraction.EXACTLY_ZERO:
-                status = OpStatus.INEXACT
+                context.on_inexact()
                 if context.round_up(lost_fraction, self.sign, bool(significand & 1)):
                     significand += 1
                     # If rounding caused the significand to gain a bit in length, shift it
@@ -1197,36 +1213,34 @@ class IEEEfloat:
         if len(hex_str) > 1:
             hex_str = hex_str[0] + '.' + hex_str[1:]
 
-        return hex_str, exponent, status
+        return hex_str, exponent
 
-    def to_quiet(self):
-        '''Return a pair (result, status).
-
-        Result is a copy except that a signalling NaN becomes its quiet twin.  Status is
-        OpStatus.INVALID in this case, otherwise OpStatus.OK.
+    def to_quiet(self, context):
+        '''Return a copy except that a signalling NaN becomes its quiet twin (in which case
+        an invalid operation is flagged).
         '''
         if self.is_signalling():
+            context.on_invalid_operation()
             return IEEEfloat(self.fmt, self.sign, self.e_biased,
-                             self.significand | self.fmt.quiet_bit), OpStatus.INVALID
-        return self.copy(), OpStatus.OK
+                             self.significand | self.fmt.quiet_bit)
+        return self.copy()
 
-    def next_up(self):
+    def next_up(self, context):
         '''Set to the smallest floating point value (unless operating on a positive infinity or
         NaN) that compares greater.
         '''
-        return self.fmt.next_up(self, False)
+        return self.fmt._next_up(self, context, False)
 
-    def next_down(self):
+    def next_down(self, context):
         '''Set to the greatest floating point value (unless operating on a negative infinity or
         NaN) that compares less.
 
         As per IEEE-754 next_down(x) = -next_up(-x)
         '''
-        return self.fmt.next_up(self, True)
+        return self.fmt._next_up(self, context, True)
 
     def round(self, context, exact=False):
-        '''Round to the nearest integer retaining the input floating point format and return a
-        (value, status) pair.
+        '''Return the value rounded to the nearest integer whilst retaining the binary format.
 
         This function flags INVALID on a signalling NaN input; if exact is True, the
         INEXACT flag is set in the status if the result does not have the same numerical
@@ -1237,11 +1251,11 @@ class IEEEfloat:
         '''
         if self.e_biased == 0:
             # Quiet NaNs and infinites stay unchanged; signalling NaNs are converted to quiet.
-            return self.to_quiet()
+            return self.to_quiet(context)
 
         # Zeroes return unchanged.
         if self.significand == 0:
-            return self.copy(), OpStatus.OK
+            return self.copy()
 
         # Rounding-towards-zero is semantically equivalent to clearing zero or more of the
         # significand's least-significant bits.
@@ -1249,7 +1263,7 @@ class IEEEfloat:
 
         # We're already an integer if count is <= 0
         if count <= 0:
-            return self.copy(), OpStatus.OK
+            return self.copy()
 
         # If count >= precision then we're a fraction and all bits are cleared, in which
         # case rounding away rounds to int_bit with exponent of 0.  Cap the count at
@@ -1277,26 +1291,20 @@ class IEEEfloat:
                 e_biased = self.fmt.e_bias
 
         if exact and lost_fraction != LostFraction.EXACTLY_ZERO:
-            status = OpStatus.INEXACT
-        else:
-            status = OpStatus.OK
+            context.on_inexact()
 
-        return IEEEfloat(self.fmt, self.sign, e_biased, significand), status
+        return IEEEfloat(self.fmt, self.sign, e_biased, significand)
 
     def to_int(self, int_format, context):
-        '''Returns a (int(lhs), status) pair correctly-rounded with int_format the integer format
-        of the result.
-        '''
+        '''Return int(lhs) correctly-rounded in the format int_format.'''
         raise NotImplementedError
 
     def to_integral(self, flt_format, context):
-        '''Returns a (lhs, status) pair correctly-rounded with flt_format the floating point
-        format of the result.
-        '''
+        '''Return lhs correctly-rounded with flt_format the format of the result.'''
         raise NotImplementedError
 
-    def to_decimal_string(self, fmt_spec):
-        '''Returns a (string, status) pair correctly-rounded with fmt_spec giving details of the
+    def to_decimal_string(self, fmt_spec, context):
+        '''Returns a decimal string correctly-rounded with fmt_spec giving details of the
         output format required.
         '''
         raise NotImplementedError
