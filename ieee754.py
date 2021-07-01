@@ -126,7 +126,7 @@ class TextFormat:
                 exponent = 0
             else:
                 significand <<= (value.fmt.precision & 3) ^ 1
-                exponent = value.exponent_int_bit()
+                exponent = value.exponent()
 
             output_digits = (value.fmt.precision + 6) // 4
             hex_sig = f'{significand:x}'
@@ -632,7 +632,7 @@ class BinaryFormat:
                 return value.copy()
 
             if value.significand:
-                return self.make_real(value.sign, value.exponent(), value.significand, context)
+                return self.make_real(value.sign, value.exponent_int(), value.significand, context)
 
             # Zeroes
             return self.make_zero(value.sign)
@@ -916,7 +916,7 @@ class BinaryFormat:
 
         # Both numbers are finite.
         sign = lhs.sign ^ rhs.sign
-        exponent = lhs.exponent() + rhs.exponent()
+        exponent = lhs.exponent_int() + rhs.exponent_int()
         return self.make_real(sign, exponent, lhs.significand * rhs.significand, context)
 
     def _multiply_special(self, lhs, rhs, context):
@@ -989,7 +989,7 @@ class BinaryFormat:
             return self.make_zero(sign)
 
         rhs_sig = rhs.significand
-        exponent = lhs.exponent() - rhs.exponent()
+        exponent = lhs.exponent_int() - rhs.exponent_int()
 
         # Shift the lhs significand left until it is greater than the significand of the RHS
         lshift = rhs_sig.bit_length() - lhs_sig.bit_length()
@@ -1117,7 +1117,7 @@ class Binary:
             # Zeroes
             exponent = 0
         else:
-            exponent = self.exponent()
+            exponent = self.exponent_int()
 
         return (self.sign, exponent, significand)
 
@@ -1173,16 +1173,15 @@ class Binary:
         '''We're binary!'''
         return 2
 
-    def exponent(self):
+    def exponent_int(self):
         '''Return the arithmetic exponent of our significand interpreted as an integer.'''
+        return self.exponent() - (self.fmt.precision - 1)
+
+    def exponent(self):
+        '''Return the arithmetic exponent of our significand interpreted as a binary floating
+        point number with a decimal point after the MSB.
+        '''
         assert self.is_finite()
-
-        return self.e_biased - self.fmt.e_bias - (self.fmt.precision - 1)
-
-    def exponent_int_bit(self):
-        '''Return the arithmetic exponent of our significand interpreted with an integer bit.'''
-        assert self.is_finite()
-
         return self.e_biased - self.fmt.e_bias
 
     def total_order(self, rhs):
@@ -1324,7 +1323,7 @@ class Binary:
 
         # Rounding-towards-zero is semantically equivalent to clearing zero or more of the
         # significand's least-significant bits.
-        count = -self.exponent()
+        count = -self.exponent_int()
 
         # We're already an integer if count is <= 0
         if count <= 0:
