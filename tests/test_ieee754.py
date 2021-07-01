@@ -572,6 +572,25 @@ class TestUnaryOps:
         assert result.to_parts() == answer.to_parts()
         assert context.flags == status
 
+    @pytest.mark.parametrize('line', read_lines('from_int.txt'))
+    def test_from_int(self, line):
+        parts = line.split()
+        if len(parts) != 5:
+            assert False, f'bad line: {line}'
+        dst_fmt, context, src_value, status, answer = parts
+
+        dst_fmt = format_codes[dst_fmt]
+        context = context_string_to_context(context)
+        value = int(src_value)
+        assert str(value) == src_value
+        status = status_codes[status]
+        answer = dst_fmt.from_string(answer, context)
+        assert context.flags == 0
+
+        result = dst_fmt.from_int(value, context)
+        assert result.to_parts() == answer.to_parts()
+        assert context.flags == status
+
     @pytest.mark.parametrize('line', read_lines('to_hex_format.txt'))
     def test_to_hex_format(self, line):
         parts = line.split()

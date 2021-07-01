@@ -774,7 +774,7 @@ class BinaryFormat:
 
     def from_int(self, x, context):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
-        raise NotImplementedError
+        return self.make_real(x < 0, 0, abs(x), context)
 
     def add(self, lhs, rhs, context):
         '''Return the sum LHS + RHS in this format.'''
