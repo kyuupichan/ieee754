@@ -178,18 +178,6 @@ def shift_right(significand, bits):
     return result, lost_bits_from_rshift(significand, bits)
 
 
-def lowest_set_bit(value):
-    # Returns the lowest set bit of the number, counting from 0
-    if value:
-        lsb = 0
-        mask = 1
-        while (value & mask) == 0:
-            mask <<= 1
-            lsb += 1
-        return lsb
-    return -1
-
-
 class BinaryError(ArithmeticError):
     '''All traps subclass from this.'''
 
