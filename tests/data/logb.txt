@@ -1,0 +1,70 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Format String Status N
+
+
+############
+##
+## Zeroes
+##
+############
+
+H 0 Z -Inf
+S 0 Z -Inf
+D 0 Z -Inf
+Q 0 Z -Inf
+H -0 Z -Inf
+S -0 Z -Inf
+D -0 Z -Inf
+Q -0 Z -Inf
+
+############
+##
+## Infinities
+##
+############
+
+H Inf K Inf
+S Inf K Inf
+D Inf K Inf
+Q Inf K Inf
+
+H -Inf K Inf
+S -Inf K Inf
+D -Inf K Inf
+Q -Inf K Inf
+
+############
+##
+## NaNs
+##
+############
+
+H NaN K NaN
+S sNaN X NaN1
+D -NaN K -NaN
+Q -sNaN5 X -NaN5
+
+############
+##
+## Non-zero finite
+##
+############
+
+S 1 K 0
+S 0x1.456p0 K 0
+S -0x1.abcp1 K 1
+S 0x1.fffffep127 K 127
+S -0x1.edcbap-10 K -10
+S 0x1.edcbap-126 K -126
+S -0x1.edcp-134 K -134
+S 0x1p-149 K -149
+
+D -0x1.fffffffffffffp1023 K 1023
+Q -0x1.ffffffffffffffffffffffffffffp16383 K 16383
+Q 0x1.ffffffffffffffffffffffff000cp-16380 K -16380

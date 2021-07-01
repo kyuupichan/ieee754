@@ -374,8 +374,9 @@ class IntFormat:
 class BinaryFormat:
     '''An IEEE-754 binary floating point format.  Does not require e_min = 1 - e_max.'''
 
-    __slots__ = ('precision', 'e_max', 'e_min',
-                 'e_bias', 'int_bit', 'quiet_bit', 'max_significand', 'fmt_width')
+    __slots__ = ('precision', 'e_max', 'e_min', 'e_bias',
+                 'int_bit', 'quiet_bit', 'max_significand', 'fmt_width',
+                 'logb_inf', 'logb_zero', 'logb_NaN')
 
     def __init__(self, precision, e_max, e_min):
         '''precision is the number of bits in the significand including an explicit integer bit.
@@ -433,6 +434,12 @@ class BinaryFormat:
         self.int_bit = 1 << (precision - 1)
         self.quiet_bit = 1 << (precision - 2)
         self.max_significand = (1 << precision) - 1
+
+        # What integer value logb(inf) returns.  IEEE-754 requires this and the values for
+        # logb(0) and logb(NaN) be values "outside the range ±2 * (emax + p - 1)".
+        self.logb_inf = 2 * (max(e_max, abs(e_min)) + precision - 1) + 1
+        self.logb_zero = -self.logb_inf
+        self.logb_NaN = self.logb_zero - 1
 
         # Are we an interchange format?  If not, fmt_width is zero, otherwise it is the
         # format width in bits (the sign bit, the exponent and the significand excluding
@@ -1258,13 +1265,52 @@ class Binary:
             return self.to_quiet(context)
         return self.fmt.make_real(self.sign, self.exponent_int() + N, self.significand, context)
 
-    def logb(self, context):
+    def _logb(self):
+        '''A private helper function.'''
+        if self.e_biased == 0:
+            if self.significand == 0:
+                return 'Inf'
+            return 'NaN'
+
+        if self.significand == 0:
+            return 'Zero'
+
+        return self.exponent() + self.significand.bit_length() - self.fmt.precision
+
+    def logb_integral(self, context):
         '''Return the exponent e of x, a signed integer, when represented with infinite range and
         minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is positive and finite.
         logb(1) is +0.  logb(NaN), logb(∞) and logb(0) return implementation-defined
         values outside the range ±2 * (emax + p - 1) and flag an invalid operation.
         '''
-        raise NotImplementedError
+        result = self._logb()
+        if isinstance(result, int):
+            return result
+
+        context.set_flags(Flags.INVALID)
+        if result == 'Inf':
+            return self.fmt.logb_inf
+        if result == 'NaN':
+            return self.fmt.logb_NaN
+        return self.fmt.logb_zero
+
+    def logb(self, context):
+        '''Return the exponent e of x, a signed integer, when represented with infinite range and
+        minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is positive and finite.
+        logb(1) is +0.  logb(NaN) is a NaN, logb(∞) is +∞, and logb(0) is -∞ and signals
+        the divide-by-zero exception.
+        '''
+        result = self._logb()
+        if isinstance(result, int):
+            print(result)
+            return self.fmt.make_real(result < 0, 0, abs(result), context)
+
+        if result == 'NaN':
+            return self.to_quiet(context)
+        if result == 'Zero':
+            context.set_flags(Flags.DIV_BY_ZERO)
+            return self.fmt.make_infinity(True)
+        return self.fmt.make_infinity(False)
 
     ##
     ## General computational operations

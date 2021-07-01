@@ -643,6 +643,52 @@ class TestUnaryOps:
         assert result.to_parts() == answer.to_parts()
         assert context.flags == status
 
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_logb_specials(self, fmt):
+        # Test all 3 values are different
+        values = {fmt.logb_zero, fmt.logb_inf, fmt.logb_NaN}
+        assert len(values) == 3
+        extremity = 2 * (max(fmt.e_max, abs(fmt.e_min)) + fmt.precision - 1)
+        assert min(abs(value) for value in values) > extremity
+
+    @pytest.mark.parametrize('line', read_lines('logb.txt'))
+    def test_logb(self, line):
+        parts = line.split()
+        if len(parts) != 4:
+            assert False, f'bad line: {line}'
+        fmt, in_str, status, answer = parts
+        fmt = format_codes[fmt]
+        in_context = std_context()
+        in_value = fmt.from_string(in_str, in_context)
+        assert in_context.flags & ~Flags.SUBNORMAL == 0
+        answer = fmt.from_string(answer, in_context)
+        assert in_context.flags & ~Flags.SUBNORMAL == 0
+        status = status_codes[status]
+
+        context = std_context()
+        result = in_value.logb(context)
+        assert result.to_parts() == answer.to_parts()
+        assert context.flags == status
+
+        # Now test logb_integral
+        context.clear_flags()
+        result_integral = in_value.logb_integral(context)
+        if result.is_finite():
+            value = result.significand >> -result.exponent_int()
+            if result.sign:
+                value = -value
+            assert value == result_integral
+            assert context.flags == 0
+        else:
+            if result.is_infinite():
+                if result.sign:
+                    assert result_integral == fmt.logb_zero
+                else:
+                    assert result_integral == fmt.logb_inf
+            else:
+                assert result_integral == fmt.logb_NaN
+            assert context.flags == Flags.INVALID
+
     @pytest.mark.parametrize('line', read_lines('next_up.txt'))
     def test_next_up(self, line):
         next_operation(line, 'next_up')
