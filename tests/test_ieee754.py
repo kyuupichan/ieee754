@@ -622,6 +622,27 @@ class TestUnaryOps:
         assert result == answer
         assert context.flags == status
 
+    @pytest.mark.parametrize('line', read_lines('scaleb.txt'))
+    def test_scaleb(self, line):
+        parts = line.split()
+        if len(parts) != 6:
+            assert False, f'bad line: {line}'
+        fmt, context, in_str, N_str, status, answer = parts
+        fmt = format_codes[fmt]
+        context = context_string_to_context(context)
+        in_context = std_context()
+        in_value = fmt.from_string(in_str, in_context)
+        assert in_context.flags & ~Flags.SUBNORMAL == 0
+        answer = fmt.from_string(answer, in_context)
+        assert in_context.flags & ~Flags.SUBNORMAL == 0
+        N = int(N_str)
+        assert str(N) == N_str
+        status = status_codes[status]
+
+        result = in_value.scaleb(N, context)
+        assert result.to_parts() == answer.to_parts()
+        assert context.flags == status
+
     @pytest.mark.parametrize('line', read_lines('next_up.txt'))
     def test_next_up(self, line):
         next_operation(line, 'next_up')
@@ -629,7 +650,6 @@ class TestUnaryOps:
     @pytest.mark.parametrize('line', read_lines('next_down.txt'))
     def test_next_down(self, line):
         next_operation(line, 'next_down')
-
 
 def next_operation(line, operation):
     parts = line.split()

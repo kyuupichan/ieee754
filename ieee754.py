@@ -272,7 +272,7 @@ class Context:
         if self.traps & flags:
             raise flag_map[flags]
 
-    def on_normalised_finite(self, is_tiny_before, is_tiny_after, is_inexact):
+    def on_normalized_finite(self, is_tiny_before, is_tiny_after, is_inexact):
         '''Call after normalisation of a finite number to set flags appropriately.'''
         if is_tiny_after:
             if is_inexact:
@@ -507,7 +507,7 @@ class BinaryFormat:
               ± 2^exponent * significand
 
         of the given sign where significand is non-zero and lost_fraction ulps were lost.
-        Return the rounded and normalised result.
+        Return the rounded and normalized result.
         '''
         size = significand.bit_length()
         assert size
@@ -548,7 +548,7 @@ class BinaryFormat:
 
         is_tiny_after = significand < self.int_bit
 
-        context.on_normalised_finite(is_tiny_before, is_tiny_after, is_inexact)
+        context.on_normalized_finite(is_tiny_before, is_tiny_after, is_inexact)
 
         return Binary(self, sign, exponent + self.e_bias, significand)
 
@@ -1248,12 +1248,15 @@ class Binary:
     ## logBFormat operations (logBFormat is an integer format)
     ##
 
-    def scalb(self, N, context):
+    def scaleb(self, N, context):
         '''Return x * 2^N for integral values N, correctly-rounded. and in the format of
         x.  For non-zero values of N, scalb(±0, N) is ±0 and scalb(±∞) is ±∞.  For zero values
         of N, scalb(x, N) is x.
         '''
-        raise NotImplementedError
+        # NaNs and infinities are unchanged (but NaNs are made quiet)
+        if self.e_biased == 0:
+            return self.to_quiet(context)
+        return self.fmt.make_real(self.sign, self.exponent_int() + N, self.significand, context)
 
     def logb(self, context):
         '''Return the exponent e of x, a signed integer, when represented with infinite range and

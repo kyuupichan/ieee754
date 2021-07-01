@@ -1,0 +1,86 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Format Context String N Status String
+
+############
+##
+## Zeroes
+##
+############
+
+S E 0 0 K 0
+D u 0 1 K 0
+D E 0 -1 K 0
+Q C -0 0 K -0
+H U -0 1 K -0
+H U -0 -1 K -0
+
+############
+##
+## Infinities
+##
+############
+
+S E +Inf -1 K Inf
+D u -Inf 0 K -Inf
+Q C -Inf 1 K -Inf
+Q C -Inf -2 K -Inf
+H F +Inf 500 K Inf
+H D +Inf -2000 K Inf
+
+############
+##
+## Quiet NaNs
+##
+############
+
+S E NaN 0 K NaN
+D u sNaN 1 X NaN1
+Q C -NaN0x12 -1 K -NaN0x12
+H F NAN500 50 K NaN500
+H D -NAN -80 K -Nan
+
+############
+##
+## Signalling NaNs
+##
+############
+
+S E sNaN 0 X NaN1
+D u sNaN 1 X NaN1
+Q C -sNaN -1 X -NaN1
+H F SNAN25 50 X NaN25
+H D -SNAN40 -80 X -Nan40
+
+############
+##
+## Non-zero finite
+##
+############
+
+S E 0x1p0 20 K 0x1p20
+S E 0x1p0 0 K 0x1p0
+S E 0x1p0 -20 K 0x1p-20
+
+S E 0x1p0 127 K 0x1p127
+S E 0x1p0 128 VI Inf
+
+S E 0x1p0 -126 K 0x1p-126
+S E 0x1p0 -127 S 0x1p-127
+S E 0x1p0 -149 S 0x1p-149
+S E 0x1p0 -150 U 0
+S E 0x1p-149 22 S 0x1p-127
+S E 0x1p-149 23 K 0x1p-126
+
+S E 0x1.8p0 -149 U 0x2p-149
+S D 0x1.8p0 -149 U 0x1p-149
+S E 0x1.8p0 -150 U 0x1p-149
+S F 0x1.8p0 -150 U 0
+
+D E 0x1.1234567890123p0 -1022 K 0x1.1234567890123p-1022
+D E 0x1.1234567890123p0 -1023 U 0x1.1234567890124p-1023
