@@ -579,15 +579,17 @@ class BinaryFormat:
                     significand >>= 1
                     e_biased += 1
                     # Overflow to infinity?
-                    if e_biased > self.e_max:
+                    if e_biased - self.e_bias > self.e_max:
                         e_biased = 0
                         significand = 0
+            if 0 < significand < self.int_bit:
+                context.set_flags(Flags.SUBNORMAL)
         else:
             # Negative infinity becomes largest negative number; positive infinity unchanged
             if significand == 0:
                 if sign:
                     significand = self.max_significand
-                    e_biased = self.e_max
+                    e_biased = self.e_max + self.e_bias
             # Signalling NaNs are converted to quiet.
             elif significand < self.quiet_bit:
                 significand |= self.quiet_bit

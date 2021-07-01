@@ -7,9 +7,11 @@
 
 # Test format: FloatFormat Rounding String Status String
 
-#
-# Non-zero integers
-#
+############
+##
+## Non-zero integers
+##
+############
 
 S E 1 K 1
 S E 2 K 2

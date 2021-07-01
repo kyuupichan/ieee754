@@ -622,6 +622,34 @@ class TestUnaryOps:
         assert result == answer
         assert context.flags == status
 
+    @pytest.mark.parametrize('line', read_lines('next_up.txt'))
+    def test_next_up(self, line):
+        next_operation(line, 'next_up')
+
+    @pytest.mark.parametrize('line', read_lines('next_down.txt'))
+    def test_next_down(self, line):
+        next_operation(line, 'next_down')
+
+
+def next_operation(line, operation):
+    parts = line.split()
+    if len(parts) != 4:
+        assert False, f'bad line: {line}'
+    context = std_context()
+    fmt, in_str, status, answer = parts
+    fmt = format_codes[fmt]
+    in_value = fmt.from_string(in_str, context)
+    assert context.flags & ~Flags.SUBNORMAL == 0
+    answer = fmt.from_string(answer, context)
+    assert context.flags & ~Flags.SUBNORMAL == 0
+    context.clear_flags()
+    status = status_codes[status]
+
+    operation = getattr(in_value, operation)
+    result = operation(context)
+    assert result.to_parts() == answer.to_parts()
+    assert context.flags == status
+
 
 def binary_operation(line, operation):
     parts = line.split()

@@ -1,0 +1,103 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Format String Status String
+
+############
+##
+## Zeroes
+##
+############
+
+H 0 S 0x1p-24
+S 0 S 0x1p-149
+D 0 S 0x1p-1074
+Q 0 S 0x1p-16494
+
+H -0 S 0x1p-24
+S -0 S 0x1p-149
+D -0 S 0x1p-1074
+Q -0 S 0x1p-16494
+
+############
+##
+## Infinities
+##
+############
+
+H inf K inf
+S Inf K inf
+D inf K inf
+Q Inf K inf
+
+H -inf K -0x1.ffcp15
+S -Inf K -0x1.fffffep127
+D -inf K -0x1.fffffffffffffp1023
+Q -Inf K -0x1.ffffffffffffffffffffffffffffp16383
+
+############
+##
+## Quiet NaNs
+##
+############
+
+H Nan K NaN
+S -Nan K -NaN
+D NaN1234 K NaN1234
+Q NaN0x123456 K NaN0x123456
+
+############
+##
+## Signalling NaNs
+##
+############
+
+H sNan X NaN1
+S -sNan X -NaN1
+D sNaN1234 X NaN1234
+Q sNaN0x123456 X NaN0x123456
+
+############
+##
+## Negative
+##
+############
+
+H -0x1p-24 K -0
+H -1 K -0x1.ffcp-1
+H -0x1p5 K -0x1.ffcp4
+H -0x1p-5 K -0x1.ffcp-6
+Q -0x1.ffffffffffffffffffffffffffffp+16383 K -0x1.fffffffffffffffffffffffffffep+16383
+Q -0x1.0000000000000000000000000000p-16382 S -0x0.ffffffffffffffffffffffffffffp-16382
+Q -0x0.ffffffffffffffffffffffffffffp-16382 S -0x0.fffffffffffffffffffffffffffep-16382
+Q -0x1p1 K -0x1.ffffffffffffffffffffffffffffp+0
+Q -0x1p-16381 K -0x1.ffffffffffffffffffffffffffffp-16382
+Q -0x0.ffffffffffffffffffffffff000cp-16382 S -0x0.ffffffffffffffffffffffff000bp-16382
+Q -0x1.ffffffffffffffffffffffff000cp-16000 K -0x1.ffffffffffffffffffffffff000bp-16000
+
+############
+##
+## Positive
+##
+############
+
+H 0x1p-24 S 0x1p-23
+H 0x1p-23 S 0x1.8p-23
+H 0x1.8p-23 S 0x1p-22
+H 0x1.ff0p-15 S 0x1.ff8p-15
+H 0x1.ff8p-15 K 0x1p-14
+H 0x1.ffcp-1 K 0x1p0
+H 0x1.ffcp0 K 0x1p1
+H 0x1.ffcp1 K 0x1p2
+H 0x1.ffcp14 K 0x1p15
+H 0x1.ffcp15 K Inf
+Q 0x0.ffffffffffffffffffffffffffffp-16382 K 0x1p-16382
+Q 0x1.ffffffffffffffffffffffffffffp+0 K 0x1p1
+Q 0x1.0000000000000000000000000000p-16382 K 0x1.0000000000000000000000000001p-16382
+Q 0x1.ffffffffffffffffffffffffffffp-16382 K 0x1p-16381
+Q 0x0.ffffffffffffffffffffffff000cp-16382 S 0x0.ffffffffffffffffffffffff000dp-16382
+Q 0x1.ffffffffffffffffffffffff000cp-16000 K 0x1.ffffffffffffffffffffffff000dp-16000
