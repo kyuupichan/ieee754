@@ -10,7 +10,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('Context', 'BinaryFormat', 'Flags', 'IEEEfloat', 'TextFormat',
+__all__ = ('Context', 'BinaryFormat', 'Flags', 'Binary', 'TextFormat',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
@@ -452,15 +452,15 @@ class BinaryFormat:
 
     def make_zero(self, sign):
         '''Returns a zero of the given sign.'''
-        return IEEEfloat(self, sign, 1, 0)
+        return Binary(self, sign, 1, 0)
 
     def make_infinity(self, sign):
         '''Returns an infinity of the given sign.'''
-        return IEEEfloat(self, sign, 0, 0)
+        return Binary(self, sign, 0, 0)
 
     def make_largest_finite(self, sign):
         '''Returns the finite number of maximal magnitude with the given sign.'''
-        return IEEEfloat(self, sign, self.e_max + self.e_bias, self.max_significand)
+        return Binary(self, sign, self.e_max + self.e_bias, self.max_significand)
 
     def make_NaN(self, sign, is_quiet, payload, context, flag_invalid):
         '''Return a NaN with the given sign and payload; the NaN is quiet iff is_quiet.
@@ -480,7 +480,7 @@ class BinaryFormat:
         if flag_invalid:
             flags |= Flags.INVALID
         context.set_flags(flags)
-        return IEEEfloat(self, sign, 0, adj_payload)
+        return Binary(self, sign, 0, adj_payload)
 
     def make_real(self, sign, exponent, significand, context):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
@@ -550,7 +550,7 @@ class BinaryFormat:
 
         context.on_normalised_finite(is_tiny_before, is_tiny_after, is_inexact)
 
-        return IEEEfloat(self, sign, exponent + self.e_bias, significand)
+        return Binary(self, sign, exponent + self.e_bias, significand)
 
     def _next_up(self, value, context, flip_sign):
         '''Return the smallest floating point value (unless operating on a positive infinity or
@@ -593,7 +593,7 @@ class BinaryFormat:
                 significand |= self.quiet_bit
                 context.set_flags(Flags.INVALID)
 
-        return IEEEfloat(self, sign ^ flip_sign, e_biased, significand)
+        return Binary(self, sign ^ flip_sign, e_biased, significand)
 
     def convert_NaN(self, value, make_quiet, clear_payload, context):
         src_payload = value.NaN_payload()
@@ -614,7 +614,7 @@ class BinaryFormat:
                 flags |= Flags.INVALID
 
         context.set_flags(flags)
-        return IEEEfloat(self, value.sign, 0, payload)
+        return Binary(self, value.sign, 0, payload)
 
     def convert(self, value, context):
         '''Return the value converted to this format and rounding if necessary.
@@ -1045,7 +1045,7 @@ x87double = BinaryFormat.from_exponent_width(53, 15)
 x87single = BinaryFormat.from_exponent_width(24, 15)
 
 
-class IEEEfloat:
+class Binary:
     def __init__(self, fmt, sign, biased_exponent, significand):
         '''Create a floating point number with the given format, sign, biased exponent and
         significand.  For NaNs - saturing exponents with non-zero signficands - we interpret
@@ -1195,19 +1195,19 @@ class IEEEfloat:
 
     def copy(self):
         '''Returns a copy of this number.'''
-        return IEEEfloat(self.fmt, self.sign, self.e_biased, self.significand)
+        return Binary(self.fmt, self.sign, self.e_biased, self.significand)
 
     def copy_sign(self, y):
         '''Retuns a copy of this number but with the sign of y.'''
-        return IEEEfloat(self.fmt, y.sign, self.e_biased, self.significand)
+        return Binary(self.fmt, y.sign, self.e_biased, self.significand)
 
     def copy_negate(self):
         '''Returns a copy of this number with the opposite sign.'''
-        return IEEEfloat(self.fmt, not self.sign, self.e_biased, self.significand)
+        return Binary(self.fmt, not self.sign, self.e_biased, self.significand)
 
     def copy_abs(self):
         '''Returns a copy of this number with sign False (positive).'''
-        return IEEEfloat(self.fmt, False, self.e_biased, self.significand)
+        return Binary(self.fmt, False, self.e_biased, self.significand)
 
     def take_sign(self, y):
         '''Sets the sign of this number to that of y.  copy_sign without a copy.'''
@@ -1284,7 +1284,7 @@ class IEEEfloat:
         '''
         if self.is_signalling():
             context.set_flags(Flags.INVALID)
-            return IEEEfloat(self.fmt, self.sign, self.e_biased,
+            return Binary(self.fmt, self.sign, self.e_biased,
                              self.significand | self.fmt.quiet_bit)
         return self.copy()
 
@@ -1356,7 +1356,7 @@ class IEEEfloat:
         if exact and lost_fraction != LostFraction.EXACTLY_ZERO:
             context.set_flags(Flags.INEXACT)
 
-        return IEEEfloat(self.fmt, self.sign, e_biased, significand)
+        return Binary(self.fmt, self.sign, e_biased, significand)
 
     def to_int(self, int_format, context):
         '''Return int(lhs) correctly-rounded in the format int_format.'''
