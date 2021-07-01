@@ -302,7 +302,7 @@ class TestGeneralNonComputationalOps:
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
-        assert value.to_parts()[-1] == payload
+        assert value.as_tuple()[-1] == payload
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts,
@@ -540,7 +540,7 @@ class TestUnaryOps:
                 pass
             significand = read_significand(significand)
             value = fmt.from_string(hex_str, context)
-            assert value.to_parts() == (sign, exponent, significand)
+            assert value.as_tuple() == (sign, exponent, significand)
             assert context.flags == status
         else:
             assert False, f'bad line: {line}'
@@ -561,7 +561,7 @@ class TestUnaryOps:
         assert input_context.flags & ~Flags.SUBNORMAL == 0
 
         result = value.round(context)
-        assert result.to_parts() == answer.to_parts()
+        assert result.as_tuple() == answer.as_tuple()
         assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('convert.txt'))
@@ -581,7 +581,7 @@ class TestUnaryOps:
         assert input_context.flags & ~Flags.SUBNORMAL == 0
 
         result = dst_fmt.convert(src_value, context)
-        assert result.to_parts() == answer.to_parts()
+        assert result.as_tuple() == answer.as_tuple()
         assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('from_int.txt'))
@@ -600,7 +600,7 @@ class TestUnaryOps:
         assert context.flags == 0
 
         result = dst_fmt.from_int(value, context)
-        assert result.to_parts() == answer.to_parts()
+        assert result.as_tuple() == answer.as_tuple()
         assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('to_hex.txt'))
@@ -640,7 +640,7 @@ class TestUnaryOps:
         status = status_codes[status]
 
         result = in_value.scaleb(N, context)
-        assert result.to_parts() == answer.to_parts()
+        assert result.as_tuple() == answer.as_tuple()
         assert context.flags == status
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
@@ -667,7 +667,7 @@ class TestUnaryOps:
 
         context = std_context()
         result = in_value.logb(context)
-        assert result.to_parts() == answer.to_parts()
+        assert result.as_tuple() == answer.as_tuple()
         assert context.flags == status
 
         # Now test logb_integral
@@ -713,7 +713,7 @@ def next_operation(line, operation):
 
     operation = getattr(in_value, operation)
     result = operation(context)
-    assert result.to_parts() == answer.to_parts()
+    assert result.as_tuple() == answer.as_tuple()
     assert context.flags == status
 
 
@@ -740,7 +740,7 @@ def binary_operation(line, operation):
 
     operation = getattr(dst_fmt, operation)
     result = operation(lhs, rhs, context)
-    assert result.to_parts() == answer.to_parts()
+    assert result.as_tuple() == answer.as_tuple()
     assert context.flags == status
 
 

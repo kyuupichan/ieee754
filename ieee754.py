@@ -5,6 +5,7 @@
 #
 
 import re
+from collections import namedtuple
 from enum import IntFlag, IntEnum
 
 import attr
@@ -143,6 +144,9 @@ class TextFormat:
             rest = f'0x{hex_sig}p{exp_sign}{exponent:d}'
 
         return sign + rest
+
+
+BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
 
 
 # When precision is lost during a calculation this indicates what fraction of the LSB the
@@ -1088,8 +1092,8 @@ class Binary:
 
         return '-Infinity' if self.sign else '+Infinity'
 
-    def to_parts(self):
-        '''Returns a triple: (sign, exponent, significand).
+    def as_tuple(self):
+        '''Returns a BinaryTuple: (sign, exponent, significand).
 
         Finite non-zero numbers have the magniture 2^exponent * significand (an integer).
 
@@ -1114,12 +1118,11 @@ class Binary:
         else:
             exponent = self.exponent_int()
 
-        return (self.sign, exponent, significand)
+        return BinaryTuple(self.sign, exponent, significand)
 
     def NaN_payload(self):
         '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''
-        if not self.is_NaN():
-            raise RuntimeError(f'NaN_payload called on a non-NaN: {self.to_parts()}')
+        assert self.is_NaN()
         return self.significand & (self.fmt.quiet_bit - 1)
 
     def is_negative(self):
