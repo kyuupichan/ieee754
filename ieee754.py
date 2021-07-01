@@ -10,7 +10,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('Context', 'BinaryFormat', 'Flags', 'IEEEfloat', 'HexFormat',
+__all__ = ('Context', 'BinaryFormat', 'Flags', 'IEEEfloat', 'TextFormat',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
@@ -73,6 +73,76 @@ class Flags(IntFlag):
     SUBNORMAL   = 0x08
     UNDERFLOW   = 0x10
     INEXACT     = 0x20
+
+
+@attr.s(slots=True)
+class TextFormat:
+    '''Controls the output of conversion to decimal and hexadecimal strings.'''
+    # If True, numbers with a clear sign bit are preceded with a '+'.
+    plus = attr.ib(default=False)
+    # If True, non-negative exponents are preceded by '+'.
+    exp_plus = attr.ib(default=False)
+    # If True, trailing insignificant zeroes are stripped
+    rstrip_zeroes = attr.ib(default=True)
+    # The string output for infinity
+    inf = attr.ib(default='Inf')
+    # The string output for quiet NaNs
+    qNaN = attr.ib(default='NaN')
+    # The string output for signalling NaNs.  The empty string means flag an invalid
+    # operation and output as a quiet NaN instead.
+    sNaN = attr.ib(default='sNaN')
+    # Controls the display of NaN payloads.  If N, NaN payloads are omitted.  If X, they
+    # are output in hexadecimal.  If 'D' in decimal.  Examples of all 3 formats are: nan,
+    # nan255 and nan0xff for a quiet NaN with payload 255, respectively.
+    nan_payload = attr.ib(default='X')
+
+    def _non_finite_text(self, value):
+        '''Returns the output text for infinities and NaNs without a sign.'''
+        assert value.e_biased == 0
+
+        # Infinity
+        if value.significand == 0:
+            return self.inf
+
+        # NaNs
+        result = self.sNaN if value.is_signalling() else self.qNaN
+        if self.nan_payload == 'D':
+            result += str(value.NaN_payload())
+        elif self.nan_payload == 'X':
+            result += hex(value.NaN_payload())
+        return result
+
+    def to_hex(self, value):
+        sign = '-' if value.sign else '+' if self.plus else ''
+
+        if value.e_biased == 0:
+            rest = self._non_finite_text(value)
+        else:
+            # The value has been converted and rounded to our format.  We output the
+            # unbiased exponent, but have to shift the significand left up to 3 bits so
+            # that converting the significand to hex has the integer bit as an MSB
+            significand = value.significand
+            if significand == 0:
+                exponent = 0
+            else:
+                significand <<= (value.fmt.precision & 3) ^ 1
+                exponent = value.exponent_int_bit()
+
+            output_digits = (value.fmt.precision + 6) // 4
+            hex_sig = f'{significand:x}'
+            # Prepend zeroes to get the full output precision
+            hex_sig = '0' * (output_digits - len(hex_sig)) + hex_sig
+            # Strip trailing zeroes?
+            if self.rstrip_zeroes:
+                hex_sig = hex_sig.rstrip('0') or '0'
+            # Insert the decimal point only if there are trailing digits
+            if len(hex_sig) > 1:
+                hex_sig = hex_sig[0] + '.' + hex_sig[1:]
+
+            exp_sign = '+' if exponent >= 0 and self.exp_plus else ''
+            rest = f'0x{hex_sig}p{exp_sign}{exponent:d}'
+
+        return sign + rest
 
 
 # When precision is lost during a calculation this indicates what fraction of the LSB the
@@ -525,9 +595,40 @@ class BinaryFormat:
 
         return IEEEfloat(self, sign ^ flip_sign, e_biased, significand)
 
+    def convert_NaN(self, value, make_quiet, clear_payload, context):
+        src_payload = value.NaN_payload()
+        src_signalling = value.is_signalling()
+
+        if clear_payload:
+            payload = 0
+        else:
+            payload = src_payload & (self.quiet_bit - 1)
+
+        is_signalling = src_signalling and not make_quiet
+        if is_signalling:
+            payload = max(payload, 1)
+        flags = 0 if payload == src_payload else Flags.INEXACT
+        if not is_signalling:
+            payload |= self.quiet_bit
+            if src_signalling:
+                flags |= Flags.INVALID
+
+        context.set_flags(flags)
+        return IEEEfloat(self, value.sign, 0, payload)
+
     def convert(self, value, context):
-        '''Return the value converted to this format and rounding if necessary.'''
+        '''Return the value converted to this format and rounding if necessary.
+
+        If value is a signalling NaN it is converted to a quiet NaN and invalid operation
+        is flagged.
+        '''
         if value.e_biased:
+            # Avoid expensive normalisation to same format; copy and check for subnormals
+            if value.fmt is self:
+                if value.is_subnormal():
+                    context.set_flags(Flags.SUBNORMAL)
+                return value.copy()
+
             if value.significand:
                 return self.make_real(value.sign, value.exponent(), value.significand, context)
 
@@ -729,7 +830,7 @@ class BinaryFormat:
 
             if exponent >= 0:
                 scaled_value, inexact_scaling = calc_fmt._multiply_finite(sig_value, pow5_value)
-                pow_HU_err = pow5_status != Flags.OK
+                pow_HU_err = pow5_status != 0
             else:
                 scaled_value, div_status = calc_fmt._divide_finite(sig_value, pow5_value, context)
                 inexact_scaling = bool(div_status & Flags.INEXACT)
@@ -738,7 +839,7 @@ class BinaryFormat:
                     excess_precision += calc_fmt.precision - scaled_value.significand.bit_length()
                     excess_precision = min(excess_precision, calc_fmt.precision)
                 # An extra half-ulp is lost in reciprocal of pow5
-                if pow5_status == Flags.OK and not inexact_scaling:
+                if pow5_status == 0 and not inexact_scaling:
                     pow_HU_err = 0
                 else:
                     pow_HU_err = 2
@@ -749,7 +850,7 @@ class BinaryFormat:
             #
             # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
             # Clinger.
-            sig_HU_err = sig_status != Flags.OK
+            sig_HU_err = sig_status != 0
             if sig_HU_err + pow_HU_err == 0:
                 HU_err = inexact_scaling * 2     # <= inexactMultiply half-ulps
             else:
@@ -771,6 +872,25 @@ class BinaryFormat:
     ## General computational operations.  The operands can be different formats;
     ## the destination format is self.
     ##
+
+    def to_hex(self, value, text_format, context):
+        '''Return text, with a hexadecimal significand for finite numbers, that is a
+        representation of the floating point value converted to this format.  See the
+        docstring of OutputSpec for output control.
+
+        After rounding, normal numbers have a hex integer digit of 1, subnormal numbers 0.
+        Zeroes are output with an exponent of 0.
+
+        All flags / traps are raised as appropriate.
+        '''
+        # convert() converts NaNs to quiet; avoid that if we preserve them
+        if value.is_NaN():
+            value = self.convert_NaN(value, text_format.sNaN == '',
+                                     text_format.nan_payload == 'N', context)
+        else:
+            value = self.convert(value, context)
+
+        return text_format.to_hex(value)
 
     def from_int(self, x, context):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
@@ -925,35 +1045,6 @@ x87double = BinaryFormat.from_exponent_width(53, 15)
 x87single = BinaryFormat.from_exponent_width(24, 15)
 
 
-@attr.s(slots=True)
-class HexFormat:
-    '''Controls the output of to_hex_format_string().'''
-    # Target precision in bits.  Finite non-zero numbers always have a 1 integer digit.
-    # So to display 7 hex digits after the decimal point, set this to 1 + 7*4 = 29.  Zero
-    # means display the number without loss of precision in the minimal number of digits.
-    # The exponent range is unconstrained.
-    precision = attr.ib()
-    # If True precede a numbers with the sign bit clear with a '+'.
-    force_sign = attr.ib(default=False)
-    # If True, the exponent is preceded by '+' if non-negative.
-    force_exp_sign = attr.ib(default=False)
-    # The number of hex-digits h in [-]0xh.hhhhp[+-]d.  If zero the minimal precision to
-    # display the number precisely is used instead.  If nothing would appear after the
-    # decimal point it is suppressed.  If the number cannot be represented exactly in the
-    # given number of digits then INEXACT is flagged.
-    hex_digit_count = attr.ib(default=0)
-    # The string output for infinity
-    inf = attr.ib(default='Inf')
-    # The string output for quiet NaNs
-    qNaN = attr.ib(default='NaN')
-    # The string output for signalling NaNs
-    sNaN = attr.ib(default='sNaN')
-    # If N, NaN payloads are omitted.  If X, they are output in hexadecimal.  If 'D' in
-    # decimal.  Examples of all 3 formats are: nan, nan255 and nan0xff for a quiet NaN
-    # with payload 255, respectively.
-    nan_payload = attr.ib(default='X')
-
-
 class IEEEfloat:
     def __init__(self, fmt, sign, biased_exponent, significand):
         '''Create a floating point number with the given format, sign, biased exponent and
@@ -1086,12 +1177,11 @@ class IEEEfloat:
 
         return self.e_biased - self.fmt.e_bias - (self.fmt.precision - 1)
 
-    def msb_exponent(self):
-        '''Return the arithmetic exponent with our MSB acting as integer bit.'''
+    def exponent_int_bit(self):
+        '''Return the arithmetic exponent of our significand interpreted with an integer bit.'''
         assert self.is_finite()
 
-        high_zeroes = self.fmt.precision - self.significand.bit_length()
-        return self.e_biased - self.fmt.e_bias - high_zeroes
+        return self.e_biased - self.fmt.e_bias
 
     def total_order(self, rhs):
         raise NotImplementedError
@@ -1176,86 +1266,17 @@ class IEEEfloat:
     ## General computational operations
     ##
 
-    def to_hex_format_string(self, hex_format, context):
-        '''Return a hex_string that is a hexadecimal representation of the floating point value.
-        See the docstring of HexFormat for output control.
+    def to_hex(self, text_format, context):
+        '''Return text that is a representation of the floating point value.  See the docstring of
+        OutputSpec for output control.
 
-        There is ambiguity about what the leading hexadecimal digit should be.  This
-        implementation uses 1 for all finite non-zero numbers.
+        Normal numbers have a hex integer digit of 1, subnormal numbers 0.  Zeroes are
+        output with an exponent of 0.
 
-        Zeroes are output with an exponent of 0.
-
-        This operation only flags INEXACT. Since the exponent range of the hexadecimal
-        output format is unconstrained, overflow and underflow do not happen.
+        Only conversion of signalling NaNs to quiet NaNs can set flags (INVALID and
+        possibly INEXACT).
         '''
-        if not isinstance(hex_format, HexFormat):
-            raise TypeError('expected a HexSigSpec object')
-
-        sign = '-' if self.sign else '+' if hex_format.force_sign else ''
-
-        if self.e_biased == 0:
-            # Infinites and NaNs.
-            if self.significand == 0:
-                rest = hex_format.inf
-            else:
-                # Quiet and signalling NaNs
-                if hex_format.nan_payload == 'N':
-                    payload = ''
-                elif hex_format.nan_payload == 'D':
-                    payload = str(self.NaN_payload())
-                else:
-                    payload = hex(self.NaN_payload())
-                if self.is_signalling():
-                    rest = hex_format.sNaN + payload
-                else:
-                    rest = hex_format.qNaN + payload
-        else:
-            hex_sig, exponent = self._hex_significand(hex_format, context)
-            exp_sign = '+' if exponent >= 0 and hex_format.force_exp_sign else ''
-            rest = f'0x{hex_sig}p{exp_sign}{exponent}'
-
-        return sign + rest
-
-    def _hex_significand(self, hex_format, context):
-        # Significant bits
-        significand = self.significand
-        exponent = self.msb_exponent()
-
-        # Shift right to lose precision if necessary
-        if hex_format.precision:
-            rshift = significand.bit_length() - hex_format.precision
-            significand, lost_fraction = shift_right(significand, rshift)
-            if lost_fraction != LostFraction.EXACTLY_ZERO:
-                context.set_flags(Flags.INEXACT)
-                if context.round_up(lost_fraction, self.sign, bool(significand & 1)):
-                    significand += 1
-                    # If rounding caused the significand to gain a bit in length, shift it
-                    # back and increment the exponent
-                    if significand & (significand - 1) == 0:
-                        significand >>= 1
-                        exponent += 1
-
-        if significand == 0:
-            exponent = 0
-        else:
-            # Now shift left up to 3 bits so that the significand's MSB is the least
-            # significant bit of a nibble where it forms the integer digit
-            significand <<= (significand.bit_length() & 3) ^ 1
-
-        hex_str = f'{significand:x}'
-        precision = len(hex_str) * 4 - 3
-
-        # Add trailing zeros to achieve the target precision
-        if hex_format.precision:
-            hex_str += '0' * ((hex_format.precision - precision + 3) // 4)
-        elif precision > 1:
-            hex_str = hex_str.rstrip('0')
-
-        # Place the decimal point only if there are trailing digits
-        if len(hex_str) > 1:
-            hex_str = hex_str[0] + '.' + hex_str[1:]
-
-        return hex_str, exponent
+        return self.fmt.to_hex(self, text_format, context)
 
     def to_quiet(self, context):
         '''Return a copy except that a signalling NaN becomes its quiet twin (in which case

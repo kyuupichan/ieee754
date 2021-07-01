@@ -70,18 +70,30 @@ status_codes = {
     'XI': Flags.INVALID | Flags.INEXACT,
 }
 
+sNaN_codes = {
+    'Y': 'sNaN',
+    'N': '',
+}
+
 sign_codes = {
     '+': False,
     '-': True,
 }
 
+nan_payload_codes = {
+    'N': 'N',
+    'X': 'X',
+    'D': 'D',
+}
 
-def to_hex_format(hex_format):
-    return HexFormat(
-        force_sign=boolean_codes[hex_format[0]],
-        force_exp_sign=boolean_codes[hex_format[1]],
-        nan_payload=hex_format[2],
-        precision=int(hex_format[3:]),
+
+def to_text_format(hex_format):
+    return TextFormat(
+        plus=boolean_codes[hex_format[0]],
+        exp_plus=boolean_codes[hex_format[1]],
+        rstrip_zeroes=boolean_codes[hex_format[2]],
+        sNaN = sNaN_codes[hex_format[3]],
+        nan_payload=nan_payload_codes[hex_format[4]],
     )
 
 
@@ -591,21 +603,22 @@ class TestUnaryOps:
         assert result.to_parts() == answer.to_parts()
         assert context.flags == status
 
-    @pytest.mark.parametrize('line', read_lines('to_hex_format.txt'))
-    def test_to_hex_format(self, line):
+    @pytest.mark.parametrize('line', read_lines('to_hex.txt'))
+    def test_to_hex(self, line):
         parts = line.split()
-        if len(parts) != 6:
+        if len(parts) != 7:
             assert False, f'bad line: {line}'
-        hex_format, context, dst_fmt, in_str, status, answer = parts
-        hex_format = to_hex_format(hex_format)
+        text_format, context, src_fmt, in_str, dst_fmt, status, answer = parts
+        text_format = to_text_format(text_format)
         context = context_string_to_context(context)
-        dst_fmt = format_codes[dst_fmt]
+        src_fmt = format_codes[src_fmt]
         input_context = std_context()
-        in_value = dst_fmt.from_string(in_str, input_context)
+        in_value = src_fmt.from_string(in_str, input_context)
         assert input_context.flags & ~Flags.SUBNORMAL == 0
+        dst_fmt = format_codes[dst_fmt]
         status = status_codes[status]
 
-        result = in_value.to_hex_format_string(hex_format, context)
+        result = dst_fmt.to_hex(in_value, text_format, context)
         assert result == answer
         assert context.flags == status
 

@@ -1,0 +1,153 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+#
+# TextFormat: Plus ExpPlus RStripZeroes PreserveSignalling NaNPayload
+# Plus: Y or N
+# ExpPlus: Y or N
+# RStripZeroes: Y or N
+# PreserveSignalling: Y or N
+# NanPayload: F X or D.  None, Hex or Decimal.
+
+# Test format: TextFormat Context FloatFormat String DstFormat Status String
+
+
+###############
+#
+# Quiet NaNs
+#
+###############
+
+NNNNN E S Nan H K NaN
+YNNYX D H Nan0 H K +NaN0x0
+NYNND E Q Nan0x0 S K NaN0
+
+NNYYN E S Nan0x123456 S I NaN
+NNYNX u D -Nan0x123456 S K -NaN0x123456
+YNYND E Q Nan0x123456 S K +NaN1193046
+
+NNYYN E S Nan0x123456 S I NaN
+NNYYX u D -Nan0x123450 S K -NaN0x123450
+YNYYD E Q Nan0x123456 S K +NaN1193046
+
+# Narrowing
+
+NNYYN E D Nan0x1234567 S I NaN
+NNYYX u D -Nan0x1234f67890 S I -NaN0x367890
+YNYYD E Q Nan0x123456 S K +NaN1193046
+
+###############
+#
+# Signalling NaNs
+#
+###############
+
+NNNNN E S SNan H XI NaN
+YNNNX D H SNan H X +NaN0x1
+NYNND E Q SNan0xf S X NaN15
+
+NNNYN E S SNan H K sNaN
+YNNYX D H SNan2 H K +sNaN0x2
+NYNYD E Q SNan0xf S K sNaN15
+
+NNYYN E S SNan0x123456 S I sNaN
+NNYYX u D -SNan0x123450 S K -sNaN0x123450
+YNYND E Q SNan0x123456 S X +NaN1193046
+
+# Narrowing
+
+NNYYN E D sNan0x1234567 S I sNaN
+NNYYX u D -sNan0x1234f67890 S I -sNaN0x367890
+NNYYD E Q SNan123456789012 S I sNaN1645076
+
+###############
+#
+# Infinities
+#
+###############
+
+NNNYN E S Inf H K Inf
+NYNYN E D -Inf H K -Inf
+YNNYN E Q Inf S K +Inf
+YYNYN E H -Inf Q K -Inf
+
+###############
+#
+# Zeroes
+#
+###############
+
+NNYYN E S 0 S K 0x0p0
+NYYYN E S -0 D K -0x0p+0
+YNYYN E S 0 Q K +0x0p0
+YYYYN E S -0 H K -0x0p+0
+
+NNNYN E S 0 S K 0x0.000000p0
+NYNYN E D -0 S K -0x0.000000p+0
+YNNYN E H 0 S K +0x0.000000p0
+YYNYN E Q -0 S K -0x0.000000p+0
+
+NNNYN E H 0 D K 0x0.0000000000000p0
+
+###############
+#
+# Normals
+#
+###############
+
+NYNNN E S 0x1.6789ap2 S K 0x1.6789a0p+2
+NYYNN E S 0x1.6789ap2 S K 0x1.6789ap+2
+NNNNN E Q 0xa.cdef6p23 S K 0x1.59bdecp26
+NYNNN E D 0xab.cd0faba782f8p0 D K 0x1.579a1f574f05fp+7
+
+###############
+#
+# Normals - extra digits
+#
+###############
+
+NYNNN D S 0xa.cdef6p23 D K 0x1.59bdec0000000p+26
+NNNNN C D -0xab.cd0faba782f8p0 D K -0x1.579a1f574f05fp7
+
+###############
+#
+# Normals - truncated
+#
+###############
+
+NNNNN E S 0x1.6789ap2 H I 0x1.678p2
+NNNNN C S 0x1.6789ap2 H I 0x1.67cp2
+NNNNN E S 0x1.67d9ap2 H I 0x1.67cp2
+NNNNN C S 0x1.67d9ap2 H I 0x1.680p2
+NNYNN C S 0x1.67d9ap2 H I 0x1.68p2
+
+
+NNNNN E S 0x1.fffffcp7 H I 0x1.000p8
+
+NNNNN E S 0x1.ap-126 S K 0x1.a00000p-126
+
+###############
+#
+# Subnormals
+#
+###############
+
+NNNNN E S 0x1.ap-127 S S 0x0.d00000p-126
+NNYNN E S 0x1.ap-127 S S 0x0.dp-126
+NNNYN D D 0x1.ap-146 S S 0x0.00001ap-126
+NNNNN u Q 0x1.cp-147 S S 0x0.00000ep-126
+NNNNN C S 0x1.8p-148 S S 0x0.000006p-126
+NNNNN F D 0x1.0p-149 S S 0x0.000002p-126
+NNNNN F D 0x0.000002p-126 S S 0x0.000002p-126
+NNNNN E Q 0x1.23456p-1045 D S 0x0.000002468ac00p-1022
+
+###############
+#
+# Subnormals - truncated
+#
+###############
+
+NNNNN E D 0x1.81p-148 S U 0x0.000006p-126
