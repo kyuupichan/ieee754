@@ -690,31 +690,32 @@ class TestUnaryOps:
             assert context.flags == Flags.INVALID
 
     @pytest.mark.parametrize('line', read_lines('next_up.txt'))
-    def test_next_up(self, line):
-        next_operation(line, 'next_up')
+    def test_next(self, line):
+        # Tests next_up and next_down
+        parts = line.split()
+        if len(parts) != 4:
+            assert False, f'bad line: {line}'
+        context = std_context()
+        fmt, in_str, status, answer = parts
+        fmt = format_codes[fmt]
+        in_value = fmt.from_string(in_str, context)
+        assert context.flags & ~Flags.SUBNORMAL == 0
+        answer = fmt.from_string(answer, context)
+        assert context.flags & ~Flags.SUBNORMAL == 0
+        context.clear_flags()
+        status = status_codes[status]
 
-    @pytest.mark.parametrize('line', read_lines('next_down.txt'))
-    def test_next_down(self, line):
-        next_operation(line, 'next_down')
+        result = in_value.next_up(context)
+        assert result.as_tuple() == answer.as_tuple()
+        assert context.flags == status
 
-def next_operation(line, operation):
-    parts = line.split()
-    if len(parts) != 4:
-        assert False, f'bad line: {line}'
-    context = std_context()
-    fmt, in_str, status, answer = parts
-    fmt = format_codes[fmt]
-    in_value = fmt.from_string(in_str, context)
-    assert context.flags & ~Flags.SUBNORMAL == 0
-    answer = fmt.from_string(answer, context)
-    assert context.flags & ~Flags.SUBNORMAL == 0
-    context.clear_flags()
-    status = status_codes[status]
-
-    operation = getattr(in_value, operation)
-    result = operation(context)
-    assert result.as_tuple() == answer.as_tuple()
-    assert context.flags == status
+        # Now for next_down
+        context.clear_flags()
+        in_value = in_value.copy_negate()
+        answer = answer.copy_negate()
+        result = in_value.next_down(context)
+        assert result.as_tuple() == answer.as_tuple()
+        assert context.flags == status
 
 
 def binary_operation(line, operation):
