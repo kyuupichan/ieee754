@@ -7,11 +7,14 @@
 # Sign: + or -
 
 # Test format: FloatFormat Context String Status Sign Exponent Significand
-#              String Error
+#              FloatFormat Context String Status HexFloat
+#              String (for errors)
 
-#
-# Syntax errors
-#
+############
+##
+## Syntax errrors
+##
+############
 
 1p0          # Missing hex prefix
 0xp0         # No significand
@@ -35,11 +38,13 @@ sna          # Bad form
 1e-          # No exponent digits
 1e           # No exponent digits
 
-#
-# Zeroes
-#
+############
+##
+## Zeroes
+##
+############
 
-  # Hexadecimal
+# Hexadecimal
 
 S E 0x0p0 K + 0 0
 Q E 0x0p+0 K + 0 0
@@ -53,7 +58,7 @@ S E -0x0.p-0 K - 0 0
 H E -0x000000000000000000000000000000000.000000000000000000000000000p1000000 K - 0 0
 S E -0x.0p-100000000000 K - 0 0
 
-  # Decimal
+# Decimal
 
 S E 0 K + 0 0
 S E -0 K - 0 0
@@ -61,10 +66,11 @@ S E -0.0000 K - 0 0
 S E .00000e000 K + 0 0
 S E 0e000 K + 0 0
 
-
-#
-# Infinities
-#
+############
+##
+## Infinities
+##
+############
 
 S E inf K + I 0
 D C InF K + I 0
@@ -73,9 +79,11 @@ Q D InfIniTy K + I 0
 S u -inf K - I 0
 S E -iNFinitY K - I 0
 
-#
-# Quiet NaNs
-#
+############
+##
+## Quiet NaNs
+##
+############
 
 S u nan K + Q 0
 S E -nAN K - Q 0
@@ -96,9 +104,11 @@ D F -NAN0xf23456789abcd I - Q 0x723456789abcd
 Q E nan0x7234567890123456789012345678 K + Q 0x7234567890123456789012345678
 Q E nan0xb234567890123456789012345678 I + Q 0x3234567890123456789012345678
 
-#
-# Signalling NaNs
-#
+############
+##
+## Signalling NaNs
+##
+############
 
 S E snan K + S 1
 S E -SnAN K - S 1
@@ -110,9 +120,11 @@ S E -SNAN0x2bcdef K - S 0x2bcdef
    # 23 payload bits loses top bit
 S E snAN0x5bcdef I + S 0x1bcdef
 
-#
-# Normals no rounding
-#
+############
+##
+## Normals
+##
+############
 
   # Hexadecimal
 
@@ -132,14 +144,113 @@ D E 0x1.0000000000001p-1022 K + -1074 4503599627370497
    # All bits set, minimal exponent
 D E 0x1.fffffffffffffp-1022 K + -1074 9007199254740991
 
-  # Decimal
+# Decimal
 
 D E 1 K + -52 4503599627370496
 D E -1. K - -52 4503599627370496
+D E 1.5 K + -52 6755399441055744
+D E -1.25 K - -52 5629499534213120
 
-#
-# Subnormals no rounding
-#
+D E 123456789123.0000152587890624 I 0x1.cbe991a830001p+36
+D E 123456789123.0000152587890625 K 0x1.cbe991a830001p+36
+D E 123456789123.0000152587890626 I 0x1.cbe991a830001p+36
+
+D C 123456789123.0000152587890626 I 0x1.cbe991a830002p+36
+D C 123456789123.0000152587890625 K 0x1.cbe991a830001p+36
+D C 123456789123.0000152587890624 I 0x1.cbe991a830001p+36
+
+D F 123456789123.0000152587890626 I 0x1.cbe991a830001p+36
+D F 123456789123.0000152587890625 K 0x1.cbe991a830001p+36
+D F 123456789123.0000152587890624 I 0x1.cbe991a830000p+36
+
+D E 123456789123.00002288818359375 I 0x1.cbe991a830002p+36
+D C 123456789123.00002288818359375 I 0x1.cbe991a830002p+36
+D D 123456789123.00002288818359375 I 0x1.cbe991a830001p+36
+D F 123456789123.00002288818359375 I 0x1.cbe991a830001p+36
+
+# Some random values gleaned from Python
+
+D E 0.5155665323234128 I 0x1.07f856267b7c9p-1
+D E 1.3616430811781645e+135 I 0x1.df95a5a2498b6p+448
+D E -2.9128401462966125e+168 I -0x1.8b2cb3af230fep+559
+
+# Values around the maximum of IEEEhalf
+
+H d 65521 VI Inf          # Rounds up to infinity
+H E 65520 VI Inf          # Rounds up to infinity
+H E 0.6552e5 VI Inf
+H d 65520 I 0x1.ffcp15    # Rounds down to maximum
+H E 65519 I 0x1.ffcp15    # Rounds down to maximum
+H E 0.65519e5 I 0x1.ffcp15
+H E 65504 K 0x1.ffcp15
+H E 65489 I 0x1.ffcp15
+H E 65488 I 0x1.ff8p15
+H u 65488 I 0x1.ffcp15
+H d 65488 I 0x1.ff8p15
+H E 65487 I 0x1.ff8p15
+H E 65472 K 0x1.ff8p15
+
+# Values around the maximum of IEEEsingle
+
+S E 340282346638528859811704183484516925440 K 0x1.fffffep+127
+S E 3.4028234663852886e+38 I 0x1.fffffep+127
+S E 1.2e32 I 0x1.7aa73ap+106
+S E 9.87654321e12 I 0x1.1f71fcp+43
+S E 4483519178866687 I 0x1.fdb794p+51
+S E 7.006492321624085354618e-100 U 0
+S E 7.7071415537864938900805e-45 U 0x1.4p-147
+S E 7.7071415537864938900806e-45 U 0x1.8p-147
+
+# This number lies on a half-boundary
+
+S E 308105110354283262570921984 I 0x1.fdb798p+87
+S E 308105110354283262570921983 I 0x1.fdb796p+87
+S D 308105110354283262570921984 I 0x1.fdb796p+87
+S C 308105110354283262570921983 I 0x1.fdb798p+87
+
+# This is FLT_MAX, first most closely, then widest, then overflowing
+
+S E 3.40282347E+38 I 0x1.fffffep+127
+S E 3.40282356E+38 I 0x1.fffffep+127
+S E 3.40282357E+38 VI Inf
+
+S E 1.401298464324817e-45 U 0x1p-149
+
+# Test handling of dots beyond the precision
+D E 0x800000000000000001p-221 I 0x1p-150
+D E 0x800000000000000001.0p-221 I 0x1p-150
+D E 0x800000000000000001.p-221 I 0x1p-150
+D E 0x80000000000004000000.010p-28 I 0x1.0000000000001p+51
+
+# Test exponent overflow for both hex and decimal forms
+S E 1.0e39 VI Inf
+S F 1.0e39 VI 0x1.fffffep+127
+S E 1.0e51085 VI Inf
+S F 1.0e51085 VI 0x1.fffffep+127
+S E 0x1p-18446744073709551615 U 0
+S E 0x1p18446744073709551615 VI Inf
+S E 1e-46 U 0     # Doesn't trigger the optimisation
+S E 1e-47 U 0     # Does trigger the optimisation
+S E 9.2e-18446744073709551615 U 0
+S E 1.0e99999 VI Inf
+S D -1.0e99999 VI -0x1.fffffep+127
+S E 1.0e99999999999999999999999999 VI Inf
+S D 1.0e99999999999999999999999999 VI 0x1.fffffep+127
+S E -1.0e51085 VI -Inf
+S D -1.0e51085 VI -0x1.fffffep+127
+
+# Maximum of IEEEdouble
+
+D E 179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368 K 0x1.fffffffffffffp+1023
+D E -1.7976931348623157e+308 I -0x1.fffffffffffffp+1023
+D E -1.8e+308 VI -Inf
+D D -1.8e+308 VI -0x1.fffffffffffffp+1023
+
+############
+##
+## Subnormals
+##
+############
 
 S C 0x1p-127 S + -149 4194304
 S u 0x1p-128 S + -149 2097152

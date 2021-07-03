@@ -528,19 +528,30 @@ class TestUnaryOps:
             hex_str, = parts
             with pytest.raises(SyntaxError):
                 IEEEsingle.from_string(hex_str, std_context())
-        elif len(parts) == 7:
-            fmt, context, hex_str, status, sign, exponent, significand = parts
+        elif len(parts) in (5, 7):
+            fmt, context, test_str, status = parts[:4]
             fmt = format_codes[fmt]
             context = context_string_to_context(context)
+            result = fmt.from_string(test_str, context)
             status = status_codes[status]
-            sign = sign_codes[sign]
-            try:
-                exponent = int(exponent)
-            except ValueError:
-                pass
-            significand = read_significand(significand)
-            value = fmt.from_string(hex_str, context)
-            assert value.as_tuple() == (sign, exponent, significand)
+
+            if len(parts) == 5:
+                answer = parts[-1]
+                input_context = std_context()
+                answer = fmt.from_string(answer, input_context)
+                assert input_context.flags & ~Flags.SUBNORMAL == 0
+                answer_tuple = answer.as_tuple()
+            else:
+                sign, exponent, significand = parts[-3:]
+                sign = sign_codes[sign]
+                try:
+                    exponent = int(exponent)
+                except ValueError:
+                    pass
+                significand = read_significand(significand)
+                answer_tuple = (sign, exponent, significand)
+
+            assert result.as_tuple() == answer_tuple
             assert context.flags == status
         else:
             assert False, f'bad line: {line}'

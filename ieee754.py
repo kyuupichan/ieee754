@@ -4,6 +4,7 @@
 # (c) Neil Booth 2007-2021.  All rights reserved.
 #
 
+import math
 import re
 from collections import namedtuple
 from enum import IntFlag, IntEnum
@@ -164,6 +165,8 @@ def lost_bits_from_rshift(significand, bits):
     '''
     if bits <= 0:
         return LostFraction.EXACTLY_ZERO
+    # Prevent over-large shifts consuming memory
+    bits = min(bits, significand.bit_length() + 2)
     bit_mask = 1 << (bits - 1)
     first_bit = bool(significand & bit_mask)
     second_bit = bool(significand & (bit_mask - 1))
@@ -769,19 +772,21 @@ class BinaryFormat:
             # groups[2], groups[3].  If no fraction was specified the integer is in
             # groups[4].
             assert groups[2] is not None or groups[4]
-            if groups[2] is None:
-                significand = int(groups[4])
-            else:
-                fraction = groups[3].rstrip('0')
-                significand = int((groups[2] + fraction) or '0', 10)
-                exponent -= len(fraction)
 
-            if exponent == 0:
-                return self.make_real(sign, 0, significand, context)
-            raise NotImplementedError
+            # Get the integer and fraction strings
+            if groups[2] is None:
+                int_str, frac_str = groups[4], ''
+            else:
+                int_str, frac_str = groups[2], groups[3]
+
+            # Combine them into sig_str removing all insignificant zeroes.  Viewing that
+            # as an integer, calculate the exponent adjustment to the true decimal point.
+            int_str = int_str.lstrip('0')
+            sig_str = (int_str + frac_str).rstrip('0') or '0'
+            exponent += len(int_str) - len(sig_str)
 
             # Now the value is significand * 10^exponent.
-            return self._decimal_to_binary(sign, exponent, significand, context)
+            return self._decimal_to_binary(sign, exponent, sig_str, context)
 
         # groups[7] matches infinities
         if groups[7] is not None:
@@ -800,74 +805,143 @@ class BinaryFormat:
             payload = 1 - is_quiet
         return self.make_NaN(sign, is_quiet, payload, context, False)
 
-    def _decimal_to_binary(self, sign, exponent, significand, context):
+    def _decimal_to_binary(self, sign, exponent, sig_str, context):
         '''Return a correctly-rounded binary value of
 
-             (-1)^sign * significand * 10^exponent
+             (-1)^sign * int(sig_str) * 10^exponent
         '''
-        pow5 = pow(5, abs(exponent))
-        calc_context = Context(ROUND_HALF_EVEN)
-        round_to_nearest = context.round_to_nearest()
+        # We have done a calculation in whose lowest bits will be rounded.  We want to
+        # know how far away the value of theese rounded bits is, in ULPs, from the
+        # rounding boundary - the boundary is where the rounding changes the value, so
+        # that we can determine if it is safe to round now.  Directed rounding never
+        # changes so the boundary has all zeroes with the next MSB 0 or 1.
+        # Round-to-nearest has a boundary of a half - i.e. 1 followed by bits-1 zeroes.
+        def ulps_from_boundary(significand, bits, context):
+            assert bits > 0
+            boundary = 1 << bits
+            rounded_bits = significand & (boundary - 1)
+            if context.round_to_nearest():
+                boundary >>= 1
+                return abs(boundary - rounded_bits)
+            else:
+                return min(rounded_bits, boundary - rounded_bits)
 
-        def ulps_from_boundary(a, b, c):
-            raise NotImplementedError
+        # Test for obviously over-large exponents
+        frac_exp = exponent + len(sig_str)
+        if frac_exp - 1 >= (self.e_max + 1) / math.log2(10):
+            return context.overflow_value(self, sign)
 
-        # The loops are expensive; optimistically start with a low precision and
-        # iteratively increase it until we can guarantee the result was correctly rounded.
+        # Test for obviously over-small exponents
+        if frac_exp < (self.e_min - self.precision) / math.log2(10):
+            context.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
+            return self.make_zero(sign)
+
         # Start with a precision a multiple of 64 bits with some room over the format
-        # precision.
+        # precision, and always an exponent range 1 bit larger - we eliminate obviously
+        # out-of-range exponents above.  Our intermediate calculations must not overflow
+        # nor use subnormal numbers.
         parts_count = (self.precision + 10) // 64 + 1
+        e_width = (max(self.e_max, abs(self.e_min)) * 2 + 2).bit_length() + 1
 
         while True:
-            # FIXME: out of date constructor
-            calc_fmt = BinaryFormat.from_exponent_width(parts_count * 64, 16)
-            excess_precision = calc_fmt.precision - self.precision
+            # The loops are expensive; optimistically the above starts with a low
+            # precision and iteratively increases it until we can guarantee the answer is
+            # correctly rounded.  Perform this loop in this format.
+            calc_fmt = BinaryFormat.from_exponent_width(parts_count * 64, e_width)
+            bits_to_round = calc_fmt.precision - self.precision
 
-            sig_status, sig_value = calc_fmt.make_real(sign, 0, significand, calc_context)
-            pow5_status, pow5_value = calc_fmt.make_real(False, 0, pow5, calc_context)
+            # With this many digits, an increment of one is strictly less than one ULP in
+            # the binary format.
+            digit_count = min(math.floor(calc_fmt.precision / math.log2(10)) + 2, len(sig_str))
 
-            # Because 10^n = 5^n * 2^n.   FIXME: check for out-of-range exponents.
-            sig_value.e_biased += exponent
+            # We want to calculate significand * 10^sig_exponent.  sig_exponent may differ
+            # from exponent because not all sig_str digits are used.
+            significand = int(sig_str[:digit_count])
+            sig_exponent = exponent + (len(sig_str) - digit_count)
 
-            if exponent >= 0:
-                scaled_value, inexact_scaling = calc_fmt._multiply_finite(sig_value, pow5_value)
-                pow_HU_err = pow5_status != 0
+            # All err variables are upper bounds and in half-ULPs
+            if digit_count < len(sig_str):
+                # The error is strictly less than a half-ULP if we round based on the next digit
+                if int(sig_str[digit_count]) >= 5:
+                    significand += 1
+                sig_err = 1
             else:
-                scaled_value, div_status = calc_fmt._divide_finite(sig_value, pow5_value, context)
-                inexact_scaling = bool(div_status & Flags.INEXACT)
-                # Subnormals have less precision
-                if scaled_value.e_biased == 0:
-                    excess_precision += calc_fmt.precision - scaled_value.significand.bit_length()
-                    excess_precision = min(excess_precision, calc_fmt.precision)
-                # An extra half-ulp is lost in reciprocal of pow5
-                if pow5_status == 0 and not inexact_scaling:
-                    pow_HU_err = 0
-                else:
-                    pow_HU_err = 2
+                sig_err = 0
+
+            calc_context = Context(ROUND_HALF_EVEN)
+            sig = calc_fmt.make_real(sign, 0, significand, calc_context)
+            if calc_context.flags & Flags.INEXACT:
+                sig_err += 1
+            calc_context.flags & ~Flags.INEXACT
+
+            pow5_int = pow(5, abs(sig_exponent))
+            pow5 = calc_fmt.make_real(False, 0, pow5_int, calc_context)
+            pow5_err = 1 if calc_context.flags & Flags.INEXACT else 0
+            calc_context.flags & ~Flags.INEXACT
+
+            # Call scaleb() since we scaled by 5^n and actually want 10^n
+            if sig_exponent >= 0:
+                scaled_sig = calc_fmt._multiply_finite(sig, pow5, calc_context)
+                scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
+                scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
+            else:
+                scaled_sig = calc_fmt._divide_finite(sig, pow5, calc_context)
+                scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
+                scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
+                # If the exponent is below our e_min, the number is subnormal, and so
+                # during convert() more bits are rounded
+                bits_to_round += max(0, self.e_min - scaled_sig.exponent())
+                # An extra half-ulp is lost in reciprocal of pow5.  FIXME: verify
+                if pow5_err or scaling_err:
+                    pow5_err = 2
+
+            assert calc_context.flags & (Flags.SUBNORMAL | Flags.OVERFLOW) == 0
 
             # The error from the true value, in half-ulps, on multiplying two floating
             # point numbers, which differ from the value they approximate by at most HUE1
-            # and HUE2 half-ulps, is strictly less than the returned value.
+            # and HUE2 half-ulps, is strictly less than err (when non-zero).
             #
             # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
             # Clinger.
-            sig_HU_err = sig_status != 0
-            if sig_HU_err + pow_HU_err == 0:
-                HU_err = inexact_scaling * 2     # <= inexactMultiply half-ulps
+            if sig_err + pow5_err == 0:
+                # If there is a scaling error it is at most 1 half-ULP, which is < 2
+                err = scaling_err * 2
             else:
-                HU_err = inexact_scaling + 2 * (sig_HU_err + pow_HU_err)
+                # Note that 0 <= sig_err <= 2, 0 <= pow5_err <= 2, and 0 <= scaling_err <=
+                # 1.  If sig_err is 2 it is actually strictly less than 2.  Hance per the
+                # lemma the error is strictly less than this.
+                err = scaling_err + 2 * (sig_err + pow5_err)
 
-            HU_distance = 2 * ulps_from_boundary(sig_value, excess_precision, round_to_nearest)
+            rounding_distance = 2 * ulps_from_boundary(scaled_sig.significand, bits_to_round,
+                                                       context)
 
-            # If we truncate now are we guaranteed to round correctly?
-            if HU_distance >= HU_err:
-                return self.convert(scaled_value, context)
+            # If we round now are we guaranteed to round correctly?
+            if err <= rounding_distance:
+                convert_context = context.copy()
+                result = self.convert(scaled_sig, convert_context)
+
+                # Now work out distance of the result from our estimate; if it's too
+                # close we need to try harder to determine if the result is exact
+                exact_distance = abs((result.significand << bits_to_round)
+                                     - scaled_sig.significand)
+
+                # Guaranteed inexact?
+                if err < exact_distance:
+                    convert_context.flags |= Flags.INEXACT
+                    break
+
+                # Guaranteed exact?
+                if err == 0:
+                    convert_context.flags &= ~Flags.INEXACT
+                    break
+
+                # We can't be sure as to exactness - loop again with more precision
 
             # Increase precision and try again
-            parts_count += parts_count // 2 + 1
+            parts_count *= 2
 
-    def _multiply_finite(self, lhs, rhs):
-        raise NotImplementedError
+        context.set_flags(convert_context.flags)
+        return result
 
     ##
     ## General computational operations.  The operands can be different formats;
@@ -912,8 +986,10 @@ class BinaryFormat:
             return self._multiply_special(lhs, rhs, context)
         if rhs.e_biased == 0:
             return self._multiply_special(rhs, lhs, context)
+        return self._multiply_finite(lhs, rhs, context)
 
-        # Both numbers are finite.
+    def _multiply_finite(self, lhs, rhs, context):
+        '''Returns the product of two finite floating point numbers in this format.'''
         sign = lhs.sign ^ rhs.sign
         exponent = lhs.exponent_int() + rhs.exponent_int()
         return self.make_real(sign, exponent, lhs.significand * rhs.significand, context)
@@ -1293,7 +1369,6 @@ class Binary:
         '''
         result = self._logb()
         if isinstance(result, int):
-            print(result)
             return self.fmt.make_real(result < 0, 0, abs(result), context)
 
         if result == 'NaN':
