@@ -15,33 +15,33 @@
 #
 ###############
 
-# Nan * non-NaN - return the LHS with appropriate sign
+# Nan * non-NaN - return the LHS
 E D NaN1 Q 0 Q K NaN1
-E D NaN1 H -1 Q K -NaN1
+E D NaN1 H -1 Q K NaN1
 E D NaN1 S Inf Q K NaN1
 
-# non-NaN * NaN - return the RHS with appropriate sign
-u Q -1 H NaN2 S K -NaN2
-F D -0 D -NaN2 D K NaN2
-C D -inf D -NaN0xbeef D K NaN0xbeef
+# non-NaN * NaN - return the RHS
+u Q -1 H NaN2 S K NaN2
+F D -0 D -NaN2 D K -NaN2
+C D -inf D -NaN0xbeef D K -NaN0xbeef
 
-# Quiet and Quiet.  Return the left hand NaN with the appropriate sign.
+# Quiet and Quiet.  Return the left hand NaN
 E D NaN1 Q NaN2 Q K NaN1
 u H -NaN1 H NaN2 H K -NaN1
-C D NaN0xdead D -NaN0xbeef D K -NaN0xdead
-F D -NaN1 D -NaN2 D K NaN1
+C D NaN0xdead D -NaN0xbeef D K NaN0xdead
+F D -NaN1 D -NaN2 D K -NaN1
 
-# Quiet and Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
+# Quiet and Signalling.  Return the left hand quiet NaN.
 E D SNaN5 Q NaN4 Q X NaN5
 u H -NaN1 H SNaN2 H X -NaN1
-C Q SNaN0xdead S -SNaN0xbeef S X -NaN0xdead
-F Q -NaN0xdead Q -SNaN0xbeef H XI NaN0x00ad
+C Q SNaN0xdead S -SNaN0xbeef S X NaN0xdead
+F Q -NaN0xdead Q -SNaN0xbeef H XI -NaN0x00ad
 
 # Both Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
 E S SNaN0x25 Q SNaN0xdead H X NaN0x25
 u D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
-C Q SNaN1 S -SNaN2 S X -NaN1
-F Q -SNaN3 Q -SNaN4 H X NaN3
+C Q SNaN1 S -SNaN2 S X NaN1
+F Q -SNaN3 Q -SNaN4 H X -NaN3
 
 ###############
 #
@@ -50,13 +50,13 @@ F Q -SNaN3 Q -SNaN4 H X NaN3
 ###############
 
 E S 0 S Inf D X NaN
-u H 0 S -Inf D X -NaN
-C S -0 S Inf Q X -NaN
+u H 0 S -Inf D X NaN
+C S -0 S Inf Q X NaN
 F Q -0 S -Inf H X NaN
 
 F S Inf S 0 D X NaN
-u H Inf S -0 D X -NaN
-D S -Inf S 0 Q X -NaN
+u H Inf S -0 D X NaN
+D S -Inf S 0 Q X NaN
 E H -Inf S -0 S X NaN
 
 ###############

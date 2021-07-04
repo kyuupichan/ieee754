@@ -484,6 +484,20 @@ class BinaryFormat:
         context.set_flags(flags)
         return Binary(self, sign, 0, adj_payload)
 
+    def _propagate_NaN(self, nan, other, context):
+        '''Call to get the result of a binary operation with at least one NaN.  The NaN is
+        converted to a quiet one for this format, and invalid_op is flagged if either
+        this, or the other operand, is a signalling NaN.
+        '''
+        assert nan.is_NaN()
+
+        is_invalid = nan.is_signalling() or other.is_signalling()
+        return self.make_NaN(nan.sign, True, nan.NaN_payload(), context, is_invalid)
+
+    def _invalid_op_NaN(self, context):
+        '''Call when an invalid operation happens.  Returns a canonical quiet NaN.'''
+        return self.make_NaN(False, True, 0, context, True)
+
     def make_real(self, sign, exponent, significand, context):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
         the infinitely precise result.
@@ -599,27 +613,6 @@ class BinaryFormat:
 
         return Binary(self, sign ^ flip_sign, e_biased, significand)
 
-    def convert_NaN(self, value, make_quiet, clear_payload, context):
-        src_payload = value.NaN_payload()
-        src_signalling = value.is_signalling()
-
-        if clear_payload:
-            payload = 0
-        else:
-            payload = src_payload & (self.quiet_bit - 1)
-
-        is_signalling = src_signalling and not make_quiet
-        if is_signalling:
-            payload = max(payload, 1)
-        flags = 0 if payload == src_payload else Flags.INEXACT
-        if not is_signalling:
-            payload |= self.quiet_bit
-            if src_signalling:
-                flags |= Flags.INVALID
-
-        context.set_flags(flags)
-        return Binary(self, value.sign, 0, payload)
-
     def convert(self, value, context):
         '''Return the value converted to this format and rounding if necessary.
 
@@ -641,8 +634,7 @@ class BinaryFormat:
 
         if value.significand:
             # NaNs
-            return self.make_NaN(value.sign, True, value.NaN_payload(), context,
-                                 value.is_signalling())
+            return self._propagate_NaN(value, value, context)
 
         # Infinities
         return self.make_infinity(value.sign)
@@ -960,8 +952,26 @@ class BinaryFormat:
         '''
         # convert() converts NaNs to quiet; avoid that if we preserve them
         if value.is_NaN():
-            value = self.convert_NaN(value, text_format.sNaN == '',
-                                     text_format.nan_payload == 'N', context)
+            # Rather ugly code to handle the myriad of cases
+            src_payload = value.NaN_payload()
+            src_signalling = value.is_signalling()
+
+            if text_format.nan_payload == 'N':
+                payload = 0
+            else:
+                payload = src_payload & (self.quiet_bit - 1)
+
+            if src_signalling and text_format.sNaN:
+                payload = max(payload, 1)
+                flags = 0 if payload == src_payload else Flags.INEXACT
+            else:
+                flags = 0 if payload == src_payload else Flags.INEXACT
+                payload |= self.quiet_bit
+                if src_signalling:
+                    flags |= Flags.INVALID
+
+            context.set_flags(flags)
+            value = Binary(self, value.sign, 0, payload)
         else:
             value = self.convert(value, context)
 
@@ -996,54 +1006,49 @@ class BinaryFormat:
 
     def _multiply_special(self, lhs, rhs, context):
         '''Return a lhs * rhs where the LHS is a NaN or infinity.'''
-        sign = lhs.sign ^ rhs.sign
-
         if lhs.significand == 0:
-            # infinity * zero -> NaN
+            # infinity * zero -> invalid op
             if rhs.is_zero():
-                return self.make_NaN(sign, True, 0, context, True)
-            # infinity * NaN -> NaN
-            if rhs.is_NaN():
-                return self.make_NaN(sign, True, rhs.NaN_payload(), context, rhs.is_signalling())
+                return self._invalid_op_NaN(context)
             # infinity * infinity -> infinity
             # infinity * finite-non-zero -> infinity
-            return self.make_infinity(sign)
+            if not rhs.is_NaN():
+                return self.make_infinity(lhs.sign ^ rhs.sign)
+            # infinity * NaN propagates the NaN
+            lhs, rhs = rhs, lhs
 
-        # NaN * anything -> NaN, but need to catch signalling NaNs
-        return self.make_NaN(sign, True, lhs.NaN_payload(), context,
-                             lhs.is_signalling() or rhs.is_signalling())
+        # Propagate the NaN in the LHS
+        return self._propagate_NaN(lhs, rhs, context)
 
     def divide(self, lhs, rhs, context):
         '''Return lhs / rhs in this format.'''
         sign = lhs.sign ^ rhs.sign
 
-        # Is the LHS is a NaN or infinity?
-        if lhs.e_biased == 0:
-            if lhs.significand == 0:
-                # infinity / finite -> infinity
-                if rhs.is_finite():
-                    return self.make_infinity(sign)
-                # infinity / infinity -> NaN
-                if rhs.significand == 0:
-                    return self.make_NaN(sign, True, 0, context, True)
-                # infinity / NaN -> NaN
-                return self.make_NaN(sign, True, rhs.NaN_payload(), context, rhs.is_signalling())
+        if lhs.e_biased:
+            # LHS is finite.  Handle a finite RHS too.
+            if rhs.e_biased:
+                return self._divide_finite(lhs, rhs, context)
 
-            # NaN / anything -> NaN, but need to catch signalling NaNs
-            return self.make_NaN(sign, True, lhs.NaN_payload(), context,
-                                 lhs.is_signalling() or rhs.is_signalling())
-
-        # LHS is finite.  Is the RHS a NaN or infinity?
-        if rhs.e_biased == 0:
+            # RHS is NaN or infinity
             if rhs.significand == 0:
-                # finity / infinity -> zero
+                # finite / infinity -> zero
                 return self.make_zero(sign)
 
-            # finite / NaN -> NaN, but need to catch signalling NaNs
-            return self.make_NaN(sign, True, rhs.NaN_payload(), context, rhs.is_signalling())
+            # finite / NaN propagates the NaN.
+            lhs, rhs = rhs, lhs
+        elif lhs.significand == 0:
+            # LHS is infinity
+            # infinity / finite -> infinity
+            if rhs.is_finite():
+                return self.make_infinity(sign)
+            # infinity / infinity is an invalid op
+            if rhs.significand == 0:
+                return self._invalid_op_NaN(context)
+            # infinity / NaN propagates the NaN.
+            lhs, rhs = rhs, lhs
 
-        # Both values are finite.
-        return self._divide_finite(lhs, rhs, context)
+        # Propagate the NaN in the LHS
+        return self._propagate_NaN(lhs, rhs, context)
 
     def _divide_finite(self, lhs, rhs, context):
         '''Return lhs / rhs, both finite numbers, in this format.'''
@@ -1053,7 +1058,7 @@ class BinaryFormat:
         if rhs.significand == 0:
             # 0 / 0 -> NaN
             if lhs.significand == 0:
-                return self.make_NaN(sign, True, 0, context, True)
+                return self._invalid_op_NaN(context)
             # Finite / 0 -> Infinity
             context.set_flags(Flags.DIV_BY_ZERO)
             return self.make_infinity(sign)
