@@ -37,7 +37,7 @@ u H -NaN1 H SNaN2 H X -NaN1
 C Q SNaN0xdead S -SNaN0xbeef S X NaN0xdead
 F Q -NaN0xdead Q -SNaN0xbeef H XI -NaN0x00ad
 
-# Both Signalling.  Return the left hand quiet NaN with the appropriate sign and invalid.
+# Both Signalling.  Return the left hand quiet NaN
 E S SNaN0x25 Q SNaN0xdead H X NaN0x25
 u D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
 C Q SNaN1 S -SNaN2 S X NaN1

@@ -983,11 +983,81 @@ class BinaryFormat:
 
     def add(self, lhs, rhs, context):
         '''Return the sum LHS + RHS in this format.'''
-        raise NotImplementedError
+        return self._add_sub(lhs, rhs, False, context)
 
     def subtract(self, lhs, rhs, context):
         '''Return the difference LHS - RHS in this format.'''
-        raise NotImplementedError
+        return self._add_sub(lhs, rhs, True, context)
+
+    def _add_sub(self, lhs, rhs, is_sub, context):
+        if lhs.e_biased == 0:
+            return self._add_sub_special(lhs, rhs, is_sub, False, context)
+        if rhs.e_biased == 0:
+            return self._add_sub_special(rhs, lhs, is_sub, True, context)
+        return self._add_sub_finite(lhs, rhs, is_sub, context)
+
+    def _add_sub_special(self, lhs, rhs, is_sub, flipped, context):
+        '''Return a lhs * rhs where the LHS is a NaN or infinity.'''
+        assert lhs.e_biased == 0
+
+        if lhs.significand == 0:
+            # infinity + finite -> infinity
+            if rhs.is_finite():
+                return self.make_infinity(lhs.sign ^ (is_sub and flipped))
+            if rhs.significand == 0:
+                if is_sub == (lhs.sign == rhs.sign):
+                    # Subtraction of like-signed infinities is an invalid op
+                    return self._invalid_op_NaN(context)
+                # Addition of like-signed infinites preserves its sign
+                return self.make_infinity(lhs.sign)
+            # infinity +- NaN propagates the NaN
+            lhs, rhs = rhs, lhs
+
+        # Propagate the NaN in the LHS
+        return self._propagate_NaN(lhs, rhs, context)
+
+    def _add_sub_finite(self, lhs, rhs, is_sub, context):
+        # Determine if the operation on the absolute values is effectively an addition
+        # or subtraction of shifted significands.
+        is_sub ^= lhs.sign ^ rhs.sign
+        sign = lhs.sign
+
+        # How much the LHS significand needs to be shifted left for exponents to match
+        lshift = lhs.exponent_int() - rhs.exponent_int()
+
+        if is_sub:
+            # Shift the significand with the greater exponent left until its effective
+            # exponent is equal to the smaller exponent.  Then subtract them.
+            if lshift >= 0:
+                significand = (lhs.significand << lshift) - rhs.significand
+                exponent = rhs.exponent_int()
+            else:
+                significand = (rhs.significand << -lshift) - lhs.significand
+                exponent = lhs.exponent_int()
+                sign = not sign
+            # If the result is negative then we must flip the sign and significand
+            if significand < 0:
+                sign = not sign
+                significand = -significand
+        else:
+            # Shift the significand with the greater exponent left until its effective
+            # exponent is equal to the smaller exponent, then add them.  The sign is the
+            # sign of the lhs.
+            if lshift >= 0:
+                significand = (lhs.significand << lshift) + rhs.significand
+                exponent = rhs.exponent_int()
+            else:
+                significand = (rhs.significand << -lshift) + lhs.significand
+                exponent = lhs.exponent_int()
+
+        # If two numbers add exactly to zero, IEEE 754 decrees it is a positive zero
+        # unless rounding to minus infinity.  However, regardless of rounding mode, adding
+        # two like-signed zeroes (or subtracting opposite-signed ones) gives the sign of
+        # the left hand zero.
+        if not significand and (lhs.significand or rhs.significand or is_sub):
+            sign = context.rounding == ROUND_FLOOR
+
+        return self.make_real(sign, exponent, significand, context)
 
     def multiply(self, lhs, rhs, context):
         '''Returns the product of LHS and RHS in this format.'''

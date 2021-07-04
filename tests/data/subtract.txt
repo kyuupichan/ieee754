@@ -1,0 +1,126 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Context LHSFormat LHS RHSFormat RHS DstFormat Status String
+
+
+###############
+#
+# NaN - Anything
+# Anything - NaN
+#
+###############
+
+# Nan + non-NaN - return the LHS
+E D NaN1 Q 0 Q K NaN1
+E D NaN1 H -1 Q K NaN1
+E D NaN1 S Inf Q K NaN1
+
+# non-NaN + NaN - return the RHS
+u Q -1 H NaN2 S K NaN2
+F D -0 D -NaN2 D K -NaN2
+C D -inf D -NaN0xbeef D K -NaN0xbeef
+
+# Quiet and Quiet.  Return the left hand NaN
+E D NaN1 Q NaN2 Q K NaN1
+u H -NaN1 H NaN2 H K -NaN1
+C D NaN0xdead D -NaN0xbeef D K NaN0xdead
+F D -NaN1 D -NaN2 D K -NaN1
+
+# Quiet and Signalling.  Return the left hand quiet NaN.
+E D SNaN5 Q NaN4 Q X NaN5
+u H -NaN1 H SNaN2 H X -NaN1
+C Q SNaN0xdead S -SNaN0xbeef S X NaN0xdead
+F Q -NaN0xdead Q -SNaN0xbeef H XI -NaN0x00ad
+
+# Both Signalling.  Return the left hand quiet NaN
+E S SNaN0x25 Q SNaN0xdead H X NaN0x25
+u D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
+C Q SNaN1 S -SNaN2 S X NaN1
+F Q -SNaN3 Q -SNaN4 H X -NaN3
+
+###############
+#
+# Infinity - Infinity
+#
+###############
+
+E S Inf S Inf H X NaN
+u H Inf D -Inf Q K Inf
+C S -Inf S Inf H K -Inf
+F S -Inf Q -Inf D X NaN
+
+###############
+#
+# Infinity - Finite
+# Finite - Infinity
+#
+###############
+
+E S Inf S 5 D K Inf
+u D Inf S -0 H K Inf
+C S Inf S 0 Q K Inf
+F D Inf S -25 H K Inf
+
+E S -Inf S 5 D K -Inf
+u D -Inf S -0 H K -Inf
+C S -Inf S 0 Q K -Inf
+F D -Inf S -25 H K -Inf
+
+E S 5 S Inf D K -Inf
+u D 0x1p-1074 S Inf H K -Inf
+C S -0x1p100 S Inf Q K -Inf
+F D -23 S Inf H K -Inf
+
+U S 5 S -Inf D K Inf
+D D 0x1p-1074 S -Inf H K Inf
+C S -0x1p100 S -Inf Q K Inf
+F D -23 S -Inf H K Inf
+
+###############
+#
+# Zero - Zero all rounding modes
+#
+###############
+
+E S 0 Q 0 H K 0
+C H 0 S 0 D K 0
+F D 0 D 0 S K -0
+D Q 0 H 0 Q K 0
+U S 0 S 0 D K 0
+u D 0 D 0 S K 0
+d H 0 Q 0 H K 0
+
+E S 0 Q -0 H K 0
+C H 0 S -0 D K 0
+F D 0 D -0 S K 0
+D Q 0 H -0 Q K 0
+U S 0 S -0 D K 0
+u D 0 D -0 S K 0
+d H 0 Q -0 H K 0
+
+E S -0 Q 0 H K -0
+C H -0 S 0 D K -0
+F D -0 D 0 S K -0
+D Q -0 H 0 Q K -0
+U S -0 S 0 D K -0
+u D -0 D 0 S K -0
+d H -0 Q 0 H K -0
+
+E S -0 Q -0 H K 0
+C H -0 S -0 D K 0
+F D -0 D -0 S K -0
+D Q -0 H -0 Q K 0
+U S -0 S -0 D K 0
+u D -0 D -0 S K 0
+d H -0 Q -0 H K 0
+
+###############
+#
+# Finite - Finite
+#
+###############

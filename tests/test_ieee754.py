@@ -750,6 +750,7 @@ def binary_operation(line, operation):
     answer = dst_fmt.from_string(answer, input_context)
     assert input_context.flags & ~Flags.SUBNORMAL == 0
 
+    context.clear_flags()
     operation = getattr(dst_fmt, operation)
     result = operation(lhs, rhs, context)
     assert result.as_tuple() == answer.as_tuple()
@@ -757,6 +758,14 @@ def binary_operation(line, operation):
 
 
 class TestBinaryOps:
+
+    @pytest.mark.parametrize('line', read_lines('add.txt'))
+    def test_add(self, line):
+        binary_operation(line, 'add')
+
+    @pytest.mark.parametrize('line', read_lines('subtract.txt'))
+    def test_subtract(self, line):
+        binary_operation(line, 'subtract')
 
     @pytest.mark.parametrize('line', read_lines('multiply.txt'))
     def test_multiply(self, line):

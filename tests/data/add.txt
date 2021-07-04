@@ -1,0 +1,235 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Context LHSFormat LHS RHSFormat RHS DstFormat Status String
+
+
+###############
+#
+# NaN + Anything
+# Anything + NaN
+#
+###############
+
+# Nan + non-NaN - return the LHS
+E D NaN1 Q 0 Q K NaN1
+E D NaN1 H -1 Q K NaN1
+E D NaN1 S Inf Q K NaN1
+
+# non-NaN + NaN - return the RHS
+u Q -1 H NaN2 S K NaN2
+F D -0 D -NaN2 D K -NaN2
+C D -inf D -NaN0xbeef D K -NaN0xbeef
+
+# Quiet and Quiet.  Return the left hand NaN
+E D NaN1 Q NaN2 Q K NaN1
+u H -NaN1 H NaN2 H K -NaN1
+C D NaN0xdead D -NaN0xbeef D K NaN0xdead
+F D -NaN1 D -NaN2 D K -NaN1
+
+# Quiet and Signalling.  Return the left hand quiet NaN.
+E D SNaN5 Q NaN4 Q X NaN5
+u H -NaN1 H SNaN2 H X -NaN1
+C Q SNaN0xdead S -SNaN0xbeef S X NaN0xdead
+F Q -NaN0xdead Q -SNaN0xbeef H XI -NaN0x00ad
+
+# Both Signalling.  Return the left hand quiet NaN
+E S SNaN0x25 Q SNaN0xdead H X NaN0x25
+u D -SNaN0xdead D SNaN2 H XI -NaN0x00ad
+C Q SNaN1 S -SNaN2 S X NaN1
+F Q -SNaN3 Q -SNaN4 H X -NaN3
+
+###############
+#
+# Infinity + Infinity
+#
+###############
+
+E S Inf D Inf H K Inf
+u H Inf S -Inf Q X NaN
+C S -Inf S Inf H X NaN
+F Q -Inf Q -Inf S K -Inf
+
+###############
+#
+# Infinity + Finite
+# Finite + Infinity
+#
+###############
+
+E S Inf S 5 D K Inf
+u D Inf S -0 H K Inf
+C S Inf S 0 Q K Inf
+F D Inf S -25 H K Inf
+
+E S -Inf S 5 D K -Inf
+u D -Inf S -0 H K -Inf
+C S -Inf S 0 Q K -Inf
+F D -Inf S -25 H K -Inf
+
+E S 5 S Inf D K Inf
+u D 0x1p-1074 S Inf H K Inf
+C S -0x1p100 S Inf Q K Inf
+F D -23 S Inf H K Inf
+
+U S 5 S -Inf D K -Inf
+D D 0x1p-1074 S -Inf H K -Inf
+C S -0x1p100 S -Inf Q K -Inf
+F D -23 S -Inf H K -Inf
+
+###############
+#
+# Zero + Zero all rounding modes.  Test LHS both wider and narrower for each pair.
+#
+###############
+
+E S 0 Q 0 H K 0
+E Q 0 S 0 Q K 0
+C H 0 S 0 D K 0
+C S 0 H 0 D K 0
+F D 0 Q 0 S K 0
+F Q 0 D 0 S K 0
+D Q 0 H 0 Q K 0
+D H 0 Q 0 Q K 0
+U S 0 D 0 D K 0
+U D 0 S 0 D K 0
+u S 0 H 0 S K 0
+u H 0 S 0 S K 0
+d H 0 Q 0 H K 0
+d Q 0 H 0 H K 0
+
+E S 0 Q -0 H K 0
+E Q 0 S -0 H K 0
+C H 0 S -0 D K 0
+C S 0 H -0 D K 0
+F D 0 S -0 S K -0
+F S 0 D -0 S K -0
+D Q 0 H -0 Q K 0
+D H 0 Q -0 Q K 0
+U H 0 S -0 D K 0
+U S 0 H -0 D K 0
+u Q 0 D -0 S K 0
+u D 0 Q -0 S K 0
+d H 0 Q -0 H K 0
+d Q 0 H -0 H K 0
+
+E S -0 Q 0 H K 0
+E Q -0 S 0 H K 0
+C H -0 S 0 D K 0
+C S -0 H 0 D K 0
+F D -0 S 0 S K -0
+F S -0 D 0 S K -0
+D Q -0 H 0 Q K 0
+D H -0 Q 0 Q K 0
+U S -0 D 0 D K 0
+U D -0 S 0 D K 0
+u D -0 Q 0 S K 0
+u Q -0 D 0 S K 0
+d H -0 Q 0 H K 0
+d Q -0 H 0 H K 0
+
+E S -0 Q -0 H K -0
+E Q -0 S -0 H K -0
+C H -0 S -0 D K -0
+C S -0 H -0 D K -0
+F D -0 S -0 S K -0
+F S -0 D -0 S K -0
+D Q -0 H -0 Q K -0
+D H -0 Q -0 Q K -0
+U S -0 D -0 D K -0
+U D -0 S -0 D K -0
+u D -0 H -0 S K -0
+u H -0 D -0 S K -0
+d H -0 Q -0 H K -0
+d Q -0 H -0 H K -0
+
+###############
+#
+# Finite + Finite
+#
+###############
+
+
+E S 4 S 4 S K 8
+E S 32 S 0x1.3456p1 S K 0x22.68acp0
+E S 0x1.3456p1 S 32 S K 0x22.68acp0
+E S 0x1.000002p0 S 0x0.000002p0 S K 0x1.000004p0
+
+# This sum is exact except for single
+E S 0x1.234562p0 D 0x1.234562p-1 D K 0x1.b4e813p0
+E D 0x1.234562p0 D 0x1.234562p-1 D K 0x1.b4e813p0
+E D 0x1.234562p-1 D 0x1.234562p0 D K 0x1.b4e813p0
+E Q 0x1.234562p0 D 0x1.234562p-1 D K 0x1.b4e813p0
+
+E Q 0x1.234562p0 D 0x1.234562p-1 S I 0x1.b4e814p0
+D Q 0x1.234562p0 D 0x1.234562p-1 S I 0x1.b4e812p0
+F Q 0x1.234562p0 D 0x1.234562p-1 S I 0x1.b4e812p0
+
+# Test exact sum to zero sign of zero rule
+
+E Q 15 H -15 S K 0
+E Q -15 H 15 S K 0
+C Q 15 H -15 S K 0
+C Q -15 H 15 S K 0
+F Q 15 H -15 S K -0
+F Q -15 H 15 S K -0
+D Q 15 H -15 S K 0
+D Q -15 H 15 S K 0
+U Q 15 H -15 S K 0
+U Q -15 H 15 S K 0
+u Q 15 H -15 S K 0
+u Q -15 H 15 S K 0
+d Q 15 H -15 S K 0
+d Q -15 H 15 S K 0
+
+# This sum is zero but not exact, so the zero rule does not apply
+
+E H 1 D -0x1.0000001p0 H U -0
+E D -0x1.0000001p0 H 1 H U -0
+C H 1 D -0x1.0000001p0 H U -0
+C D -0x1.0000001p0 H 1 H U -0
+F H 1 Q -0x0.fffffffp0 H U 0
+F Q -0x0.fffffffp0 H 1 H U 0
+D H 1 D -0x1.0000001p0 H U -0
+D D -0x1.0000001p0 H 1 H U -0
+u H 1 Q -0x1.0000001p0 H U -0
+u Q -0x1.0000001p0 H 1 H U -0
+d H 1 D -0x1.0000001p0 H U -0
+d D -0x1.0000001p0 H 1 H U -0
+
+# Add denormals to denormals and zero
+
+E D 0x1.234p-1030 D 0 D S 0x1.234p-1030
+E D 0x1.234p-1030 D 0x5.6789ap-1033 D S 0x0.01d0313400000p-1022
+E D 0 D 0x1.234p-1030 D S 0x1.234p-1030
+E D 0x5.6789ap-1033 D 0x1.234p-1030 D S 0x0.01d0313400000p-1022
+
+E D 0x1.234p-1030 D -0 D S 0x1.234p-1030
+E D 0x1.234p-1030 D -0x5.6789ap-1033 D S 0x0.00764ecc00000p-1022
+E D -0 D 0x1.234p-1030 D S 0x1.234p-1030
+E D 0x5.6789ap-1033 D -0x1.234p-1030 D S -0x0.00764ecc00000p-1022
+
+# Inexact for single but double is wide enough to capture all precision
+E H 0x1.23p-15 S 0x4.5691cp-42 S I 0x1.23p-15
+E H 0x1.23p-15 S -0x4.5691cp-42 S I 0x1.23p-15
+E H 0x1.23p-15 S 0x4.5691cp-42 D K 0x1.2300008ad2380p-15
+E H 0x1.23p-15 S -0x4.5691cp-42 D K 0x1.22ffff752dc80p-15
+
+# Other testcases
+E D 0x1.ffffffffffff0p1023 D 0x0.fp975 D K 0x1.fffffffffffffp1023
+  # Sub-half overflow
+E D 0x1.ffffffffffff0p1023 D 0x0.f000000000001p975 D I 0x1.fffffffffffffp1023
+U D 0x1.ffffffffffff0p1023 D 0x0.f000000000001p975 D VI Inf
+  # Half overflow
+E D -0x1.ffffffffffff0p1023 D -0x0.f8p975 D VI -Inf
+d D -0x1.ffffffffffff0p1023 D -0x0.f8p975 D I -0x1.fffffffffffffp1023
+  # Unit overflow
+E D 0x1.ffffffffffff0p1023 D 0x1.0p975 D VI Inf
+F D 0x1.ffffffffffff0p1023 D 0x1.0p975 D VI 0x1.fffffffffffffp1023
+
+# Loss of precision
+E D 1 D 0x1.0p-53 D I 1
