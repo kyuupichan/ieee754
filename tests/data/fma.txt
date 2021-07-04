@@ -1,0 +1,175 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Context LHSFormat LHS RHSFormat RHS AddendFormat Addend DstFormat Status String
+
+
+###############
+#
+# NaN * Anything + Anything
+# Anything * NaN + Anything
+# Anything * Anything + NaN
+#
+###############
+
+# First - quiet NaNs.  The first one is returned
+
+E D NaN1 Q 0 S 0 Q K NaN1
+E D NaN2 H -1 S 5 Q K NaN2
+E D NaN1 S Inf S Nan5 Q K NaN1
+
+E S 0 D Nan23 Q Nan Q K NaN23
+E S Inf D -Inf Q Nan456 H K NaN456
+
+E D NaN0x4000000 H NaN2 H Nan3 H I NaN
+
+# Signalling NaNs.  Quieten if it is the result NaN and raise invalid op regardless.
+
+E D SNaN5 Q NaN4 Q SNaN3 Q X NaN5
+E D 0 D SNaN4 Q NaN3 Q X NaN4
+E D 0 D 0 D SNaN Q X NaN1
+
+# Corner case - if addend is a QNaN and the multiply is an invalid op, still raise
+# an invalid op.  IEEE 754 leaves this implementation-defined
+
+E D 0 D Inf D NaN4 D X NaN
+E D -Inf D 0 D NaN4 D X NaN
+
+###############
+#
+# Zero * Infinity
+#
+###############
+
+E S 0 S Inf D 0 D X NaN
+u H 0 S -Inf H -1 D X NaN
+C S -0 S Inf S 0.5 Q X NaN
+F Q -0 S -Inf S 12 H X NaN
+
+F S Inf S 0 S 0 D X NaN
+u H Inf S -0 S Inf D X NaN
+D S -Inf S 0 S -5 Q X NaN
+E H -Inf S -0 S 10 S X NaN
+
+###############
+#
+# Infinity * Finite-non-Zero
+# Infinity * Infinity
+#
+###############
+
+E S 5 S Inf D 0 D K Inf
+u D 0x1p-1074 S -Inf Q 1.5 H K -Inf
+C S -0x1p100 S Inf Q -Inf Q K -Inf
+F D -23 S -Inf S 156 H K Inf
+
+E S Inf S 1 S -Inf D X NaN
+u D Inf S -2 Q 5 H K -Inf
+C S -Inf Q 3 S 456 Q K -Inf
+F D -Inf S -4 S Inf H K Inf
+
+F S Inf S Inf S -0 D K Inf
+u H Inf S -Inf S Inf D X NaN
+
+###############
+#
+# Zero * Finite
+#
+###############
+
+E S 0 S 5000 S 50 D K 50
+C D 500 S -0 S -0 H K -0
+E S -0 S 56.25 S 0 Q K 0
+F S -0 S 56.25 S 0 Q K -0
+F D -0 S 500 S -25.25 H K -25.25
+U D 0 S 12 S Inf H K Inf
+
+###############
+#
+# Finite * Finite
+#
+###############
+
+E S 0x1p-149 S 0x1p-149 D 0x1p-180 D I 0x1p-180
+E S 0x1p-149 S 0x1p-149 D 0x1p-270 D K 0x1.0000001000000p-270
+E D 0x1.fffffffffffffp1023 D 0x1.fffffffffffffp1023 H 0 Q K 0x3.ffffffffffffc0000000000001p2046
+
+# Simple cases
+
+E S -4 S 5 S 5 S K -15
+E S 3 S -2 S 8 S K 2
+E S 4 S 9 S 15 S K 51
+E S 14.5 S -14.5 S 225 S K 14.75
+
+# Addend of zero
+E S 7 S 8 S 0 S K 56
+
+# Adding differently signed zeroes
+E S 0 S -0 S 0 S K 0
+C S 0 S -0 S 0 S K 0
+F S 0 S -0 S 0 S K -0
+D S 0 S -0 S 0 S K 0
+U S 0 S -0 S 0 S K 0
+
+E S 0 S 0 S -0 S K 0
+C S 0 S 0 S -0 S K 0
+F S 0 S 0 S -0 S K -0
+D S 0 S 0 S -0 S K 0
+U S 0 S 0 S -0 S K 0
+
+# Adding like-signed zeroes
+E S -0 S 5 S -0 S K -0
+C S -0 S 5 S -0 S K -0
+F S -0 S 5 S -0 S K -0
+D S -0 S 5 S -0 S K -0
+U S -0 S 5 S -0 S K -0
+
+E S 0 S 5 S 0 S K 0
+C S 0 S 5 S 0 S K 0
+F S 0 S 5 S 0 S K 0
+D S 0 S 5 S 0 S K 0
+U S 0 S 5 S 0 S K 0
+
+# Exact zero result
+
+E S 1 S -1 S 1 S K 0
+C S 1 S -1 S 1 S K 0
+F S 1 S -1 S 1 S K -0
+D S 1 S -1 S 1 S K 0
+U S 1 S -1 S 1 S K 0
+
+# Result is zero but inexact and not from adding zeroes
+
+E S 0x1p-120 S 0x1p-120 S -0 S U 0
+F S 0x1p-120 S 0x1p-120 S -0 S U 0
+D S 0x1p-120 S 0x1p-120 S -0 S U 0
+d S 0x1p-120 S 0x1p-120 S -0 S U 0
+
+E S 0x1p-120 S -0x1p-120 S -0 S U -0
+C S 0x1p-120 S -0x1p-120 S -0 S U -0
+D S 0x1p-120 S -0x1p-120 S -0 S U -0
+d S 0x1p-120 S -0x1p-120 S -0 S U -0
+
+# Others
+
+E S 0x1.7e5p0 S 0x1.3bbp0 S 0x1.0p-24 S K 0x1.d77348p0
+E S 0x1.7e5p0 S 0x1.3bbp0 S -0x1.0p-24 S K 0x1.d77346p0
+
+E S 0x1.7e5p0 S 0x1.3bbp0 S -0x1.0p-25 S I 0x1.d77346p0
+D S 0x1.7e5p0 S 0x1.3bbp0 S -0x1.0p-25 S I 0x1.d77346p0
+C S 0x1.7e5p0 S 0x1.3bbp0 S -0x1.0p-25 S I 0x1.d77348p0
+
+D S 0x1.7e5p0 S 0x1.3bbp0 S 0x1.0p-25 S I 0x1.d77346p0
+E S 0x1.7e5p0 S 0x1.3bbp0 S 0x1.0p-25 S I 0x1.d77348p0
+C S 0x1.7e5p0 S 0x1.3bbp0 S 0x1.0p-25 S I 0x1.d77348p0
+
+E S 0x1p-128 S 0x1p-128 S 1 S I 1
+C S 0x1p-128 S 0x1p-128 S 1 S I 0x1.000002p0
+
+E D 0x1.fffff5fc5cfecp-128 D 0x1.fffff5fc5cfecp-128 D 12 D I 12
+
+E S -0x1.ed8ap-134 S 2 S 0x1.ed8ap-134 S S -0x1.ed8ap-134

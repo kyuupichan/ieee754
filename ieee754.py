@@ -1181,8 +1181,22 @@ class BinaryFormat:
         raise NotImplementedError
 
     def fma(self, lhs, rhs, addend, context):
-        '''Returns lhs * rhs + addend in this format.'''
-        raise NotImplementedError
+        '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
+        rounded to this format.
+        '''
+        # Perform the multiplication in a format where it is exact and there are no
+        # subnormals.  Then the only signal that can be raised is INVALID.
+        product_fmt = BinaryFormat(lhs.fmt.precision + rhs.fmt.precision,
+                                   lhs.fmt.e_max + rhs.fmt.e_max + 1,
+                                   lhs.fmt.e_min - (lhs.fmt.precision - 1)
+                                   + rhs.fmt.e_min - (rhs.fmt.precision - 1))
+        # FIXME: when tests are complete, use context not product_context
+        product_context = Context()
+        product = product_fmt.multiply(lhs, rhs, product_context)
+        print(product_context.flags)
+        assert product_context.flags & ~Flags.INVALID == 0
+        context.set_flags(product_context.flags)
+        return self.add(product, addend, context)
 
 
 IEEEhalf = BinaryFormat.from_exponent_width(11, 5)

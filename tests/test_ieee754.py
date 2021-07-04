@@ -774,3 +774,36 @@ class TestBinaryOps:
     @pytest.mark.parametrize('line', read_lines('divide.txt'))
     def test_divide(self, line):
         binary_operation(line, 'divide')
+
+
+class TestFMA:
+
+    @pytest.mark.parametrize('line', read_lines('fma.txt'))
+    def test_fma(self, line):
+        parts = line.split()
+        if len(parts) != 10:
+            assert False, f'bad line: {line}'
+        context, lhs_fmt, lhs, rhs_fmt, rhs, add_fmt, addend, dst_fmt, status, answer = parts
+        context = context_string_to_context(context)
+        input_context = std_context()
+
+        lhs_fmt = format_codes[lhs_fmt]
+        lhs = lhs_fmt.from_string(lhs, input_context)
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
+
+        rhs_fmt = format_codes[rhs_fmt]
+        rhs = rhs_fmt.from_string(rhs, input_context)
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
+
+        add_fmt = format_codes[add_fmt]
+        addend = add_fmt.from_string(addend, input_context)
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
+
+        dst_fmt = format_codes[dst_fmt]
+        status = status_codes[status]
+        answer = dst_fmt.from_string(answer, input_context)
+        assert input_context.flags & ~Flags.SUBNORMAL == 0
+
+        result = dst_fmt.fma(lhs, rhs, addend, context)
+        assert result.as_tuple() == answer.as_tuple()
+        assert context.flags == status
