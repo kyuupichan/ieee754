@@ -12,7 +12,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('Context', 'BinaryFormat', 'Flags', 'Binary', 'TextFormat',
+__all__ = ('Context', 'BinaryFormat', 'Flags', 'Binary', 'TextFormat', 'Compare',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
@@ -29,15 +29,6 @@ ROUND_UP        = 'ROUND_UP'            # Away from zero
 ROUND_HALF_EVEN = 'ROUND_HALF_EVEN'     # To nearest with ties towards even
 ROUND_HALF_DOWN = 'ROUND_HALF_DOWN'     # To nearest with ties towards zero
 ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
-
-
-# Traps / floating point status flags
-INVALID_OPERATION = 0x01         # Various invalid operations, e.g. Inf - Inf, 0 / 0
-DIVISION_BY_ZERO  = 0x02         # e.g. finite nnumber / 0; also occurs for other operations
-INEXACT           = 0x04         # If precise result cannot be expressed and needs rounding
-SUBNORMAL         = 0x80         # Before rounding
-OVERFLOW          = 0x10         # After rounding, implies INEXACT
-UNDERFLOW         = 0x20         # After rounding; implies SUBNORMAL and INEXACT
 
 
 HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
@@ -157,6 +148,14 @@ class LostFraction(IntEnum):   # Example of truncated bits:
     LESS_THAN_HALF = 1	       # 0xxxxx  x's not all zero
     EXACTLY_HALF = 2           # 100000
     MORE_THAN_HALF = 3         # 1xxxxx  x's not all zero
+
+
+# Four-way result of the compare() operation.
+class Compare(IntEnum):
+    LESS_THAN = 0
+    EQUAL = 1
+    GREATER_THAN = 2
+    UNORDERED = 3
 
 
 def lost_bits_from_rshift(significand, bits):
@@ -856,12 +855,12 @@ class BinaryFormat:
             sig = calc_fmt.make_real(sign, 0, significand, calc_context)
             if calc_context.flags & Flags.INEXACT:
                 sig_err += 1
-            calc_context.flags & ~Flags.INEXACT
+            calc_context.flags &= ~Flags.INEXACT
 
             pow5_int = pow(5, abs(sig_exponent))
             pow5 = calc_fmt.make_real(False, 0, pow5_int, calc_context)
             pow5_err = 1 if calc_context.flags & Flags.INEXACT else 0
-            calc_context.flags & ~Flags.INEXACT
+            calc_context.flags &= ~Flags.INEXACT
 
             # Call scaleb() since we scaled by 5^n and actually want 10^n
             if sig_exponent >= 0:
@@ -1659,68 +1658,138 @@ class Binary:
     ## Signalling computational operations
     ##
 
-    def compare_quiet_eq(self):
-        raise NotImplementedError
+    def compare(self, rhs, context, signalling):
+        '''Return LHS vs RHS as one of the four comparison constants.
 
-    def compare_quiet_ne(self):
-        raise NotImplementedError
+        Comparisons of NaNs signal INVALID if either is signalling or if signalling is True.'''
+        if self.e_biased == 0:
+            # LHS is a NaN?
+            if not self.significand:
+                # LHS is infinity.
+                if rhs.e_biased == 0:
+                    # RHS Infinity?
+                    if not rhs.significand:
+                        # Comparing two infinities
+                        if self.sign == rhs.sign:
+                            return Compare.EQUAL
+                        # RHS is finite or a differently-signed infinity
+                        return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
+                    # Fall through for NaN comparisons
+                else:
+                    # RHS finite
+                    return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
+            # Fall through for NaN comparisons
+        elif rhs.e_biased == 0:
+            # LHS is finite, RHS is not
+            if not rhs.significand:
+                # Finite vs infinity
+                return Compare.GREATER_THAN if rhs.sign else Compare.LESS_THAN
+            # Finite vs NaN - Fall through
+        elif self.significand == rhs.significand == 0:
+            # Zero vs Zero
+            return Compare.EQUAL
+        else:
+            # Finite vs Finite, at least one non-zero.  If signs differ it's easy.  Also
+            # get the either-is-a-zero case out the way as zeroes cannot have their
+            # exponents compared.
+            if self.sign != rhs.sign or not rhs.significand:
+                return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
+            if not self.significand:
+                return Compare.GREATER_THAN if rhs.sign else Compare.LESS_THAN
 
-    def compare_quiet_gt(self):
-        raise NotImplementedError
+            # Finally, two non-zero finite numbers with equal signs.  Compare the unbiased
+            # exponents of their explicit integer-bit significands.
+            exponent_diff = self.exponent() - rhs.exponent()
+            if exponent_diff:
+                if (exponent_diff > 0) ^ (self.sign):
+                    return Compare.GREATER_THAN
+                else:
+                    return Compare.LESS_THAN
 
-    def compare_quiet_ge(self):
-        raise NotImplementedError
+            # Exponents are the same.  We need to make their significands comparable.
+            lhs_sig, rhs_sig = self.significand, rhs.significand
+            length_diff = lhs_sig.bit_length() - rhs_sig.bit_length()
+            if length_diff > 0:
+                rhs_sig <<= length_diff
+            elif length_diff < 0:
+                lhs_sig <<= -length_diff
 
-    def compare_quiet_lt(self):
-        raise NotImplementedError
+            # At last we have an apples-for-apples comparison
+            if lhs_sig == rhs_sig:
+                return Compare.EQUAL
+            if (lhs_sig > rhs_sig) ^ (self.sign):
+                    return Compare.GREATER_THAN
+            else:
+                return Compare.LESS_THAN
 
-    def compare_quiet_le(self):
-        raise NotImplementedError
+        # Comparisons involving at least one NaN.
+        assert self.is_NaN() or rhs.is_NaN()
+        if signalling or self.is_signalling() or rhs.is_signalling():
+            context.set_flags(Flags.INVALID)
+        return Compare.UNORDERED
 
-    def compare_quiet_un(self):
-        raise NotImplementedError
+    def compare_quiet_eq(self, rhs, context):
+        return self.compare(rhs, context, False) == Compare.EQUAL
 
-    def compare_quiet_ng(self):
-        raise NotImplementedError
+    def compare_quiet_ne(self, rhs, context):
+        return self.compare(rhs, context, False) != Compare.EQUAL
 
-    def compare_quiet_lu(self):
-        raise NotImplementedError
+    def compare_quiet_gt(self, rhs, context):
+        return self.compare(rhs, context, False) == Compare.GREATER_THAN
 
-    def compare_quiet_nl(self):
-        raise NotImplementedError
+    def compare_quiet_ng(self, rhs, context):
+        return self.compare(rhs, context, False) != Compare.GREATER_THAN
 
-    def compare_quiet_gu(self):
-        raise NotImplementedError
+    def compare_quiet_ge(self, rhs, context):
+        return self.compare(rhs, context, False) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_quiet_or(self):
-        raise NotImplementedError
+    def compare_quiet_lu(self, rhs, context):
+        return self.compare(rhs, context, False) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_signalling_eq(self):
-        raise NotImplementedError
+    def compare_quiet_lt(self, rhs, context):
+        return self.compare(rhs, context, False) == Compare.LESS_THAN
 
-    def compare_signalling_ne(self):
-        raise NotImplementedError
+    def compare_quiet_nl(self, rhs, context):
+        return self.compare(rhs, context, False) != Compare.LESS_THAN
 
-    def compare_signalling_gt(self):
-        raise NotImplementedError
+    def compare_quiet_le(self, rhs, context):
+        return self.compare(rhs, context, False) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_signalling_ge(self):
-        raise NotImplementedError
+    def compare_quiet_gu(self, rhs, context):
+        return self.compare(rhs, context, False) not in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_signalling_lt(self):
-        raise NotImplementedError
+    def compare_quiet_un(self, rhs, context):
+        return self.compare(rhs, context, False) == Compare.UNORDERED
 
-    def compare_signalling_le(self):
-        raise NotImplementedError
+    def compare_quiet_or(self, rhs, context):
+        return self.compare(rhs, context, False) != Compare.UNORDERED
 
-    def compare_signalling_ng(self):
-        raise NotImplementedError
+    def compare_signalling_eq(self, rhs, context):
+        return self.compare(rhs, context, True) == Compare.EQUAL
 
-    def compare_signalling_lu(self):
-        raise NotImplementedError
+    def compare_signalling_ne(self, rhs, context):
+        return self.compare(rhs, context, True) != Compare.EQUAL
 
-    def compare_signalling_nl(self):
-        raise NotImplementedError
+    def compare_signalling_gt(self, rhs, context):
+        return self.compare(rhs, context, True) == Compare.GREATER_THAN
 
-    def compare_signalling_gu(self):
-        raise NotImplementedError
+    def compare_signalling_ge(self, rhs, context):
+        return self.compare(rhs, context, True) in (Compare.EQUAL, Compare.GREATER_THAN)
+
+    def compare_signalling_lt(self, rhs, context):
+        return self.compare(rhs, context, True) == Compare.LESS_THAN
+
+    def compare_signalling_le(self, rhs, context):
+        return self.compare(rhs, context, True) in (Compare.EQUAL, Compare.LESS_THAN)
+
+    def compare_signalling_ng(self, rhs, context):
+        return self.compare(rhs, context, True) != Compare.GREATER_THAN
+
+    def compare_signalling_lu(self, rhs, context):
+        return self.compare(rhs, context, True) not in (Compare.EQUAL, Compare.GREATER_THAN)
+
+    def compare_signalling_nl(self, rhs, context):
+        return self.compare(rhs, context, True) != Compare.LESS_THAN
+
+    def compare_signalling_gu(self, rhs, context):
+        return self.compare(rhs, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)

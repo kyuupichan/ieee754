@@ -53,6 +53,13 @@ boolean_codes = {
     'N': False,
 }
 
+compare_codes = {
+    'L': Compare.LESS_THAN,
+    'E': Compare.EQUAL,
+    'G': Compare.GREATER_THAN,
+    'U': Compare.UNORDERED,
+}
+
 format_codes = {
     'H': IEEEhalf,
     'S': IEEEsingle,
@@ -769,6 +776,21 @@ def binary_operation(line, operation):
     assert context.flags == status
 
 
+comparison_ops = {
+    'eq': 'E',
+    'ne': 'LGU',
+    'gt': 'G',
+    'ng': 'ELU',
+    'ge': 'GE',
+    'lu': 'LU',
+    'lt': 'L',
+    'nl': 'GEU',
+    'le': 'LE',
+    'gu': 'GU',
+    'un': 'U',
+    'or': 'LGE',
+}
+
 class TestBinaryOps:
 
     @pytest.mark.parametrize('line', read_lines('add.txt'))
@@ -804,6 +826,44 @@ class TestBinaryOps:
     #     result = lhs.remainder(rhs, context)
     #     assert result.as_tuple() == answer.as_tuple()
     #     assert context.flags == status
+
+    @pytest.mark.parametrize('line', read_lines('compare.txt'))
+    def test_compare(self, line):
+        parts = line.split()
+        if len(parts) != 6:
+            assert False, f'bad line: {line}'
+        lhs_fmt, lhs, rhs_fmt, rhs, status, answer_code = parts
+
+        lhs = from_string(format_codes[lhs_fmt], lhs)
+        rhs = from_string(format_codes[rhs_fmt], rhs)
+        status = status_codes[status]
+        answer = compare_codes[answer_code]
+
+        # Compare quietly
+        context = std_context()
+        result = lhs.compare(rhs, context, False)
+        assert result == answer
+        assert context.flags == status
+
+        # Now check all the other comparison operations
+        for op, true_set in comparison_ops.items():
+            # Test the quiet form:
+            op_name = f'compare_quiet_{op}'
+            op_result = answer_code in true_set
+            op_status = Flags.INVALID if lhs.is_signalling() or rhs.is_signalling() else 0
+            context = std_context()
+            result = getattr(lhs, op_name)(rhs, context)
+            assert result == op_result
+            assert context.flags == op_status
+
+            # Test the singalling form:
+            if op not in {'un', 'or'}:
+                op_name = f'compare_signalling_{op}'
+                op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
+                context = std_context()
+                result = getattr(lhs, op_name)(rhs, context)
+                assert result == op_result
+                assert context.flags == op_status
 
 
 class TestFMA:

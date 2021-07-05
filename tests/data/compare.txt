@@ -1,0 +1,310 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+# Answer: L E G U
+
+# Test format: LHSFormat LHS RHSFormat RHS Status Answer
+
+
+###############
+#
+# QNaN CMP Any
+#
+###############
+
+D NaN1 Q 0 K U
+H NaN S -0 K U
+H NaN12 S 0x1.25p25 K U
+H NaN S -0x1p-23 K U
+H NaN1 S 0x1p-138 K U
+H NaN10 D -0x1.abp129 K U
+H NaN1 S Inf K U
+H NaN3 S -Inf K U
+H NaN1 S NaN1 K U
+H NaN S -SNaN45 X U
+
+###############
+#
+# SNaN CMP Any
+#
+###############
+
+D -SNaN1 Q 0 X U
+H SNaN2 S -0 X U
+H -SNaN S 0x1.25p25 X U
+H -SNaN S -0x1p-23 X U
+H SNaN0x34 S 0x1p-138 X U
+H -SNaN D -0x1.abp129 X U
+H SNaN S Inf X U
+H SNaN S -Inf X U
+H -SNaN S -NaN1 X U
+H SNaN S SNaN45 X U
+
+###############
+#
+# Any CMP QNaN
+#
+###############
+
+S 0 D NaN1 K U
+D -0 H NaN K U
+Q 0x1.2p4000 H NaN12 K U
+S -0x1p-88 H NaN K U
+S 0x1p-138 H NaN1 K U
+D -0x1.abp129 H NaN10 K U
+H Inf H NaN1 K U
+S -Inf H NaN3 K U
+Q NaN1 S NaN1 K U
+H SNaN S -NaN45 X U
+
+###############
+#
+# Any CMP SNaN
+#
+###############
+
+S 0 D SNaN1 X U
+D -0 H SNaN X U
+Q 0x1.2p4000 H SNaN12 X U
+S -0x1p-88 H SNaN X U
+S 0x1p-138 H SNaN1 X U
+D -0x1.abp129 H SNaN10 X U
+H Inf H SNaN1 X U
+S -Inf H SNaN3 X U
+Q NaN1 S SNaN1 X U
+H SNaN S -SNaN45 X U
+
+###############
+#
+# +Inf CMP Non-NaN
+#
+###############
+
+D Inf Q 0 K G
+H Inf S -0 K G
+Q Inf Q 0x1.25p25 K G
+S Inf D -0x1p-23 K G
+D Inf S 0x1p-138 K G
+H Inf D -0x1.abp129 K G
+Q Inf H Inf K E
+S Inf S -Inf K G
+
+###############
+#
+# Non-NaN CMP +Inf
+#
+###############
+
+S 0 D Inf K L
+D -0 H Inf K L
+S 0x1.25p25 Q Inf K L
+D -0x1p-23 S Inf K L
+S 0x1p-13 D Inf K L
+D -0x1.abp129 H Inf K L
+Q Inf H Inf K E
+S -Inf S Inf K L
+
+###############
+#
+# -Inf CMP Non-NaN
+#
+###############
+
+D -Inf Q 0 K L
+H -Inf S -0 K L
+Q -Inf Q 0x1.25p25 K L
+S -Inf D -0x1p-23 K L
+D -Inf S 0x1p-138 K L
+H -Inf D -0x1.abp129 K L
+Q -Inf H Inf K L
+S -Inf S -Inf K E
+
+###############
+#
+# Non-NaN CMP -Inf
+#
+###############
+
+S 0 D -Inf K G
+D -0 H -Inf K G
+S 0x1.25p25 Q -Inf K G
+D -0x1p-23 S -Inf K G
+S 0x1p-13 D -Inf K G
+D -0x1.abp129 H -Inf K G
+Q Inf H -Inf K G
+S -Inf S -Inf K E
+
+###############
+#
+# +Zero CMP Finite
+#
+###############
+
+S 0 D 0 K E
+D 0 H -0 K E
+S 0 Q 1 K L
+D 0 S -2e23 K G
+S 0 D 0x1p-1000 K L
+D 0 Q -0x1p-500 K G
+
+###############
+#
+# Finite CMP +Zero
+#
+###############
+
+D 0 S 0 K E
+H -0 D 0 K E
+Q 1 H 0 K G
+S -2e23 Q 0 K L
+D 0x1p-1000 Q 0 K G
+Q -0x1p-500 H 0 K L
+
+###############
+#
+# -Zero CMP Finite
+#
+###############
+
+S -0 D 0 K E
+D -0 H -0 K E
+S -0 Q 1 K L
+D -0 S -2e23 K G
+S -0 D 0x1p-1000 K L
+D -0 Q -0x1p-500 K G
+
+###############
+#
+# Finite CMP -Zero
+#
+###############
+
+D 0 S -0 K E
+H -0 D -0 K E
+Q 1 H -0 K G
+S -2e23 Q -0 K L
+D 0x1p-1000 Q -0 K G
+Q -0x1p-500 H -0 K L
+
+###############
+#
+# Finite CMP Finite different signs non-zero
+#
+###############
+
+D 1 S -2e23 K G
+S 1e6 D -2 K G
+S 0x1p-100 S -0x1.2p-100 K G
+Q 2 S -3 K G
+H 3 H -2 K G
+
+D -1 S 2e23 K L
+S -1e6 D 2 K L
+S -0x1p-100 S 0x1.2p-100 K L
+Q -2 S 3 K L
+H -3 H 2 K L
+
+###############
+#
+# Finite CMP Finite positive different exponents
+#
+###############
+
+S 0x1.23p2 S 0x1.234p1 K G
+S 0x1.234p2 S 0x1.24p1 K G
+S 0x1.234p127 S 0x1.24p50 K G
+S 0x1.234p127 S 0x1.fffffp0 K G
+
+S 0x1.23p2 D 0x1.234p1 K G
+S 0x1.234p2 H 0x1.24p1 K G
+S 0x1.234p127 D 0x1.24p50 K G
+S 0x1.234p127 S 0x1.fffffp0 K G
+Q 0x1.2345678910p1000 D 0x1.2345678910p1000 K E
+D 0x1.2345678910p1000 Q 0x12.345678910p996 K E
+
+D 0x1.23p2 Q 0x1.234p1 K G
+D 0x1.234p2 S 0x1.24p1 K G
+D 0x1.234p127 Q 0x1.24p50 K G
+D 0x1.234p127 S 0x1.fffffp0 K G
+
+S 0x1.234p1 S 0x1.23p2  K L
+S 0x1.24p1 S 0x1.234p2 K L
+S 0x1.24p50 S 0x1.234p127  K L
+S 0x1.fffffp0 S 0x1.234p127 K L
+
+D 0x1.234p1 S 0x1.23p2 K L
+H 0x1.24p1 S 0x1.234p2 K L
+D 0x1.24p50 S 0x1.234p127 K L
+S 0x1.fffffp0 S 0x1.234p127 K L
+
+Q 0x1.234p1 D 0x1.23p2 K L
+S 0x1.24p1 D 0x1.234p2 K L
+Q 0x1.24p50 D 0x1.234p127 K L
+S 0x1.fffffp0 D 0x1.234p127 K L
+
+###############
+#
+# Finite CMP Finite negative different exponents
+#
+###############
+
+S -0x1.23p2 S -0x1.234p1 K L
+S -0x1.234p2 S -0x1.24p1 K L
+S -0x1.234p127 S -0x1.24p50 K L
+S -0x1.234p127 S -0x1.fffffp0 K L
+Q -0x1.2345678910p1000 D -0x1.2345678910p1000 K E
+Q -0x1.2345678910p1000 D -0x12.345678910p996 K E
+
+S -0x1.23p2 D -0x1.234p1 K L
+S -0x1.234p2 H -0x1.24p1 K L
+S -0x1.234p127 D -0x1.24p50 K L
+S -0x1.234p127 S -0x1.fffffp0 K L
+
+D -0x1.23p2 Q -0x1.234p1 K L
+D -0x1.234p2 S -0x1.24p1 K L
+D -0x1.234p127 Q -0x1.24p50 K L
+D -0x1.234p127 S -0x1.fffffp0 K L
+
+S -0x1.234p1 S -0x1.23p2  K G
+S -0x1.24p1 S -0x1.234p2 K G
+S -0x1.24p50 S -0x1.234p127  K G
+S -0x1.fffffp0 S -0x1.234p127 K G
+
+D -0x1.234p1 S -0x1.23p2 K G
+H -0x1.24p1 S -0x1.234p2 K G
+D -0x1.24p50 S -0x1.234p127 K G
+S -0x1.fffffp0 S -0x1.234p127 K G
+
+Q -0x1.234p1 D -0x1.23p2 K G
+S -0x1.24p1 D -0x1.234p2 K G
+Q -0x1.24p50 D -0x1.234p127 K G
+S -0x1.fffffp0 D -0x1.234p127 K G
+
+###############
+#
+# Finite CMP Finite positive same exponents
+#
+###############
+
+S 0x1.23p2 S 0x1.234p2 K L
+S 0x1.234p2 S 0x1.23p1 K G
+D 0x1.234p2 S 0x1.234p2 K E
+H 0x1.23p15 Q 0x1.23p15 K E
+H 0x1.23p15 Q 0x1.24p15 K L
+H 0x1.23p15 Q 0x1.22p15 K G
+
+###############
+#
+# Finite CMP Finite negative same exponents
+#
+###############
+
+S -0x1.23p2 S -0x1.234p2 K G
+S -0x1.234p2 S -0x1.23p1 K L
+D -0x1.234p2 S -0x1.234p2 K E
+H -0x1.23p15 Q -0x1.23p15 K E
+H -0x1.23p15 Q -0x1.24p15 K G
+H -0x1.23p15 Q -0x1.22p15 K L
