@@ -293,19 +293,21 @@ class Context:
         if rounding == ROUND_HALF_EVEN:
             if lost_fraction == LostFraction.EXACTLY_HALF:
                 return is_odd
-            return lost_fraction == LostFraction.MORE_THAN_HALF
-        if rounding == ROUND_CEILING:
+            else:
+                return lost_fraction == LostFraction.MORE_THAN_HALF
+        elif rounding == ROUND_CEILING:
             return not sign
-        if rounding == ROUND_FLOOR:
+        elif rounding == ROUND_FLOOR:
             return sign
-        if rounding == ROUND_DOWN:
+        elif rounding == ROUND_DOWN:
             return False
-        if rounding == ROUND_UP:
+        elif rounding == ROUND_UP:
             return True
-        if rounding == ROUND_HALF_DOWN:
+        elif rounding == ROUND_HALF_DOWN:
             return lost_fraction == LostFraction.MORE_THAN_HALF
-        # ROUND_HALF_UP
-        return lost_fraction != LostFraction.LESS_THAN_HALF
+        else:
+            assert rounding == ROUND_HALF_UP
+            return lost_fraction != LostFraction.LESS_THAN_HALF
 
     def overflow_value(self, binary_format, sign):
         '''Call when an overflow occurs on a number of the given format and sign, because
@@ -498,37 +500,27 @@ class BinaryFormat:
         '''Call when an invalid operation happens.  Returns a canonical quiet NaN.'''
         return self.make_NaN(False, True, 0, context, True)
 
-    def make_real(self, sign, exponent, significand, context):
+    def make_real(self, sign, exponent, significand, context,
+                  lost_fraction=LostFraction.EXACTLY_ZERO):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
-        the infinitely precise result.
+        the infinitely precise result
 
-           ± 2^exponent * significand
+           ± 2^exponent * (significand plus lost_fraction)
 
-        of the given sign.  The status indicates if overflow, underflow or inexact.
+        of the given sign, where lost_fraction ULPs have been lost.
 
         For example,
 
            make_real(IEEEsingle, True, -3, 2) -> -0.75
            make_real(IEEEsingle, True, 1, -200) -> +0.0 and sets the UNDERFLOW and INEXACT flags.
         '''
+        # Return a correctly-signed zero
         if significand == 0:
-            # Return a correctly-signed zero
             return self.make_zero(sign)
 
-        return self._normalize(sign, exponent, significand, LostFraction.EXACTLY_ZERO, context)
-
-    def _normalize(self, sign, exponent, significand, lost_fraction, context):
-        '''A calculation has led to a number of whose value is
-
-              ± 2^exponent * significand
-
-        of the given sign where significand is non-zero and lost_fraction ulps were lost.
-        Return the rounded and normalized result.
-        '''
         size = significand.bit_length()
-        assert size
 
-        # Shifting the significand so the MSB is one gives us the natural shift.  There it
+        # Shifting the significand so the MSB is one gives us the natural shift.  There t
         # is followed by a decimal point, so the exponent must be adjusted to compensate.
         # However we cannot fully shift if the exponent would fall below e_min.
         exponent += self.precision - 1
@@ -538,11 +530,11 @@ class BinaryFormat:
         significand, shift_lf = shift_right(significand, rshift)
         exponent += rshift
 
-        # Sanity check
+        # Santity check - a lost fraction loses information if we needed to shift left
         assert rshift >= 0 or lost_fraction == LostFraction.EXACTLY_ZERO
 
         # If we shifted, combine the lost fractions; shift_lf is the more significant
-        if rshift != 0:
+        if rshift:
             lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
 
         is_tiny_before = significand < self.int_bit
@@ -877,7 +869,7 @@ class BinaryFormat:
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
                 scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
             else:
-                scaled_sig = calc_fmt._divide_finite(sig, pow5, None, calc_context)
+                scaled_sig = calc_fmt._divide_finite(sig, pow5, 'D', calc_context)
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
                 scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
                 # If the exponent is below our e_min, the number is subnormal, and so
@@ -1106,7 +1098,7 @@ class BinaryFormat:
                     context.set_flags(Flags.DIV_BY_ZERO)
                     return self.make_infinity(sign)
 
-                return self._divide_finite(lhs, rhs, None, context)
+                return self._divide_finite(lhs, rhs, 'D', context)
 
             # RHS is NaN or infinity
             if rhs.significand == 0:
@@ -1129,66 +1121,112 @@ class BinaryFormat:
         # Propagate the NaN in the LHS
         return self._propagate_NaN(lhs, rhs, context)
 
-    def _divide_finite(self, lhs, rhs, integer_rounding, context):
+    def _divide_finite(self, lhs, rhs, operation, context):
         '''Calculate LHS / RHS, where both are finite and RHS is non-zero.
 
-        Return a (quotient, exponent, lost_fraction) tuple.
+        if operation is 'D' for division, returns the correctly-rounded result.  If the
+        operation is 'R' for IEEE remainder, the quotient is rounded to the nearest
+        integer (ties to even) and the remainder returned.
         '''
-        sign = lhs.sign ^ rhs.sign
+        assert operation in ('D', 'R')
+
+        sign = lhs.sign ^ rhs.sign if operation == 'D' else lhs.sign
+
         lhs_sig = lhs.significand
         if lhs_sig == 0:
             return self.make_zero(sign)
 
         rhs_sig = rhs.significand
         assert rhs_sig
-        exponent = lhs.exponent_int() - rhs.exponent_int()
+        lhs_exponent = lhs.exponent_int()
+        rhs_exponent = rhs.exponent_int()
 
         # Shift the lhs significand left until it is greater than the significand of the RHS
         lshift = rhs_sig.bit_length() - lhs_sig.bit_length()
         if lshift >= 0:
             lhs_sig <<= lshift
+            lhs_exponent -= lshift
         else:
             rhs_sig <<= -lshift
-        exponent -= lshift
+            rhs_exponent += lshift
 
         if lhs_sig < rhs_sig:
             lhs_sig <<= 1
-            exponent -= 1
+            lhs_exponent -= 1
 
         assert lhs_sig >= rhs_sig
 
-        if integer_rounding is None:
-            # Do division to full precision for the divide operation.
+        exponent_diff = lhs_exponent - rhs_exponent
+        if operation == 'D':
             bits = self.precision
         else:
-            # Do integer division
-            pass
+            bits = min(max(exponent_diff + 1, 0), self.precision)
 
-        # Long division.  Note by construction the quotient will have a leading 1, i.e.,
-        # it will contain precisely BITS significant bits, representing a value between 1
-        # and 2.  Adjust the exponent so that it is correct when viewing the quotient as
-        # an integer.
-        exponent -= (bits - 1)
-        quotient = 0
+        # Long division.  Note by construction the quotient significand will have a
+        # leading 1, i.e., it will contain precisely precision significant bits,
+        # representing a value in [1, 2).
+        quot_sig = 0
         for _n in range(bits):
-            quotient <<= 1
+            if _n:
+                lhs_sig <<= 1
+            #print(_n, lhs_sig, rhs_sig)
+            quot_sig <<= 1
             if lhs_sig >= rhs_sig:
                 lhs_sig -= rhs_sig
-                quotient |= 1
-            lhs_sig <<= 1
+                quot_sig |= 1
 
-        assert (lhs_sig >> 1) < rhs_sig
+        print('Done', lhs_sig, rhs_sig)
+        assert 0 <= lhs_sig < rhs_sig or bits == 0
 
-        if lhs_sig == 0:
+        if lhs_sig == 0 or bits == 0:
             lost_fraction = LostFraction.EXACTLY_ZERO
-        elif lhs_sig < rhs_sig:
+        elif lhs_sig * 2 < rhs_sig:
             lost_fraction = LostFraction.LESS_THAN_HALF
-        elif lhs_sig == rhs_sig:
+        elif lhs_sig * 2 == rhs_sig:
             lost_fraction = LostFraction.EXACTLY_HALF
         else:
             lost_fraction = LostFraction.MORE_THAN_HALF
 
-        return self._normalize(sign, exponent, quotient, lost_fraction, context)
+        # At present both quotient (which is truncated) and remainder have sign lhs.sign.
+        # The exponent when viewing quot_sig as an integer.
+        quotient_exponent = exponent_diff - (bits - 1)
+        if operation == 'D':
+            return self.make_real(sign, quotient_exponent, quot_sig, context, lost_fraction)
+
+        # IEEE remainder.  We need to figure out if the quotient rounds up under
+        # nearest-ties-to-even, to do another deduction of rhs_sig.
+
+        # As an integer it would drop the significand's least significant
+        # -quotient_exponent bits.
+        rshift = -quotient_exponent
+        shift_lf = lost_bits_from_rshift(quot_sig, rshift)
+
+        print(quot_sig, rshift, shift_lf, lost_fraction)
+
+        # If we shifted, combine the lost fractions; shift_lf is the more significant
+        if rshift > 0:
+            lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
+        elif rshift < 0:
+            lost_fraction = LostFraction(lost_fraction != LostFraction.EXACTLY_ZERO)
+
+        if lost_fraction == LostFraction.EXACTLY_HALF:
+            rounds_up = bool(quot_sig & (1 << rshift))
+        else:
+            rounds_up = lost_fraction == LostFraction.MORE_THAN_HALF
+        print('rounds up:', rounds_up, lhs_sig, rhs_sig, bits)
+
+        # If we incremented the quotient, we must correspondingly deduct the significands
+        if rounds_up:
+            lhs_sig -= rhs_sig
+            sign = not sign
+            lhs_sig = -lhs_sig
+
+        # IEEE-754 decrees a remainder of zero shall have the sign of the LHS
+        if lhs_sig == 0:
+            sign = lhs.sign
+
+        # Return the remainder
+        return self.make_real(sign, lhs_exponent - (bits - 1), lhs_sig, context)
 
     def sqrt(self, x, context):
         '''Return sqrt(x) in this format.'''
@@ -1418,8 +1456,34 @@ class Binary:
 
         If rhs is infinite then the result is lhs if it is finite.
         '''
-        raise NotImplementedError
+        if self.fmt != rhs.fmt:
+            raise ValueError('remainder requires an operand of the same format')
 
+        # Are we an infinity or NaN?
+        if self.e_biased == 0:
+            if self.significand:
+                return self.fmt._propagate_NaN(self, rhs, context)
+            elif rhs.is_NaN():
+                return self.fmt._propagate_NaN(rhs, rhs, context)
+            else:
+                # remainder (infinity, non-NaN) is an invalid operation
+                return self.fmt._invalid_op_NaN(context)
+        elif rhs.e_biased == 0:
+            if rhs.significand:
+                return self.fmt._propagate_NaN(rhs, rhs, context)
+            else:
+                # remainder(finite, infinity) is the LHS exact remainder(subnormal,
+                # infinity) is the LHS and signals underflow, which because the result is
+                # exact, sets a subnormal flag.
+                if self.is_subnormal():
+                    context.set_flags(Flags.SUBNORMAL)
+                return self.copy()
+        elif rhs.significand == 0:
+            # remainder (finite, zero) is an invalid operation
+            return self.fmt._invalid_op_NaN(context)
+
+        # At last, we're talking the remainder of two finite numbers with RHS non-zero.
+        return self.fmt._divide_finite(self, rhs, 'R', context)
 
     ##
     ## logBFormat operations (logBFormat is an integer format)

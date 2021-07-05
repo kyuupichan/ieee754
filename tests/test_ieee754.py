@@ -5,6 +5,7 @@ from itertools import product
 import pytest
 
 from ieee754 import *
+from ieee754 import HEX_SIGNIFICAND_PREFIX
 
 
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
@@ -35,6 +36,17 @@ def read_significand(significand):
     if significand[:2] in ('0x', '0X'):
         return int(significand, 16)
     return int(significand)
+
+
+def from_string(fmt, string):
+    context = std_context()
+    result = fmt.from_string(string, context)
+    if HEX_SIGNIFICAND_PREFIX.match(string):
+        assert context.flags & ~Flags.SUBNORMAL == 0
+    else:
+        assert context.flags & ~(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT) == 0
+    return result
+
 
 boolean_codes = {
     'Y': True,
@@ -774,6 +786,24 @@ class TestBinaryOps:
     @pytest.mark.parametrize('line', read_lines('divide.txt'))
     def test_divide(self, line):
         binary_operation(line, 'divide')
+
+    # @pytest.mark.parametrize('line', read_lines('remainder.txt'))
+    # def test_remainder(self, line):
+    #     parts = line.split()
+    #     if len(parts) != 5:
+    #         assert False, f'bad line: {line}'
+    #     fmt, lhs, rhs, status, answer = parts
+
+    #     fmt = format_codes[fmt]
+    #     lhs = from_string(fmt, lhs)
+    #     rhs = from_string(fmt, rhs)
+    #     status = status_codes[status]
+    #     answer = from_string(fmt, answer)
+
+    #     context = std_context()
+    #     result = lhs.remainder(rhs, context)
+    #     assert result.as_tuple() == answer.as_tuple()
+    #     assert context.flags == status
 
 
 class TestFMA:

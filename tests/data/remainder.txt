@@ -1,0 +1,147 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Format LHS RHS Status String
+
+
+###############
+#
+# remainder(NaN, Anything)
+# remainder(Anything, NaN)
+#
+###############
+
+# remainder(Nan, others) - return the LHS
+D NaN1 0 K NaN1
+D NaN1 -1 K NaN1
+D NaN1 Inf K NaN1
+D NaN1 -Inf K NaN1
+D NaN1 NaN2 K NaN1
+
+# remainder(non-NaN, NaN) - return the RHS
+Q -1 NaN2 K NaN2
+D -0 -NaN2 K -NaN2
+D -inf -NaN0xbeef K -NaN0xbeef
+
+# Quiet and Signalling.  Return the left hand quiet NaN
+D SNaN5 NaN4 X NaN5
+H -NaN1 SNaN2 X -NaN1
+Q SNaN0xdead -SNaN0xbeef X NaN0xdead
+Q -NaN0xdead -SNaN0xbeef X -NaN0xdead
+
+# Both Signalling.  Return the left hand quiet NaN
+S SNaN0x25 SNaN0xdead X NaN0x25
+D -SNaN0xdead SNaN2 X -NaN0xdead
+Q SNaN1 -SNaN2 X NaN1
+Q -SNaN3 -SNaN4 X -NaN3
+
+###############
+#
+# remainder(Finite, Infinity)
+# remainder(Subnormal, Infinity)
+#
+###############
+
+S 1.25 Inf K 1.25
+S 0x1.25p-130 Inf S 0x1.25p-130
+H 0 Inf K 0
+H 0 -Inf K 0
+H -0 Inf K -0
+H -0 -Inf K -0
+D -0x1.bedp-1050 Inf S -0x1.bedp-1050
+
+###############
+#
+# remainder(non-NaN, Zero)
+# remainder(Infinity, non-NaN)
+#
+###############
+
+S -1.0 0 X NaN
+S 0 -0 X NaN
+S 1 -0 X NaN
+
+S -Inf 0 X NaN
+
+S Inf 0x1.25p-130 X NaN
+S -Inf 1 X NaN
+S Inf -1 X NaN
+S Inf Inf X NaN
+S -Inf Inf X NaN
+
+###############
+#
+# remainder(Zero, Finite Non-Zero)
+#
+###############
+
+S 0 1 K 0
+S 0 -1 K 0
+S -0 1 K -0
+S -0 -1 K -0
+
+S -0 0x1.25p-130 K -0
+S 0 -0x1.25p-130 K 0
+
+###############
+#
+# remainder(Finite Non-Zero, Finite Non-Zero)
+#
+###############
+
+# Try all 4 sign combinations.
+
+# Round down with all four sign cominations
+S 20 6 K 2
+S 20 -6 K 2
+S -20 6 K -2
+S -20 -6 K -2
+
+# Round up with all four sign cominations
+S 22 6 K -2
+S 22 -6 K -2
+S -22 6 K 2
+S -22 -6 K 2
+
+# Ties; round up to even with all four sign cominations
+S 21 6 K -3
+S 21 -6 K -3
+S -21 6 K 3
+S -21 -6 K 3
+
+# Ties; round down to even with all four sign cominations
+S 15 6 K 3
+S 15 -6 K 3
+S -15 6 K -3
+S -15 -6 K -3
+
+# Remainder zero with sign of LHS
+S 12 6 K 0
+S 12 -6 K 0
+S -12 6 K -0
+S -12 -6 K -0
+
+# Generic floating point examples
+D 1.234 0.6589 K -0.0838000000000001
+D 1234 0.6589 K -0.11970000000007719
+
+# Different significand lengths
+
+D 0x1.234567890123p0 0x1.23p-100 K 2.311115933264683e-31
+D 0x1.23p10 0x1.234567890123p0 K 0.05333349212481764
+
+# Subnormals
+D 0x1.234567890123p0 0x1.23p-1060 S 2.3715e-320
+D 0x1.23p-1060 0x1.234567890123p0 S 9.2015e-320
+
+
+# # Try LHS and RHS of differening significand lengths and exponents.  Also subnormals.
+
+# #
+# # LHS exponent much greater than RHS
+# #
+# # D 1.23e120 6.589e-5 K 2.5519668310137358e-05
