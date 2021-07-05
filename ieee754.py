@@ -877,7 +877,7 @@ class BinaryFormat:
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
                 scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
             else:
-                scaled_sig = calc_fmt._divide_finite(sig, pow5, calc_context)
+                scaled_sig = calc_fmt._divide_finite(sig, pow5, None, calc_context)
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
                 scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
                 # If the exponent is below our e_min, the number is subnormal, and so
@@ -1095,9 +1095,18 @@ class BinaryFormat:
         sign = lhs.sign ^ rhs.sign
 
         if lhs.e_biased:
-            # LHS is finite.  Handle a finite RHS too.
+            # LHS is finite.  Is RHS finite too?
             if rhs.e_biased:
-                return self._divide_finite(lhs, rhs, context)
+                # Both are finite.  Handle zeroes.
+                if rhs.significand == 0:
+                    # 0 / 0 -> NaN
+                    if lhs.significand == 0:
+                        return self._invalid_op_NaN(context)
+                    # Finite / 0 -> Infinity
+                    context.set_flags(Flags.DIV_BY_ZERO)
+                    return self.make_infinity(sign)
+
+                return self._divide_finite(lhs, rhs, None, context)
 
             # RHS is NaN or infinity
             if rhs.significand == 0:
@@ -1120,25 +1129,18 @@ class BinaryFormat:
         # Propagate the NaN in the LHS
         return self._propagate_NaN(lhs, rhs, context)
 
-    def _divide_finite(self, lhs, rhs, context):
-        '''Return lhs / rhs, both finite numbers, in this format.'''
+    def _divide_finite(self, lhs, rhs, integer_rounding, context):
+        '''Calculate LHS / RHS, where both are finite and RHS is non-zero.
+
+        Return a (quotient, exponent, lost_fraction) tuple.
+        '''
         sign = lhs.sign ^ rhs.sign
-
-        # Division by zero?
-        if rhs.significand == 0:
-            # 0 / 0 -> NaN
-            if lhs.significand == 0:
-                return self._invalid_op_NaN(context)
-            # Finite / 0 -> Infinity
-            context.set_flags(Flags.DIV_BY_ZERO)
-            return self.make_infinity(sign)
-
-        # LHS zero?
         lhs_sig = lhs.significand
         if lhs_sig == 0:
             return self.make_zero(sign)
 
         rhs_sig = rhs.significand
+        assert rhs_sig
         exponent = lhs.exponent_int() - rhs.exponent_int()
 
         # Shift the lhs significand left until it is greater than the significand of the RHS
@@ -1147,7 +1149,7 @@ class BinaryFormat:
             lhs_sig <<= lshift
         else:
             rhs_sig <<= -lshift
-        exponent -= lshift + (self.precision - 1)
+        exponent -= lshift
 
         if lhs_sig < rhs_sig:
             lhs_sig <<= 1
@@ -1155,13 +1157,24 @@ class BinaryFormat:
 
         assert lhs_sig >= rhs_sig
 
-        # Long division
-        quot = 0
-        for _n in range(self.precision):
-            quot <<= 1
+        if integer_rounding is None:
+            # Do division to full precision for the divide operation.
+            bits = self.precision
+        else:
+            # Do integer division
+            pass
+
+        # Long division.  Note by construction the quotient will have a leading 1, i.e.,
+        # it will contain precisely BITS significant bits, representing a value between 1
+        # and 2.  Adjust the exponent so that it is correct when viewing the quotient as
+        # an integer.
+        exponent -= (bits - 1)
+        quotient = 0
+        for _n in range(bits):
+            quotient <<= 1
             if lhs_sig >= rhs_sig:
                 lhs_sig -= rhs_sig
-                quot |= 1
+                quotient |= 1
             lhs_sig <<= 1
 
         assert (lhs_sig >> 1) < rhs_sig
@@ -1174,7 +1187,8 @@ class BinaryFormat:
             lost_fraction = LostFraction.EXACTLY_HALF
         else:
             lost_fraction = LostFraction.MORE_THAN_HALF
-        return self._normalize(sign, exponent, quot, lost_fraction, context)
+
+        return self._normalize(sign, exponent, quotient, lost_fraction, context)
 
     def sqrt(self, x, context):
         '''Return sqrt(x) in this format.'''
@@ -1392,7 +1406,7 @@ class Binary:
     ##
 
     def remainder(self, rhs, context):
-        '''Set to the reaminder when divided by rhs.
+        '''Set to the remainder when divided by rhs.
 
         If rhs != 0, the remainder is defined for finite operands as r = lhs - rhs * n,
         where n is the integer nearest the exact number lhs / rhs with round-to-even
