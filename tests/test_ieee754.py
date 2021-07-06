@@ -876,7 +876,11 @@ class TestBinaryOps:
         rhs = from_string(format_codes[fmt], rhs)
         answer = boolean_codes[answer_code]
 
-        assert lhs.total_order(rhs) == answer
+        assert lhs.total_order(rhs) is answer
+        lhs_abs = lhs.copy_abs()
+        rhs_abs = rhs.copy_abs()
+
+        assert lhs.total_order_mag(rhs) is lhs_abs.total_order(rhs_abs)
 
 
 class TestFMA:

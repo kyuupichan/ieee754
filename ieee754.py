@@ -1398,9 +1398,6 @@ class Binary:
         assert self.is_finite()
         return self.e_biased - self.fmt.e_bias
 
-    def total_order_mag(self, rhs):
-        raise NotImplementedError
-
     ##
     ## Quiet computational operations
     ##
@@ -1817,3 +1814,7 @@ class Binary:
                 return True
             return not rhs.sign
         return self.sign
+
+    def total_order_mag(self, rhs):
+        '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
+        return self.copy_abs().total_order(rhs.copy_abs())
