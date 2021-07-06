@@ -1,0 +1,256 @@
+# Floatformat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+# Answer: L E G U
+
+# Test format: Format LHS RHS Answer
+
+
+###############
+#
+# -NaN CMP Any
+#
+###############
+
+D -NaN1 -Inf Y
+H -SNaN -Inf Y
+S -NaN 0x1.25p25 Y
+S -SNaN 0x1.25p25 Y
+H -NaN -0x1p-23 Y
+D -SNaN1 0x1p-138 Y
+H -NaN10 Inf Y
+H -SNaN Inf Y
+
+H -NaN NaN Y
+H -NaN SNaN Y
+H -SNaN NaN Y
+H -SNaN SNaN Y
+
+H -NaN -NaN Y
+H -NaN1 -NaN2 N
+H -NaN2 -NaN1 Y
+
+H -NaN -SNaN Y
+H -NaN1 -SNaN2 Y
+H -NaN2 -SNaN1 Y
+
+H -SNaN -NaN N
+H -SNaN1 -NaN2 N
+H -SNaN2 -NaN1 N
+
+H -SNaN -SNaN Y
+H -SNaN1 -SNaN2 N
+H -SNaN2 -SNaN1 Y
+
+
+###############
+#
+# +NaN CMP Any
+#
+###############
+
+D NaN1 -Inf N
+H SNaN -Inf N
+S NaN 0x1.25p25 N
+S SNaN 0x1.25p25 N
+D NaN -0x1p-23 N
+D SNaN1 0x1p-138 N
+H NaN10 Inf N
+H SNaN Inf N
+
+H NaN -NaN N
+H NaN -SNaN N
+H SNaN -NaN N
+H SNaN -SNaN N
+
+H NaN NaN Y
+H NaN1 NaN2 Y
+H NaN2 NaN1 N
+
+H NaN SNaN N
+H NaN1 SNaN2 N
+H NaN2 SNaN1 N
+
+H SNaN NaN Y
+H SNaN1 NaN2 Y
+H SNaN2 NaN1 Y
+
+H SNaN SNaN Y
+H SNaN1 SNaN2 Y
+H SNaN2 SNaN1 N
+
+###############
+#
+# Any CMP -NaN
+#
+###############
+
+D -Inf -NaN1 N
+H -Inf -SNaN N
+S 0x1.25p25 -NaN N
+S 0x1.25p25 -SNaN N
+H -0x1p-23 -NaN N
+D 0x1p-138 -SNaN1 N
+H Inf -NaN10 N
+H Inf -SNaN N
+
+###############
+#
+# Any CMP +NaN
+#
+###############
+
+D -Inf NaN1 Y
+H -Inf SNaN Y
+S 0x1.25p25 NaN Y
+S 0x1.25p25 SNaN Y
+H -0x1p-23 NaN Y
+D 0x1p-138 SNaN1 Y
+H Inf NaN10 Y
+H Inf SNaN Y
+
+###############
+#
+# +Inf CMP Non-NaN
+#
+###############
+
+D Inf 0 N
+H Inf -0 N
+Q Inf 0x1.25p25 N
+S Inf -0x1p-23 N
+D Inf 0x1p-138 N
+Q Inf -0x1.abp129 N
+Q Inf Inf Y
+S Inf -Inf N
+
+###############
+#
+# Non-NaN CMP +Inf
+#
+###############
+
+S 0 Inf Y
+D -0 Inf Y
+S 0x1.25p25 Inf Y
+D -0x1p-23 Inf Y
+S 0x1p-13 Inf Y
+D -0x1.abp129 Inf Y
+Q Inf Inf Y
+S -Inf Inf Y
+
+###############
+#
+# -Inf CMP Non-NaN
+#
+###############
+
+D -Inf 0 Y
+H -Inf -0 Y
+Q -Inf 0x1.25p25 Y
+S -Inf -0x1p-23 Y
+D -Inf 0x1p-138 Y
+S -Inf -0x1.abp126 Y
+Q -Inf Inf Y
+S -Inf -Inf Y
+
+###############
+#
+# Non-NaN CMP -Inf
+#
+###############
+
+S 0 -Inf N
+D -0 -Inf N
+S 0x1.25p25 -Inf N
+D -0x1p-23 -Inf N
+S 0x1p-13 -Inf N
+D -0x1.abp129 -Inf N
+Q Inf -Inf N
+S -Inf -Inf Y
+
+###############
+#
+# +Zero CMP Finite
+#
+###############
+
+S 0 0 Y
+D 0 -0 N
+S 0 1 Y
+D 0 -2e23 N
+D 0 0x1p-1000 Y
+D 0 -0x1p-500 N
+
+###############
+#
+# Finite CMP +Zero
+#
+###############
+
+D 0 0 Y
+H -0 0 Y
+Q 1 0 N
+S -2e23 0 Y
+D 0x1p-1000 0 N
+Q -0x1p-500 0 Y
+
+###############
+#
+# -Zero CMP Finite
+#
+###############
+
+S -0 0 Y
+D -0 -0 Y
+S -0 1 Y
+D -0 -2e23 N
+Q -0 0x1p-1000 Y
+D -0 -0x1p-500 N
+
+###############
+#
+# Finite CMP -Zero
+#
+###############
+
+D 0 -0 N
+H -0 -0 Y
+Q 1 -0 N
+S -2e23 -0 Y
+D 0x1p-1000 -0 N
+Q -0x1p-500 -0 Y
+
+###############
+#
+# Finite CMP Finite different signs non-zero
+#
+###############
+
+D 1 -2e23 N
+S 1e6 -2 N
+S 0x1p-100 -0x1.2p-100 N
+Q 2 -3 N
+H 3 -2 N
+
+D -1 2e23 Y
+S -1e6 2 Y
+S -0x1p-100 0x1.2p-100 Y
+Q -2 3 Y
+H -3 2 Y
+
+###############
+#
+# Other finite
+#
+###############
+
+S 2 3 Y
+S 2 2 Y
+S 3 2 N
+S -3 -2 Y
+S -2 -3 N
+S -2 -2 Y

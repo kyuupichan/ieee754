@@ -1398,9 +1398,6 @@ class Binary:
         assert self.is_finite()
         return self.e_biased - self.fmt.e_bias
 
-    def total_order(self, rhs):
-        raise NotImplementedError
-
     def total_order_mag(self, rhs):
         raise NotImplementedError
 
@@ -1661,7 +1658,9 @@ class Binary:
     def compare(self, rhs, context, signalling):
         '''Return LHS vs RHS as one of the four comparison constants.
 
-        Comparisons of NaNs signal INVALID if either is signalling or if signalling is True.'''
+        Comparisons of NaNs signal INVALID if either is signalling or if signalling is True.
+        If context is None, nothing is signalled.
+        '''
         if self.e_biased == 0:
             # LHS is a NaN?
             if not self.significand:
@@ -1723,8 +1722,7 @@ class Binary:
                 return Compare.LESS_THAN
 
         # Comparisons involving at least one NaN.
-        assert self.is_NaN() or rhs.is_NaN()
-        if signalling or self.is_signalling() or rhs.is_signalling():
+        if context and (signalling or self.is_signalling() or rhs.is_signalling()):
             context.set_flags(Flags.INVALID)
         return Compare.UNORDERED
 
@@ -1793,3 +1791,29 @@ class Binary:
 
     def compare_signalling_gu(self, rhs, context):
         return self.compare(rhs, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)
+
+    def total_order(self, rhs):
+        '''The total order relation on a format.  A loose equivalent of <=.'''
+        if self.fmt != rhs.fmt:
+            raise ValueError('total order requires both operands have the same format')
+        comp = self.compare(rhs, None, False)
+        if comp == Compare.LESS_THAN:
+            return True
+        if comp == Compare.GREATER_THAN:
+            return False
+        if comp == Compare.EQUAL:
+            return self.sign == rhs.sign or self.sign
+        # At least one is a NaN
+        if rhs.is_NaN():
+            if self.is_NaN():
+                if self.sign != rhs.sign:
+                    return self.sign
+                if self.is_signalling() != rhs.is_signalling():
+                    return self.is_signalling() ^ self.sign
+                if self.NaN_payload() < rhs.NaN_payload():
+                    return not self.sign
+                if self.NaN_payload() > rhs.NaN_payload():
+                    return self.sign
+                return True
+            return not rhs.sign
+        return self.sign

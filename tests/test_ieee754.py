@@ -865,6 +865,19 @@ class TestBinaryOps:
                 assert result == op_result
                 assert context.flags == op_status
 
+    @pytest.mark.parametrize('line', read_lines('total_order.txt'))
+    def test_total_order(self, line):
+        parts = line.split()
+        if len(parts) != 4:
+            assert False, f'bad line: {line}'
+        fmt, lhs, rhs, answer_code = parts
+
+        lhs = from_string(format_codes[fmt], lhs)
+        rhs = from_string(format_codes[fmt], rhs)
+        answer = boolean_codes[answer_code]
+
+        assert lhs.total_order(rhs) == answer
+
 
 class TestFMA:
 
