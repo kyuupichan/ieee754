@@ -334,6 +334,9 @@ class Context:
         '''Return True if the rounding mode rounds to nearest (ignoring ties).'''
         return self.rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP}
 
+    def __repr__(self):
+        return f'Context(rounding={self.rounding}, flags={self.flags!r} traps={self.traps!r})'
+
 
 class IntFormat:
     '''A two's-complement signed integer.'''
@@ -1165,13 +1168,11 @@ class BinaryFormat:
         for _n in range(bits):
             if _n:
                 lhs_sig <<= 1
-            #print(_n, lhs_sig, rhs_sig)
             quot_sig <<= 1
             if lhs_sig >= rhs_sig:
                 lhs_sig -= rhs_sig
                 quot_sig |= 1
 
-        print('Done', lhs_sig, rhs_sig)
         assert 0 <= lhs_sig < rhs_sig or bits == 0
 
         if lhs_sig == 0 or bits == 0:
@@ -1197,8 +1198,6 @@ class BinaryFormat:
         rshift = -quotient_exponent
         shift_lf = lost_bits_from_rshift(quot_sig, rshift)
 
-        print(quot_sig, rshift, shift_lf, lost_fraction)
-
         # If we shifted, combine the lost fractions; shift_lf is the more significant
         if rshift > 0:
             lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
@@ -1209,7 +1208,6 @@ class BinaryFormat:
             rounds_up = bool(quot_sig & (1 << rshift))
         else:
             rounds_up = lost_fraction == LostFraction.MORE_THAN_HALF
-        print('rounds up:', rounds_up, lhs_sig, rhs_sig, bits)
 
         # If we incremented the quotient, we must correspondingly deduct the significands
         if rounds_up:
@@ -1224,9 +1222,105 @@ class BinaryFormat:
         # Return the remainder
         return self.make_real(sign, lhs_exponent - (bits - 1), lhs_sig, context)
 
-    def sqrt(self, x, context):
-        '''Return sqrt(x) in this format.'''
-        raise NotImplementedError
+    def sqrt(self, value, context):
+        '''Return sqrt(value) in this format.  It has a positive sign for all operands >= 0,
+        except that sqrt(-0) shall be -0.'''
+        if value.e_biased == 0:
+            if value.significand:
+                # Propagate NaNs
+                return self._propagate_NaN(value, value, context)
+            # -Inf -> invalid operation
+            if value.sign:
+                return self._invalid_op_NaN(context)
+        if not value.significand:
+            # +0 -> +0, -0 -> -0, +Inf -> +Inf
+            return value.copy()
+        if value.sign:
+            return self._invalid_op_NaN(context)
+
+        # Value is non-zero, finite and positive.  Try and find a good initial estimate
+        # with significand the square root of the target significand, and half the
+        # exponent.  Shift the significand to improve the initial approximation (adjusting
+        # the exponent to compensate) and ensure the exponent is even.
+        nearest_context = Context()
+        exponent = value.exponent_int()
+        sig = value.significand
+        precision_bump = max(0, 63 - sig.bit_length())
+        if (exponent - precision_bump) & 1:
+            precision_bump += 1
+        exponent -= precision_bump
+        sig <<= precision_bump
+
+        # Newton-Raphson loop
+        est = self.make_real(False, exponent // 2, math.floor(math.sqrt(sig)), nearest_context)
+        n = 1
+        while True:
+            print(n, "EST", est.as_tuple(), est.to_hex(TextFormat(), Context()))
+            assert est.significand
+
+            nearest_context.clear_flags()
+            div = self.divide(value, est, nearest_context)
+            print(n, "DIV", div.as_tuple(), nearest_context)
+
+            if est.e_biased == div.e_biased:
+                if abs(div.significand - est.significand) <= 1:
+                    break
+            elif (div.next_up(nearest_context).as_tuple() == est.as_tuple()
+                    or est.next_up(nearest_context).as_tuple() == div.as_tuple()):
+                break
+
+            # est <- (est + div) / 2
+            est = self.add(est, div, nearest_context)
+            est = est.scaleb(-1, nearest_context)
+            n += 1
+
+        down_context = Context(ROUND_DOWN)
+        # Ensure that the precise answer lies in [est, est.next_up()).
+        if div.significand == est.significand:
+            # Do we have an exact square root?
+            if not (nearest_context.flags & Flags.INEXACT):
+                if est.is_subnormal():
+                    context.set_flags(Flags.SUBNORMAL)
+                return est
+
+            est_squared = value.fmt.multiply(est, est, down_context)
+            if est_squared.compare_quiet_ge(value, down_context):
+                est = est.next_down(down_context)
+        elif est.compare_quiet_ge(div, down_context):
+            est = div
+
+        print("EST", est.as_tuple(), est.to_hex(TextFormat(), Context()))
+
+        # EST and EST.next_up() now bound the precise result.  Decide if we need to round
+        # it up.  This is only difficult with non-directed roundings.
+        if context.round_to_nearest():
+            temp_fmt = BinaryFormat(self.precision + 1, self.e_max, self.e_min)
+            nearest_context.clear_flags()
+            half = temp_fmt.add(est, est.next_up(nearest_context), nearest_context)
+            half = half.scaleb(-1, nearest_context)
+            assert not (nearest_context.flags & Flags.INEXACT)
+            down_context.clear_flags()
+            half_squared = value.fmt.multiply(half, half, down_context)
+            compare = half_squared.compare(value, down_context, False)
+            if compare == Compare.LESS_THAN:
+                lost_fraction = LostFraction.MORE_THAN_HALF
+            elif compare == Compare.EQUAL:
+                if down_context.flags & Flags.INEXACT:
+                    lost_fraction = LostFraction.LESS_THAN_HALF
+                else:
+                    lost_fraction = LostFraction.EXACTLY_HALF
+            else:
+                lost_fraction = LostFraction.LESS_THAN_HALF
+        else:
+            # Anything as long as non-zero
+            lost_fraction = LostFraction.EXACTLY_HALF
+
+        # Now round est with the lost fraction
+        is_tiny_before = est.is_subnormal()
+        if context.round_up(lost_fraction, False, bool(est.significand & 1)):
+            est = est.next_up(nearest_context)
+        context.on_normalized_finite(is_tiny_before, est.is_subnormal(), True)
+        return est
 
     def fma(self, lhs, rhs, addend, context):
         '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
@@ -1241,7 +1335,6 @@ class BinaryFormat:
         # FIXME: when tests are complete, use context not product_context
         product_context = Context()
         product = product_fmt.multiply(lhs, rhs, product_context)
-        print(product_context.flags)
         assert product_context.flags & ~Flags.INVALID == 0
         context.set_flags(product_context.flags)
         return self.add(product, addend, context)

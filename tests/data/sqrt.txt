@@ -1,0 +1,131 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Rounding ValueFmt Value AnswerFmt Status Answer
+
+
+############
+##
+## NaNs
+##
+############
+
+E S NaN Q K NaN
+u D sNaN H X NaN1
+C Q -NaN H K -NaN
+F H SNAN S X NaN1
+D H -SNAN D X -Nan1
+
+############
+##
+## Infinity
+##
+############
+
+F H Inf Q K Inf
+C D Inf S K Inf
+D S Inf H K Inf
+E Q Inf D K Inf
+
+F H -Inf Q X NaN
+C D -Inf S X NaN
+D S -Inf H X NaN
+U Q -Inf D X NaN
+
+############
+##
+## Zeroes
+##
+############
+
+E H 0 Q K 0
+C S 0 S K 0
+F Q 0 D K 0
+U D 0 H K 0
+D S 0 Q K 0
+u D 0 S K 0
+d H 0 S K 0
+
+E H -0 Q K -0
+C S -0 S K -0
+F Q -0 D K -0
+U D -0 H K -0
+D S -0 Q K -0
+u D -0 S K -0
+d H -0 S K -0
+
+#############
+##
+## Finite negative
+##
+#############
+
+E H -1 Q X NaN
+E Q -0x1.23p-123 S X NaN
+
+#############
+##
+## Exact cases
+##
+#############
+
+E H 4 Q K 2
+E Q 9 H K 3
+E S 0x1.2ff7200000000p-13 H K 0x1.8a8p-7
+E D 0x1.bf86910663480p+201 S K 0x1.deadb4p100
+E Q 31565610342338352390258859634209607245590586866127287616887101068810636164030992089740997237038600971571805613523443122176 D K 0x1.bf8691066348fp+201
+
+#############
+##
+## Inexact cases
+##
+#############
+
+# Test single values between (1 and 1+IEEEhalf.epsilon)^2 round down to 1
+D S 1 H K 1
+D S 0x1.000002p0 H I 1
+U S 0x1.000002p0 H I 0x1.004p0
+
+E S 0x1.004002p0 H I 1
+E S 0x1.004004p0 H I 1               # This is the half-way point
+E S 0x1.004006p0 H I 0x1.004p0
+
+D S 0x1.00800ep0 H I 1
+U S 0x1.00800ep0 H I 0x1.004p0
+D S 0x1.00801p0 H K 0x1.004p0
+
+# And now the round to even upwards case
+
+D S 0x1.008012p0 H I 0x1.004p0
+U S 0x1.008012p0 H I 0x1.008p0
+
+E S 0x1.00c022p0 H I 0x1.004p0
+E S 0x1.00c024p0 H I 0x1.008p0      # This is the half-way point
+E S 0x1.00c026p0 H I 0x1.008p0
+
+D S 0x1.01003ep0 H I 0x1.004p0
+U S 0x1.01003ep0 H I 0x1.008p0
+
+E S 0x1.01004p0 H K 0x1.008p0
+
+# Now test near the binade boundary
+
+E S 0x1.ff8008p1 H K 0x1.ffcp0
+D S 0x1.ffa000p1 H I 0x1.ffcp0
+
+E S 0x1.ffc000p1 H I 0x1.ffcp0
+E S 0x1.ffc002p1 H I 2              # This is the half-way point
+E S 0x1.ffc004p1 H I 2
+
+D S 0x1.fffffep1 H I 0x1.ffcp0
+E S 0x1.fffffep1 H I 2
+U S 0x1.fffffep1 H I 2
+
+# Square root of 2 in quad precision
+D H 2 Q I 0x1.6a09e667f3bcc908b2fb1366ea95p0
+E H 2 Q I 0x1.6a09e667f3bcc908b2fb1366ea95p0
+U H 2 Q I 0x1.6a09e667f3bcc908b2fb1366ea96p0

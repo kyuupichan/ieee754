@@ -821,7 +821,6 @@ class TestUnaryOps:
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
             assert value.as_tuple() == answer.as_tuple()
 
-
     def test_pack_bad(self):
         with pytest.raises(RuntimeError):
             x87double.pack(False, 0, 0)
