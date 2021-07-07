@@ -65,6 +65,7 @@ format_codes = {
     'S': IEEEsingle,
     'D': IEEEdouble,
     'Q': IEEEquad,
+    'x': x87extended,
 }
 
 rounding_codes = {
@@ -241,6 +242,24 @@ class TestTraps:
         result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
         assert result.is_zero()
         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+
+
+class TestBinaryFormat:
+
+    @pytest.mark.parametrize('fmt, is_if, precision, e_max', (
+        (IEEEhalf, True, 11, 15),
+        (IEEEsingle, True, 24, 127),
+        (IEEEdouble, True, 53, 1023),
+        (IEEEquad, True, 113, 16383),
+        (x87extended, True, 64, 16383),
+        (x87double, False, 53, 16383),
+        (x87single, False, 24, 16383),
+    ))
+    def test_interchange(self, fmt, is_if, precision, e_max):
+        assert bool(fmt.fmt_width) is is_if
+        assert fmt.precision == precision
+        assert fmt.e_max == e_max
+        assert fmt.e_min == 1 - fmt.e_max
 
 
 # Test basic class functions before reading test files
@@ -747,6 +766,99 @@ class TestUnaryOps:
         assert result.as_tuple() == answer.as_tuple()
         assert context.flags == status
 
+    @pytest.mark.parametrize('line', read_lines('sqrt.txt'))
+    def test_sqrt(self, line):
+        # Tests next_up and next_down
+        parts = line.split()
+        if len(parts) != 6:
+            assert False, f'bad line: {line}'
+        context, fmt, value, dst_fmt, status, answer = parts
+        fmt = format_codes[fmt]
+        dst_fmt = format_codes[dst_fmt]
+        context = context_string_to_context(context)
+        value = from_string(fmt, value)
+        status = status_codes[status]
+        answer = from_string(dst_fmt, answer)
+
+        result = dst_fmt.sqrt(value, context)
+        assert result.as_tuple() == answer.as_tuple()
+        assert context.flags == status
+
+    @pytest.mark.parametrize('endianness', ('big', 'little'))
+    def test_pack_unpack_round_trip(self, endianness):
+        for value in range(0, 65536):
+            binary = value.to_bytes(2, endianness)
+            parts = IEEEhalf.unpack(binary, endianness)
+            packed_value = IEEEhalf.pack(*parts, endianness)
+            assert binary == packed_value
+
+    def test_x87_pseudos(self):
+        # 3fff9180000000000000 is the canonical representation of 0x1.23p0.  Clear its
+        # integer bit (making it an unnormal) and check
+        for hex_str in ('3fff9180000000000000', '3fff1180000000000000'):
+            value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
+            assert value.to_hex(TextFormat(), Context()) == '0x1.23p0'
+
+        # 7fffc000000000000000 is the canonical representation of a NaN with integer bit
+        # set.  Test clearing it (a pseudo-NaN) gives the right answer.
+        for hex_str in ('7fffc000000000000000', '7fff4000000000000000'):
+            value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
+            assert value.is_NaN()
+            assert not value.is_signalling()
+            assert value.NaN_payload() == 0
+
+        # 7fff8000000000000000 is the canonical representation of +Inf with integer bit
+        # set.  Test clearing it gives the right answer.
+        for hex_str in ('7fff8000000000000000', '7fff0000000000000000'):
+            value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
+            assert value.to_hex(TextFormat(), Context()) == 'Inf'
+
+        # 00000000a03000000000 is the canonical representation of 0x1.85p-16400, or
+        # 0x0.0000614p-16382, a subnormal with integer bit clear.  Test setting it gives
+        # the right answer.
+        answer = x87extended.from_string('0x1.85p-16400', Context())
+        for hex_str in ('0000000030a000000000', '0000800030a000000000'):
+            value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
+            assert value.as_tuple() == answer.as_tuple()
+
+
+    def test_pack_bad(self):
+        with pytest.raises(RuntimeError):
+            x87double.pack(False, 0, 0)
+        with pytest.raises(ValueError):
+            IEEEhalf.pack(False, 0, -1)
+        with pytest.raises(ValueError):
+            IEEEhalf.pack(False, 0, 1 << 10)
+        with pytest.raises(ValueError):
+            IEEEhalf.pack(False, -1, 0)
+        with pytest.raises(ValueError):
+            IEEEhalf.pack(False, 32, 0)
+
+    def test_unpack_bad(self):
+        with pytest.raises(RuntimeError):
+            x87double.unpack(bytes(8))
+        with pytest.raises(ValueError):
+            IEEEhalf.unpack(bytes(3))
+
+    @pytest.mark.parametrize('line', read_lines('pack.txt'))
+    def test_pack_file(self, line):
+        parts = line.split()
+        if len(parts) != 3:
+            assert False, f'bad line: {line}'
+        fmt, value, answer = parts
+        fmt = format_codes[fmt]
+        value = from_string(fmt, value)
+        result = value.pack('big')
+
+        # Test big-endian packing
+        assert result.hex() == answer
+        # Test little-endian packing
+        le_packing = value.pack('little')
+        assert bytes(reversed(result)) == le_packing
+        # Test big-endian unpacking
+        assert value.as_tuple() == value.fmt.unpack_value(result, 'big').as_tuple()
+        # Test little-endian unpacking
+        assert value.as_tuple() == value.fmt.unpack_value(le_packing, 'little').as_tuple()
 
 def binary_operation(line, operation):
     parts = line.split()

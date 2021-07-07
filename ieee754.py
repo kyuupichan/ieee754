@@ -438,14 +438,14 @@ class BinaryFormat:
         self.logb_NaN = self.logb_zero - 1
 
         # Are we an interchange format?  If not, fmt_width is zero, otherwise it is the
-        # format width in bits (the sign bit, the exponent and the significand excluding
+        # format width in bits (the sign bit, the exponent and the significand including
         # the integer bit).  Only interchange formats can be packed to and unpacked from
         # binary bytes.
         self.fmt_width = 0
         if e_min == 1 - e_max and (e_max + 1) & e_max == 0:
             e_width = e_max.bit_length() + 1
-            fmt_width = 1 + e_width + precision
-            if 0 <= (fmt_width + 1) % 16 <= 1:
+            fmt_width = 1 + e_width + precision   # With integer bit
+            if 0 <= fmt_width % 16 <= 1:
                 self.fmt_width = fmt_width
 
     @classmethod
@@ -630,74 +630,71 @@ class BinaryFormat:
         # Infinities
         return self.make_infinity(value.sign)
 
-    def pack(self, sign, biased_exponent, significand, endianness='little'):
-        '''Returns a floating point value encoded as bytes of the given endianness.'''
-        if not self.fmt_width:
-            raise RuntimeError('not an interchange format')
-        if not 0 <= significand <= self.max_significand:
-            raise ValueError('significand out of range')
-        if not 0 <= biased_exponent <= self.e_max + self.e_bias:
-            raise ValueError('biased exponent out of range')
+    def pack(self, sign, exponent, significand, endianness='little'):
+        '''Packs the IEEE parts of a floating point number as bytes of the given endianness.
 
-        # Build up the bit representation
-        implicit_integer_bit = (self.fmt_width % 8 == 0)
-        lshift = self.precision - implicit_integer_bit
-
-        # Normalize to an interchange format exponent
-        if biased_exponent == 0:
-            if significand >= self.int_bit:
-                raise ValueError('integer bit is set for infinity / NaN')
-            exponent = self.e_max + self.e_bias + 1
-        else:
-            if significand < self.int_bit:
-                exponent = 0
-            elif implicit_integer_bit:
-                # Remove explicit integer bit
-                significand -= self.int_bit
-
-        value = exponent
-        if sign:
-            value += (self.e_max + 1) << 1
-        value = (value << lshift) + significand
-        return value.to_bytes((self.fmt_width + 1) // 8, endianness)
-
-    def unpack(self, binary, endianness='little'):
-        '''Decode a binary encoding to a (sign, biased_exponent, significand) tuple.
-
-        If the integer bit is explicit, normalize invalid encodings but set the invalid
-        operation flag.
+        exponent is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and
+        subnormals and e_max * 2 + 1 for NaNs and infinites.  significand must not include
+        the integer bit.
         '''
         if not self.fmt_width:
             raise RuntimeError('not an interchange format')
-        size = (self.fmt_width + 1) // 8
+        if not 0 <= significand < self.int_bit:
+            raise ValueError('significand out of range')
+        if not 0 <= exponent <= self.e_max * 2 + 1:
+            raise ValueError('biased exponent out of range')
+
+        # If the format has an explicit integer bit, add it to the significand for normal
+        # numbers.
+        explicit_integer_bit = self.fmt_width % 8 == 0
+        lshift = self.precision - 1
+        if explicit_integer_bit:
+            lshift += 1
+            # NaNs and infinities have the integer bit set
+            if 1 <= exponent <= self.e_max * 2 + 1:
+                significand += self.int_bit
+
+        # Build up the encoding from the parts
+        value = exponent
+        if sign:
+            value += (self.e_max + 1) * 2
+        value = (value << lshift) + significand
+        return value.to_bytes(self.fmt_width // 8, endianness)
+
+    def unpack(self, binary, endianness='little'):
+        '''Decode a binary encoding and return a BinaryTuple.
+
+        Exponent is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and
+        subnormals and e_max * 2 + 1 for NaNs and infinites.  significand does not include
+        the integer bit.
+        '''
+        if not self.fmt_width:
+            raise RuntimeError('not an interchange format')
+        size = self.fmt_width // 8
         if len(binary) != size:
             raise ValueError(f'expected {size} bytes to unpack; got {len(binary)}')
         value = int.from_bytes(binary, endianness)
 
-        significand = value & self.max_significand
-        implicit_integer_bit = (self.fmt_width % 8 == 0)
+        # Extract the parts from the encoding
+        implicit_integer_bit = self.fmt_width % 8 == 1
+        significand = value & (self.int_bit - 1)
         value >>= self.precision - implicit_integer_bit
-        biased_exponent = value & ((self.e_max + 1) << 1)
-        sign = value != biased_exponent
+        exponent = value & (self.e_max * 2 + 1)
+        sign = value != exponent
 
-        # Normalize to our internal format exponent
-        if biased_exponent == 0:
-            # Integer bit should not be set on subnormals
-            if significand >= self.int_bit:
-                # FIXME: flag invalid operation
-                significand -= self.int_bit
-            biased_exponent = 1
-        elif biased_exponent == self.e_max + self.e_bias + 1:
-            # Infinities and NaNs.  The integer bit should not be set.
-            if significand >= self.int_bit:
-                # FIXME: flag invalid operation
-                significand -= self.int_bit
-            biased_exponent = 0
-        elif not implicit_integer_bit and significand < self.int_bit:
-            # FIXME: flag invalid operation
-            significand |= self.int_bit
+        return BinaryTuple(sign, exponent, significand)
 
-        return sign, biased_exponent, significand
+    def unpack_value(self, binary, endianness='little'):
+        '''Decode a binary encoding and return a Binary floating point value.'''
+        sign, exponent, significand = self.unpack(binary, endianness)
+        if exponent == 0:
+            exponent = 1
+        elif exponent == self.e_max * 2 + 1:
+            exponent = 0
+        else:
+            significand += self.int_bit
+
+        return Binary(self, sign, exponent, significand)
 
     def from_string(self, string, context):
         '''Convert a string to a rounded floating number of this format.'''
@@ -1335,6 +1332,18 @@ class Binary:
             exponent = self.exponent_int()
 
         return BinaryTuple(self.sign, exponent, significand)
+
+    def pack(self, endianness='little'):
+        '''Packs this value to bytes of the given endianness.'''
+        significand = self.significand
+        if self.e_biased == 0:
+            ieee_exponent = self.fmt.e_max * 2 + 1
+        elif significand < self.fmt.int_bit:
+            ieee_exponent = 0
+        else:
+            ieee_exponent = self.e_biased
+            significand -= self.fmt.int_bit
+        return self.fmt.pack(self.sign, ieee_exponent, significand, endianness)
 
     def NaN_payload(self):
         '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''

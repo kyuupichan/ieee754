@@ -1,0 +1,85 @@
+# Floatformat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# HexBE: Value encoded in big-endian
+
+# Test format: Format Value HexBE
+
+###############
+#
+# NaNs
+#
+###############
+
+H NaN 7e00
+S NaN 7fc00000
+
+H NaN0xab 7eab
+S NaN0x3abcde 7ffabcde
+
+H -NaN20 fe14
+H SNaN 7c01
+H -SNaN0x111 fd11
+
+Q -NaN ffff8000000000000000000000000000
+Q NaN2 7fff8000000000000000000000000002
+Q SNaN 7fff0000000000000000000000000001
+
+x NaN  7fffc000000000000000
+x SNaN 7fff8000000000000001
+
+###############
+#
+# Infinities
+#
+###############
+
+H Inf  7c00
+S Inf  7f800000
+H -Inf fc00
+S -Inf ff800000
+D Inf  7ff0000000000000
+D -Inf fff0000000000000
+Q Inf  7fff0000000000000000000000000000
+Q -Inf ffff0000000000000000000000000000
+x Inf  7fff8000000000000000
+x -Inf ffff8000000000000000
+
+###############
+#
+# Zeroes
+#
+###############
+
+H 0  0000
+S 0  00000000
+H -0 8000
+S -0 80000000
+D 0  0000000000000000
+D -0 8000000000000000
+Q 0  00000000000000000000000000000000
+Q -0 80000000000000000000000000000000
+x 0  00000000000000000000
+x -0 80000000000000000000
+
+###############
+#
+# Finite
+#
+###############
+
+H 0x1.2p10 6480
+H -0x1.34p-5 a8d0
+
+S 0x1.2345p127  7f11a280
+S -0x1.fabp-126 80fd5800
+S 0x1.deadp-127 0077ab40
+
+D 0x1.234567890123p15 40e2345678901230
+D -0x1.deadp-1020     803dead000000000
+D -0x1.deadbeefp-1035 800000ef56df7780
+
+Q -0x1.deadp14526 f8bddead000000000000000000000000
+Q 0x1p-16494      00000000000000000000000000000001
