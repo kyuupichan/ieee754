@@ -1,0 +1,189 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: FloatFormat Rounding String Status String
+
+############
+##
+## Non-zero integers
+##
+############
+
+S E 1 K 1
+S E 2 K 2
+S E 0x1000p0 K 4096
+
+S E 0x1.8p0 I 2
+S U 0x1.8p0 I 2
+S C 0x1.8p0 I 2
+S F 0x1.8p0 I 1
+S D 0x1.8p0 I 1
+S d 0x1.8p0 I 1
+S u 0x1.8p0 I 2
+
+S E 0x2.8p0 I 2
+S U 0x2.8p0 I 3
+S C 0x2.8p0 I 3
+S F 0x2.8p0 I 2
+S D 0x2.8p0 I 2
+S d 0x2.8p0 I 2
+S u 0x2.8p0 I 3
+
+S E -0x1.8p0 I -2
+S U -0x1.8p0 I -2
+S C -0x1.8p0 I -1
+S F -0x1.8p0 I -2
+S D -0x1.8p0 I -1
+S d -0x1.8p0 I -1
+S u -0x1.8p0 I -2
+
+S E -0x2.8p0 I -2
+S U -0x2.8p0 I -3
+S C -0x2.8p0 I -2
+S F -0x2.8p0 I -3
+S D -0x2.8p0 I -2
+S d -0x2.8p0 I -2
+S u -0x2.8p0 I -3
+
+S E 0x2.801p0 I 3
+S U 0x2.801p0 I 3
+S C 0x2.801p0 I 3
+S F 0x2.801p0 I 2
+S D 0x2.801p0 I 2
+S d 0x2.801p0 I 3
+S u 0x2.801p0 I 3
+
+  # Large
+S C 0x1.1p23 K 8912896
+S C 0x1p24 K 16777216
+S C 0x1p25 K 33554432
+
+############
+##
+## Denormals
+##
+############
+
+S C 0x1p-127 I 1
+S E 0x1p-127 I 0
+S d 0x1p-127 I 0
+S u 0x1p-127 I 0
+S C 0x1p-149 I 1
+S E 0x1p-149 I 0
+S F -0x1p-127 I -1
+S E -0x1p-127 I -0
+S F -0x1p-149 I -1
+S E -0x1p-149 I -0
+
+############
+##
+## Finite decimals
+##
+############
+
+  # Positive half
+S E 0x1p-1 I 0
+D U 0x1p-1 I 1
+Q C 0x1p-1 I 1
+H F 0x1p-1 I 0
+S D 0x1p-1 I 0
+S d 0x1p-1 I 0
+S u 0x1p-1 I 1
+
+  # Negative half
+H E -0x1p-1 I -0
+S U -0x1p-1 I -1
+D C -0x1p-1 I -0
+Q F -0x1p-1 I -1
+H D -0x1p-1 I -0
+S d -0x1p-1 I -0
+S u -0x1p-1 I -1
+
+  # +0.25
+S E 0x1p-2 I 0
+D U 0x1p-2 I 1
+Q C 0x1p-2 I 1
+H F 0x1p-2 I 0
+S D 0x1p-2 I 0
+D d 0x1p-2 I 0
+D u 0x1p-2 I 0
+
+  # -0.25
+H E -0x1p-2 I -0
+S U -0x1p-2 I -1
+D C -0x1p-2 I -0
+Q F -0x1p-2 I -1
+H D -0x1p-2 I -0
+H d -0x1p-2 I -0
+H u -0x1p-2 I -0
+
+  # +0.75
+S E 0x3p-2 I 1
+D U 0x3p-2 I 1
+Q C 0x3p-2 I 1
+H F 0x3p-2 I 0
+S D 0x3p-2 I 0
+S d 0x3p-2 I 1
+S u 0x3p-2 I 1
+
+  # -0.75
+H E -0x3p-2 I -1
+S U -0x3p-2 I -1
+D C -0x3p-2 I -0
+Q F -0x3p-2 I -1
+H D -0x3p-2 I -0
+H d -0x3p-2 I -1
+H u -0x3p-2 I -1
+
+  # Large
+S E 0x7fffff.8p0 I 8388608
+S U 0x7fffff.8p0 I 8388608
+S C 0x7fffff.8p0 I 8388608
+S F 0x7fffff.8p0 I 8388607
+S D 0x7fffff.8p0 I 8388607
+S d 0x7fffff.8p0 I 8388607
+S u 0x7fffff.8p0 I 8388608
+
+S E 0x7ffffe.8p0 I 8388606
+S U 0x7ffffe.8p0 I 8388607
+S C 0x7ffffe.8p0 I 8388607
+S F 0x7ffffe.8p0 I 8388606
+S D 0x7ffffe.8p0 I 8388606
+S d 0x7ffffe.8p0 I 8388606
+S u 0x7ffffe.8p0 I 8388607
+
+#
+# Infinities
+#
+
+S E +Inf K +Infinity
+D u -Inf K -INF
+Q C -Inf K -Inf
+H F +Inf K +Inf
+H D +Inf K +Inf
+
+#
+# Zeroes
+#
+
+S E 0x0p0 K 0
+D u -0x0p0 K -0
+Q C 0 K 0
+H U -0x0p0 K -0
+Q d 0x0p0 K 0
+H F -0 K -0
+H D +0x0p0 K 0
+
+#
+# NaNs
+#
+
+S E NaN K NaN
+D u sNaN X NaN1
+Q C -NaN K -NaN
+H F SNAN X NaN1
+H D -SNAN X -Nan1

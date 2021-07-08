@@ -262,6 +262,22 @@ class TestBinaryFormat:
         assert fmt.e_min == 1 - fmt.e_max
 
 
+class TestIntegerFormat:
+
+    @pytest.mark.parametrize('width, is_signed, min_int, max_int',(
+        (8, True, -128, 127),
+        (8, False, 0, 255),
+        (32, True, -(1 << 31), (1 << 31) - 1),
+        (32, False, 0, (1 << 32) - 1)
+    ))
+    def test_integer_format(self, width, is_signed, min_int, max_int):
+        fmt = IntegerFormat(width, is_signed)
+        assert fmt.min_int == min_int
+        assert fmt.max_int == max_int
+        assert fmt.width == width
+        assert fmt.is_signed == is_signed
+
+
 # Test basic class functions before reading test files
 class TestGeneralNonComputationalOps:
 
@@ -594,24 +610,58 @@ class TestUnaryOps:
         else:
             assert False, f'bad line: {line}'
 
-    @pytest.mark.parametrize('line', read_lines('round.txt'))
-    def test_round(self, line):
+    @pytest.mark.parametrize('line, kind, exact', product(
+        read_lines('round_to_integral.txt'),
+        ('round', (8, True), (8, False), (64, True), (64, False)),
+        (False, True),
+    ))
+    def test_to_integer(self, line, kind, exact):
         parts = line.split()
         if len(parts) != 5:
             assert False, f'bad line: {line}'
-        fmt, rounding, value, status, answer = parts
+        fmt, rounding, value, status, answer_str = parts
         fmt = format_codes[fmt]
-        context = Context(rounding_codes[rounding])
-        input_context = std_context()
-        value = fmt.from_string(value, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
+        value = from_string(fmt, value)
         status = status_codes[status]
-        answer = fmt.from_string(answer, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
+        answer = from_string(fmt, answer_str)
 
-        result = value.round(context)
-        assert result.as_tuple() == answer.as_tuple()
-        assert context.flags == status
+        if kind == 'round':
+            if exact:
+                context = Context(rounding_codes[rounding])
+                result = value.round_to_integral_exact(context)
+                assert result.as_tuple() == answer.as_tuple()
+                assert context.flags == status
+            else:
+                context = Context()
+                result = value.round_to_integral(rounding_codes[rounding], context)
+                assert result.as_tuple() == answer.as_tuple()
+                assert context.flags == status & ~Flags.INEXACT
+        else:
+            integer_format = IntegerFormat(*kind)
+            context = Context()
+            if answer.is_NaN():
+                status = Flags.INVALID
+                answer = 0
+            elif answer.is_infinite():
+                status = Flags.INVALID
+                answer = integer_format.min_int if answer.sign else integer_format.max_int
+            else:
+                answer = int(answer_str)
+                if answer < integer_format.min_int:
+                    answer, status = integer_format.min_int, Flags.INVALID
+                elif answer > integer_format.max_int:
+                    answer, status = integer_format.max_int, Flags.INVALID
+            if exact:
+                result = value.convert_to_integer_exact(integer_format, rounding_codes[rounding],
+                                                        context)
+                assert result == answer
+                assert context.flags == status
+            else:
+                result = value.convert_to_integer(integer_format, rounding_codes[rounding],
+                                                  context)
+                assert result == answer
+                assert context.flags == status & ~Flags.INEXACT
+
 
     @pytest.mark.parametrize('line', read_lines('convert.txt'))
     def test_convert(self, line):

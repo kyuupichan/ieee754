@@ -12,7 +12,7 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('Context', 'BinaryFormat', 'Flags', 'Binary', 'TextFormat', 'Compare',
+__all__ = ('Context', 'BinaryFormat', 'IntegerFormat', 'Flags', 'Binary', 'TextFormat', 'Compare',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
@@ -184,6 +184,36 @@ def shift_right(significand, bits):
     return result, lost_bits_from_rshift(significand, bits)
 
 
+def round_up(rounding, lost_fraction, sign, is_odd):
+    '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
+    away from zero by incrementing the significand).
+
+    sign is the sign of the number, and is_odd indicates if the LSB of the new
+    significand is set, which is needed for ties-to-even rounding.
+    '''
+    if lost_fraction == LostFraction.EXACTLY_ZERO:
+        return False
+
+    if rounding == ROUND_HALF_EVEN:
+        if lost_fraction == LostFraction.EXACTLY_HALF:
+            return is_odd
+        else:
+            return lost_fraction == LostFraction.MORE_THAN_HALF
+    elif rounding == ROUND_CEILING:
+        return not sign
+    elif rounding == ROUND_FLOOR:
+        return sign
+    elif rounding == ROUND_DOWN:
+        return False
+    elif rounding == ROUND_UP:
+        return True
+    elif rounding == ROUND_HALF_DOWN:
+        return lost_fraction == LostFraction.MORE_THAN_HALF
+    else:
+        assert rounding == ROUND_HALF_UP
+        return lost_fraction != LostFraction.LESS_THAN_HALF
+
+
 class BinaryError(ArithmeticError):
     '''All traps subclass from this.'''
 
@@ -266,47 +296,18 @@ class Context:
         if self.traps & flags:
             raise flag_map[flags]
 
-    def on_normalized_finite(self, is_tiny_before, is_tiny_after, is_inexact):
+    def on_normalized_finite(self, is_tiny_before, is_tiny_or_zero_after, is_inexact):
         '''Call after normalisation of a finite number to set flags appropriately.'''
-        if is_tiny_after:
+        if is_tiny_or_zero_after:
             if is_inexact:
                 self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
             else:
                 self.set_flags(Flags.SUBNORMAL)
         elif is_tiny_before:
+            assert is_inexact
             self.set_flags(Flags.SUBNORMAL | Flags.INEXACT)
         elif is_inexact:
             self.set_flags(Flags.INEXACT)
-
-    def round_up(self, lost_fraction, sign, is_odd):
-        '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
-        away from zero by incrementing the significand).
-
-        sign is the sign of the number, and is_odd indicates if the LSB of the new
-        significand is set, which is needed for ties-to-even rounding.
-        '''
-        if lost_fraction == LostFraction.EXACTLY_ZERO:
-            return False
-
-        rounding = self.rounding
-        if rounding == ROUND_HALF_EVEN:
-            if lost_fraction == LostFraction.EXACTLY_HALF:
-                return is_odd
-            else:
-                return lost_fraction == LostFraction.MORE_THAN_HALF
-        elif rounding == ROUND_CEILING:
-            return not sign
-        elif rounding == ROUND_FLOOR:
-            return sign
-        elif rounding == ROUND_DOWN:
-            return False
-        elif rounding == ROUND_UP:
-            return True
-        elif rounding == ROUND_HALF_DOWN:
-            return lost_fraction == LostFraction.MORE_THAN_HALF
-        else:
-            assert rounding == ROUND_HALF_UP
-            return lost_fraction != LostFraction.LESS_THAN_HALF
 
     def overflow_value(self, binary_format, sign):
         '''Call when an overflow occurs on a number of the given format and sign, because
@@ -338,8 +339,8 @@ class Context:
         return f'Context(rounding={self.rounding}, flags={self.flags!r} traps={self.traps!r})'
 
 
-class IntFormat:
-    '''A two's-complement signed integer.'''
+class IntegerFormat:
+    '''A two's-complement integer, either signed or unsigned.'''
 
     __slots__ = ('width', 'is_signed', 'min_int', 'max_int')
 
@@ -357,17 +358,14 @@ class IntFormat:
             self.min_int = 0
             self.max_int = (1 << width) - 1
 
-    def clamp(self, value, context):
-        '''Clamp the value to being in-range and return it.'''
-        if not isinstance(value, int):
-            raise TypeError('clamp takes an integer')
+    def clamp(self, value):
+        '''Clamp the value to being in-range.  Return a (clamped_value, was_clamped) pair.'''
+        assert isinstance(value, int)
         if value > self.max_int:
-            context.set_flags(Flags.OVERFLOW | Flags.INEXACT)
-            return self.max_int
+            return self.max_int, True
         if value < self.min_int:
-            context.set_flags(Flags.OVERFLOW | Flags.INEXACT)
-            return self.min_int
-        return value
+            return self.min_int, True
+        return value, False
 
 
 class BinaryFormat:
@@ -399,12 +397,12 @@ class BinaryFormat:
         significand of zero represents a zero floating point number.
 
         Our internal representation uses an exponent of 0 to represent infinities and NaNs
-        (note IEEE interchange formats use e_max + 1).  The iteger bit is always cleared
+        (note IEEE interchange formats use e_max + 1).  The integer bit is always cleared
         and a payload of zero represents infinity.  The quiet NaN bit is the bit below the
         integer bit.
 
         The advantage of this representation is that the following holds for all finite
-        numbers
+        numbers wthere significand is understood as having a single leading integer bit:
 
                   value = (-1)^sign * significand * 2^(exponent-bias).
 
@@ -543,7 +541,7 @@ class BinaryFormat:
         is_inexact = lost_fraction != LostFraction.EXACTLY_ZERO
 
         # Round
-        if context.round_up(lost_fraction, sign, bool(significand & 1)):
+        if round_up(context.rounding, lost_fraction, sign, bool(significand & 1)):
             # Increment the significand
             significand += 1
             # If the significand now overflows, halve it and increment the exponent
@@ -1317,7 +1315,7 @@ class BinaryFormat:
 
         # Now round est with the lost fraction
         is_tiny_before = est.is_subnormal()
-        if context.round_up(lost_fraction, False, bool(est.significand & 1)):
+        if round_up(context.rounding, lost_fraction, False, bool(est.significand & 1)):
             est = est.next_up(nearest_context)
         context.on_normalized_finite(is_tiny_before, est.is_subnormal(), True)
         return est
@@ -1680,69 +1678,110 @@ class Binary:
         '''
         return self.fmt._next_up(self, context, True)
 
-    def round(self, context, exact=False):
-        '''Return the value rounded to the nearest integer whilst retaining the binary format.
+    def _to_integer(self, integer_fmt, rounding, signal_inexact, context):
+        '''Round the value to an integer, as per rounding.  If integer_fmt is None, the result is
+        a floating point value of the same format (a round_to_integral operation).
+        Otherwise it is a convert_to_integer operation and an integer that fits in the
+        given format is returned.
 
-        This function flags INVALID on a signalling NaN input; if exact is True, the
-        INEXACT flag is set in the status if the result does not have the same numerical
-        value as the input.  In all other cases no flags are set.
+        If the value is a NaN or infinity or the rounded result cannot be represented in
+        the integer format, invalid operation is signalled.  The result is zero if the
+        source is a NaN, otherwise it is the smallest or largest value in the integer
+        format, whichever is closest to the ideal result.
 
-        This function implmements all six functions whose names begin with "roundToIntegral"
-        in the IEEE-754 standard.
+        If signal_inexact is True then if the result is not numerically equal to the
+        original value, INEXACT is signalled, otherwise it is not.
         '''
+        if not isinstance(integer_fmt, (type(None), IntegerFormat)):
+            raise TypeError('integer_fmt must be an integer format or None')
+
         if self.e_biased == 0:
-            # Quiet NaNs and infinites stay unchanged; signalling NaNs are converted to quiet.
-            return self.to_quiet(context)
+            if integer_fmt is None:
+                # Quiet NaNs and infinites stay unchanged; signalling NaNs are converted to quiet.
+                return self.to_quiet(context)
+            context.set_flags(Flags.INVALID)
+            if self.significand:
+                return 0
+            return integer_fmt.min_int if self.sign else integer_fmt.max_int
 
         # Zeroes return unchanged.
         if self.significand == 0:
-            return self.copy()
+            if integer_fmt is None:
+                return self.copy()
+            return 0
 
-        # Rounding-towards-zero is semantically equivalent to clearing zero or more of the
-        # significand's least-significant bits.
-        count = -self.exponent_int()
+        # Strategy: truncate the significand, capture the lost fraction, and round.
+        # Truncating the significand means clearing zero or more of its least-significant
+        # bits.
+        value = self.significand
+        rshift = -self.exponent_int()
 
-        # We're already an integer if count is <= 0
-        if count <= 0:
-            return self.copy()
+        # We're already a (large) integer if count is <= 0
+        if rshift <= 0:
+            if integer_fmt is None:
+                return self.copy()
+            value <<= -rshift
+            value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
+            if was_clamped:
+                context.set_flags(Flags.INVALID)
+            return value
 
-        # If count >= precision then we're a fraction and all bits are cleared, in which
-        # case rounding away rounds to int_bit with exponent of 0.  Cap the count at
-        # precision + 1, which still captures the lost fraction correctly.
-        count = min(count, self.fmt.precision + 1)
+        value, lost_fraction = shift_right(value, rshift)
 
-        significand = self.significand
-        lost_fraction = lost_bits_from_rshift(significand, count)
+        if lost_fraction == LostFraction.EXACTLY_ZERO:
+            signal_inexact = False
+        elif round_up(rounding, lost_fraction, self.sign, bool(value & 1)):
+            value += 1
 
-        # Clear the insignificant bits of the significand
-        lsb = 1 << count
-        significand &= ~(lsb - 1)
+        # must only do so after confirming the result was not clamped (consider a negative
+        # subnormal rounding down to -1 with an unsigned format).
+        if integer_fmt is None:
+            if signal_inexact:
+                context.set_flags(Flags.INEXACT)
+            if value:
+                lshift = self.fmt.precision - value.bit_length()
+                e_biased = self.e_biased + rshift - lshift
+                return Binary(self.fmt, self.sign, e_biased, value << lshift)
+            return self.fmt.make_zero(self.sign)
 
-        # Round
-        e_biased = self.e_biased
-        if context.round_up(lost_fraction, self.sign, bool(significand & lsb)):
-            if lsb <= self.fmt.int_bit:
-                significand += lsb
-                # If the significand now overflows, halve it and increment the exponent
-                if significand > self.fmt.max_significand:
-                    significand >>= 1
-                    e_biased += 1
-            else:
-                significand = self.fmt.int_bit
-                e_biased = self.fmt.e_bias
-
-        if exact and lost_fraction != LostFraction.EXACTLY_ZERO:
+        value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
+        if was_clamped:
+            context.set_flags(Flags.INVALID)
+        elif signal_inexact:
             context.set_flags(Flags.INEXACT)
+        return value
 
-        return Binary(self.fmt, self.sign, e_biased, significand)
+    def round_to_integral(self, rounding, context):
+        '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
+        method is given explicitly; that in context is ignored.
 
-    def to_int(self, int_format, context):
-        '''Return int(lhs) correctly-rounded in the format int_format.'''
-        raise NotImplementedError
+        This only signal raised is INVALID on a signalling NaN input.
+        '''
+        return self._to_integer(None, rounding, False, context)
 
-    def to_integral(self, flt_format, context):
-        '''Return lhs correctly-rounded with flt_format the format of the result.'''
-        raise NotImplementedError
+    def round_to_integral_exact(self, context):
+        '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
+        method is taken from context.
+
+        This function signals INVALID on a signalling NaN input, or INEXACT if the
+        result is not the original value (i.e. it was not an integer).
+        '''
+        return self._to_integer(None, context.rounding, True, context)
+
+    def convert_to_integer(self, integer_fmt, rounding, context):
+        '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
+        method is given explicitly; that in context is ignored.
+
+        NaNs, infinities and out-of-range values raise the INVALID signal.  INEXACT is not
+        raised.
+        '''
+        return self._to_integer(integer_fmt, rounding, False, context)
+
+    def convert_to_integer_exact(self, integer_fmt, rounding, context):
+        '''As for convert_to_integer, except that INEXACT is signaled if the result is in-range
+        and not numerically equal to the original value (i.e. it was not an integer).
+        '''
+        return self._to_integer(integer_fmt, rounding, True, context)
 
     def to_decimal_string(self, fmt_spec, context):
         '''Returns a decimal string correctly-rounded with fmt_spec giving details of the
@@ -1816,7 +1855,7 @@ class Binary:
             if lhs_sig == rhs_sig:
                 return Compare.EQUAL
             if (lhs_sig > rhs_sig) ^ (self.sign):
-                    return Compare.GREATER_THAN
+                return Compare.GREATER_THAN
             else:
                 return Compare.LESS_THAN
 
