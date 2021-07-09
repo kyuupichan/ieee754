@@ -109,8 +109,8 @@ nan_payload_codes = {
 
 def to_text_format(hex_format):
     return TextFormat(
-        plus=boolean_codes[hex_format[0]],
-        exp_plus=boolean_codes[hex_format[1]],
+        force_leading_sign=boolean_codes[hex_format[0]],
+        force_exp_sign=boolean_codes[hex_format[1]],
         rstrip_zeroes=boolean_codes[hex_format[2]],
         sNaN = sNaN_codes[hex_format[3]],
         nan_payload=nan_payload_codes[hex_format[4]],
@@ -738,6 +738,21 @@ class TestUnaryOps:
         assert result == answer
         assert context.flags == status
 
+    @pytest.mark.parametrize('line', read_lines('to_decimal.txt'))
+    def test_to_decimal(self, line):
+        parts = line.split()
+        if len(parts) != 5:
+            assert False, f'bad line: {line}'
+        context, src_fmt, in_str, status, answer = parts
+        context = context_string_to_context(context)
+        in_value = from_string(format_codes[src_fmt], in_str)
+        status = status_codes[status]
+        text_format = TextFormat(exp_digits=0)
+
+        result = in_value.to_decimal(text_format, False, context)
+        assert result == answer
+        assert context.flags == status
+
     @pytest.mark.parametrize('line', read_lines('scaleb.txt'))
     def test_scaleb(self, line):
         parts = line.split()
@@ -864,7 +879,7 @@ class TestUnaryOps:
         # integer bit (making it an unnormal) and check
         for hex_str in ('3fff9180000000000000', '3fff1180000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert value.to_hex(TextFormat(), Context()) == '0x1.23p0'
+            assert value.to_hex(TextFormat(), Context()) == '0x1.2300000000000000p0'
 
         # 7fffc000000000000000 is the canonical representation of a NaN with integer bit
         # set.  Test clearing it (a pseudo-NaN) gives the right answer.

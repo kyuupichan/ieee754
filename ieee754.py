@@ -104,28 +104,32 @@ class TextFormat:
     # nan255 and nan0xff for a quiet NaN with payload 255, respectively.
     nan_payload = attr.ib(default='X')
 
-    def _non_finite_text(self, value):
+    def leading_sign(self, value):
+        '''Returns the leading sign string to output for value.'''
+        return '-' if value.sign else '+' if self.force_leading_sign else ''
+
+    def non_finite_string(self, value):
         '''Returns the output text for infinities and NaNs without a sign.'''
         assert value.e_biased == 0
 
         # Infinity
         if value.significand == 0:
-            return self.inf
+            special = self.inf
+        else:
+            # NaNs
+            special = self.sNaN if value.is_signalling() else self.qNaN
+            if self.nan_payload == 'D':
+                special += str(value.NaN_payload())
+            elif self.nan_payload == 'X':
+                special += hex(value.NaN_payload())
 
-        # NaNs
-        result = self.sNaN if value.is_signalling() else self.qNaN
-        if self.nan_payload == 'D':
-            result += str(value.NaN_payload())
-        elif self.nan_payload == 'X':
-            result += hex(value.NaN_payload())
-        return result
+        return self.leading_sign(value) + special
 
     def format_decimal(self, sign, sig_digits, exponent):
         '''sign is True if the number has a negative sign.  sig_digits is a string of significant
         digits of a number converted to decimal.  exponent is the exponent of the leading
         digit, i.e. the decimal point appears exponent digits after the leading digit.
         '''
-        print(sig_digits)
         if self.rstrip_zeroes:
             sig_digits = sig_digits.rstrip('0') or '0'
 
@@ -179,36 +183,33 @@ class TextFormat:
         return result
 
     def to_hex(self, value):
-        sign = '-' if value.sign else '+' if self.force_leading_sign else ''
+        if not value.is_finite():
+            return self.non_finite_string(value)
 
-        if value.e_biased == 0:
-            rest = self._non_finite_text(value)
+        # The value has been converted and rounded to our format.  We output the
+        # unbiased exponent, but have to shift the significand left up to 3 bits so
+        # that converting the significand to hex has the integer bit as an MSB
+        significand = value.significand
+        if significand == 0:
+            exponent = 0
         else:
-            # The value has been converted and rounded to our format.  We output the
-            # unbiased exponent, but have to shift the significand left up to 3 bits so
-            # that converting the significand to hex has the integer bit as an MSB
-            significand = value.significand
-            if significand == 0:
-                exponent = 0
-            else:
-                significand <<= (value.fmt.precision & 3) ^ 1
-                exponent = value.exponent()
+            significand <<= (value.fmt.precision & 3) ^ 1
+            exponent = value.exponent()
 
-            output_digits = (value.fmt.precision + 6) // 4
-            hex_sig = f'{significand:x}'
-            # Prepend zeroes to get the full output precision
-            hex_sig = '0' * (output_digits - len(hex_sig)) + hex_sig
-            # Strip trailing zeroes?
-            if self.rstrip_zeroes:
-                hex_sig = hex_sig.rstrip('0') or '0'
-            # Insert the decimal point only if there are trailing digits
-            if len(hex_sig) > 1:
-                hex_sig = hex_sig[0] + '.' + hex_sig[1:]
+        output_digits = (value.fmt.precision + 6) // 4
+        hex_sig = f'{significand:x}'
+        # Prepend zeroes to get the full output precision
+        hex_sig = '0' * (output_digits - len(hex_sig)) + hex_sig
+        # Strip trailing zeroes?
+        if self.rstrip_zeroes:
+            hex_sig = hex_sig.rstrip('0') or '0'
+        # Insert the decimal point only if there are trailing digits
+        if len(hex_sig) > 1:
+            hex_sig = hex_sig[0] + '.' + hex_sig[1:]
 
-            exp_sign = '+' if exponent >= 0 and self.force_exp_sign else ''
-            rest = f'0x{hex_sig}p{exp_sign}{exponent:d}'
-
-        return sign + rest
+        sign = self.leading_sign(value)
+        exp_sign = '+' if exponent >= 0 and self.force_exp_sign else ''
+        return f'{sign}0x{hex_sig}p{exp_sign}{exponent:d}'
 
 
 BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
@@ -998,7 +999,7 @@ class BinaryFormat:
         return result
 
     ##
-    ## General computational operations.  The operands can be different formats;
+    ## General computational operations.  The operand(s) can be different formats;
     ## the destination format is self.
     ##
 
@@ -1716,16 +1717,96 @@ class Binary:
     ##
 
     def to_hex(self, text_format, context):
-        '''Return text that is a representation of the floating point value.  See the docstring of
-        OutputSpec for output control.
+        '''Return text that is a representation of the floating point value that is hexadecimal if
+        the number is finite.  See the docstring of OutputSpec for output control.
 
-        Normal numbers have a hex integer digit of 1, subnormal numbers 0.  Zeroes are
-        output with an exponent of 0.
+        Normal numbers are returned with a hex integer digit of 1, subnormal numbers 0.
+        Zeroes are output with an exponent of 0.
 
         Only conversion of signalling NaNs to quiet NaNs can set flags (INVALID and
         possibly INEXACT).
         '''
         return self.fmt.to_hex(self, text_format, context)
+
+    def to_decimal(self, text_format, precision, context):
+        '''Convert a binary floating point value to a decimal string.'''
+        if not self.is_finite():
+            return text_format.non_finite_string(self.to_quiet(context))
+
+        sig_digits, exponent, is_inexact = self.decimal_digits(precision)
+        if is_inexact:
+            context.set_flags(Flags.INEXACT)
+
+        return text_format.format_decimal(self.sign, sig_digits, exponent)
+
+    def decimal_digits(self, _precision):
+        '''Returns a tuple:
+
+            (digits, exp, inexact)
+
+        digits is a string of digits (most significant first) with no decimal point.  exp
+        is the base 10 exponent of the first digit (so the base 10 exponent of the last is
+        N - (len(digits) - 1).  inexact is True if the conversion to decimal is not exact.
+
+        See "How to Print Floating-Point Numbers Accurately" by Steele and White, in
+        particular Table 3.
+        '''
+        if not self.is_finite():
+            raise RuntimeError('decimal_digits() called on a non-finite number')
+
+        # Special-case zero.
+        if self.is_zero():
+            return '0', 0, False
+
+        e_p = self.exponent_int()
+        R = self.significand << max(0, e_p)
+        S = 1 << max(0, -e_p)
+        # Now the arithmetic value is R / S.  Think of the maximum error below in M_neg
+        # and above in M_pos.  They are generally identical but in corner cases M_neg is
+        # half of M_pos.
+        M_neg = 1 << max(0, e_p)
+        M_pos = M_neg
+        if self.significand == self.fmt.int_bit:
+            M_pos <<= 1
+            R <<= 1
+            S <<= 1
+        k = 0
+        while R < (S + 9) // 10:
+            k -= 1
+            R *= 10
+            M_neg *= 10
+            M_pos *= 10
+        while 2 * R + M_pos >= 2 * S:
+            S *= 10
+            k += 1
+
+        H = k - 1
+
+        digits = bytearray()
+        while True:
+            k -= 1
+            U, R = divmod(R * 10, S)
+            M_neg *= 10
+            M_pos *= 10
+            low = 2 * R < M_neg
+            high = 2 * R > (2 * S) - M_pos
+            if low or high:
+                break
+            digits.append(U + 48)
+
+        if low and not high:
+            pass
+        elif high and not low:
+            U += 1
+        elif 2 * R < S:
+            pass
+        elif 2 * R > S:
+            U += 1
+        else:
+            U += (U & 1)
+        digits.append(U + 48)
+
+        return digits.decode(), H, R != 0
 
     def to_quiet(self, context):
         '''Return a copy except that a signalling NaN becomes its quiet twin (in which case
@@ -1855,12 +1936,6 @@ class Binary:
         and not numerically equal to the original value (i.e. it was not an integer).
         '''
         return self._to_integer(integer_fmt, rounding, True, context)
-
-    def to_decimal_string(self, fmt_spec, context):
-        '''Returns a decimal string correctly-rounded with fmt_spec giving details of the
-        output format required.
-        '''
-        raise NotImplementedError
 
     ##
     ## Signalling computational operations
