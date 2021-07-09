@@ -1747,7 +1747,7 @@ class Binary:
         N - (len(digits) - 1).  inexact is True if the conversion to decimal is not exact.
 
         See "How to Print Floating-Point Numbers Accurately" by Steele and White, in
-        particular Table 3.
+        particular Table 3.  This is an optimized implementation of their algorithm.
         '''
         if not self.is_finite():
             raise RuntimeError('decimal_digits() called on a non-finite number')
@@ -1759,22 +1759,26 @@ class Binary:
         e_p = self.exponent_int()
         R = self.significand << max(0, e_p)
         S = 1 << max(0, -e_p)
-        # Now the arithmetic value is R / S.  Think of the maximum error below in M_neg
-        # and above in M_pos.  They are generally identical but in corner cases M_neg is
-        # half of M_pos.
-        M_neg = 1 << max(0, e_p)
-        M_pos = M_neg
-        if self.significand == self.fmt.int_bit:
-            M_pos <<= 1
-            R <<= 1
-            S <<= 1
+
+        # Now the arithmetic value is R / S.  M is the scaled value of an ulp upwards.  We
+        # can stop generating digits when the remainder is within M of the boundary,
+        # because then round-to-nearest of the output is guaranteed to give our target
+        # value.
+        M = 1 << max(0, e_p)
+        low_shift = 2 if self.significand == self.fmt.int_bit else 1
         k = 0
-        while R < (S + 9) // 10:
+
+        # This loop is needed for negative exponents H. It scales R until divmod()
+        # delivers a non-zero digit.
+        while R * 10 < S:
             k -= 1
             R *= 10
-            M_neg *= 10
-            M_pos *= 10
-        while 2 * R + M_pos >= 2 * S:
+            M *= 10
+
+        # This loop is needed for positive exponents H.  It scales S until digits can be
+        # reliably delivered.  This condition is not strictly tested.  can remove M
+        # entirely.
+        while 2 * R + M >= 2 * S:
             S *= 10
             k += 1
 
@@ -1784,14 +1788,14 @@ class Binary:
         while True:
             k -= 1
             U, R = divmod(R * 10, S)
-            M_neg *= 10
-            M_pos *= 10
-            low = 2 * R < M_neg
-            high = 2 * R > (2 * S) - M_pos
+            M *= 10
+            low = (R << low_shift) < M
+            high = 2 * R > (2 * S) - M
             if low or high:
                 break
             digits.append(U + 48)
 
+        # All code paths here are exercised by the to_decimal tests
         if low and not high:
             pass
         elif high and not low:
