@@ -575,6 +575,23 @@ class TestGeneralNonComputationalOps:
 
 class TestUnaryOps:
 
+    @pytest.mark.parametrize('line', read_lines('format_decimal.txt'))
+    def test_format_decimal(self, line):
+        parts = line.split()
+        if len(parts) != 10:
+            assert False, f'bad line: {line}'
+        (exp_digits, force_exp_sign, force_leading_sign, force_point, upper_case,
+         rstrip_zeroes, sign, sig_digits, exponent, answer) = parts
+        text_format = TextFormat(exp_digits=int(exp_digits),
+                                 force_exp_sign=boolean_codes[force_exp_sign],
+                                 force_leading_sign=boolean_codes[force_leading_sign],
+                                 force_point=boolean_codes[force_point],
+                                 upper_case=boolean_codes[upper_case],
+                                 rstrip_zeroes=boolean_codes[rstrip_zeroes])
+        sign = boolean_codes[sign]
+        exponent = int(exponent)
+        assert text_format.format_decimal(sign, sig_digits, exponent) == answer
+
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
         parts = line.split()

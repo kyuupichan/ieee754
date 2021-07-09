@@ -71,12 +71,27 @@ class Flags(IntFlag):
 @attr.s(slots=True)
 class TextFormat:
     '''Controls the output of conversion to decimal and hexadecimal strings.'''
+    # The minimum number of digits to show in the exponent of a finite number.  For
+    # decimal output, 0 suppresses the exponent (adding trailing or leading zeroes if
+    # necessary as per the printf 'f' format specifier), and if negative applies the rule
+    # for the printf 'g' format specifier to decide whether to display an exponent or not,
+    # in which case it has at minimum the absolute value number of digits.  Hexadecimal
+    # output always has an exponent so negative values are treated as 1.
+    exp_digits = attr.ib(default=1)
+    # If True positive exponents display a '+'.
+    force_exp_sign = attr.ib(default=False)
     # If True, numbers with a clear sign bit are preceded with a '+'.
-    plus = attr.ib(default=False)
-    # If True, non-negative exponents are preceded by '+'.
-    exp_plus = attr.ib(default=False)
+    force_leading_sign = attr.ib(default=False)
+    # If True, display a floating point even if there are no digits after it.  For
+    # example, "5.", "1.e2" and "0x1.p2".
+    force_point = attr.ib(default=False)
+    # If True, the exponent character ('p' or 'e') is in upper case, and for hexadecimal
+    # output, the hex indicator 'x' and hexadecimal digits are in upper case.  For NaN
+    # output, hexadecimal payloads are in upper case.  This does not affect the text of
+    # the inf, qNaN and sNaN indicators below which are copied unmodified.
+    upper_case = attr.ib(default=False)
     # If True, trailing insignificant zeroes are stripped
-    rstrip_zeroes = attr.ib(default=True)
+    rstrip_zeroes = attr.ib(default=False)
     # The string output for infinity
     inf = attr.ib(default='Inf')
     # The string output for quiet NaNs
@@ -105,8 +120,66 @@ class TextFormat:
             result += hex(value.NaN_payload())
         return result
 
+    def format_decimal(self, sign, sig_digits, exponent):
+        '''sign is True if the number has a negative sign.  sig_digits is a string of significant
+        digits of a number converted to decimal.  exponent is the exponent of the leading
+        digit, i.e. the decimal point appears exponent digits after the leading digit.
+        '''
+        print(sig_digits)
+        if self.rstrip_zeroes:
+            sig_digits = sig_digits.rstrip('0') or '0'
+
+        assert len(sig_digits) > 0
+
+        parts = []
+        if sign:
+            parts.append('-')
+        elif self.force_leading_sign:
+            parts.append('+')
+
+        exp_digits = self.exp_digits
+        if exp_digits < 0:
+            # Apply the fprintf 'g' format specifier rule
+            if len(sig_digits) > exponent >= -4:
+                exp_digits = 0
+            else:
+                exp_digits = -exp_digits
+
+        if exp_digits:
+            if len(sig_digits) > 1 or self.force_point:
+                parts.extend((sig_digits[0], '.', sig_digits[1:]))
+            else:
+                parts.append(sig_digits)
+            parts.append('e')
+            if exponent < 0:
+                parts.append('-')
+            elif self.force_exp_sign:
+                parts.append('+')
+            exp_str = f'{abs(exponent):d}'
+            parts.append('0' * (exp_digits - len(exp_str)))
+            parts.append(exp_str)
+        else:
+            point = exponent + 1
+            if point <= 0:
+                parts.extend(('0.', '0' * -point, sig_digits))
+            else:
+                print(point, sig_digits)
+                if point > len(sig_digits):
+                    sig_digits += (point - len(sig_digits)) * '0'
+                if point < len(sig_digits) or self.force_point:
+                    parts.extend((sig_digits[:point], '.', sig_digits[point:]))
+                else:
+                    parts.append(sig_digits)
+                print(parts)
+
+        result = ''.join(parts)
+        if self.upper_case:
+            result = result.upper()
+
+        return result
+
     def to_hex(self, value):
-        sign = '-' if value.sign else '+' if self.plus else ''
+        sign = '-' if value.sign else '+' if self.force_leading_sign else ''
 
         if value.e_biased == 0:
             rest = self._non_finite_text(value)
@@ -132,7 +205,7 @@ class TextFormat:
             if len(hex_sig) > 1:
                 hex_sig = hex_sig[0] + '.' + hex_sig[1:]
 
-            exp_sign = '+' if exponent >= 0 and self.exp_plus else ''
+            exp_sign = '+' if exponent >= 0 and self.force_exp_sign else ''
             rest = f'0x{hex_sig}p{exp_sign}{exponent:d}'
 
         return sign + rest
