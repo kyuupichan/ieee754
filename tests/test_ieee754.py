@@ -743,15 +743,46 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) != 5:
             assert False, f'bad line: {line}'
-        context, src_fmt, in_str, status, answer = parts
+        context, fmt, in_str, status, answer = parts
+        fmt = format_codes[fmt]
         context = context_string_to_context(context)
-        in_value = from_string(format_codes[src_fmt], in_str)
+        value = from_string(fmt, in_str)
         status = status_codes[status]
-        text_format = TextFormat(exp_digits=0)
+        text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
 
-        result = in_value.to_decimal(text_format, False, context)
+        result = value.to_decimal(text_format, 0, context)
         assert result == answer
         assert context.flags == status
+
+        # Confirm the round-trip: reading in the decimal value gives the same as the hex
+        # value
+        context.clear_flags()
+        dec_value = fmt.from_string(answer, context)
+        assert dec_value.as_tuple() == value.as_tuple()
+        assert context.flags == status
+
+        # Confirm Python prints the same.  Python gets 18014398509481984 wrong; in
+        # unnecessarily puts it in 'e' mode.
+        if answer != '18014398509481984':
+            if '0x' in in_str:
+                value = float.fromhex(in_str)
+            else:
+                value = float(in_str)
+            py_str = str(value)
+            if py_str.endswith('.0'):
+                py_str = py_str[:-2]
+            assert py_str == answer
+
+    # def test_to_decimal_hard(self):
+    #     text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
+    #     for exponent in range(-100, 101):
+    #         hex_str = f'0x1p{exponent}'
+    #         value = IEEEdouble.from_string(hex_str, Context())
+    #         context = Context()
+    #         dec_str = value.to_decimal(text_format, 0, context)
+    #         flags = 'I' if context.flags & Flags.INEXACT else 'K'
+    #         print(f'E D {hex_str} {flags} {dec_str}')
+    #     assert False
 
     @pytest.mark.parametrize('line', read_lines('scaleb.txt'))
     def test_scaleb(self, line):

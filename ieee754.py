@@ -144,7 +144,7 @@ class TextFormat:
         exp_digits = self.exp_digits
         if exp_digits < 0:
             # Apply the fprintf 'g' format specifier rule
-            if len(sig_digits) > exponent >= -4:
+            if max(len(sig_digits), 4) > exponent >= -4:
                 exp_digits = 0
             else:
                 exp_digits = -exp_digits
@@ -167,14 +167,12 @@ class TextFormat:
             if point <= 0:
                 parts.extend(('0.', '0' * -point, sig_digits))
             else:
-                print(point, sig_digits)
                 if point > len(sig_digits):
                     sig_digits += (point - len(sig_digits)) * '0'
                 if point < len(sig_digits) or self.force_point:
                     parts.extend((sig_digits[:point], '.', sig_digits[point:]))
                 else:
                     parts.append(sig_digits)
-                print(parts)
 
         result = ''.join(parts)
         if self.upper_case:
