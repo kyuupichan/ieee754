@@ -2067,6 +2067,8 @@ class Binary:
         '''
         if text_format is None:
             text_format = TextFormat(exp_digits=-2)
+        if context is None:
+            context = Context()
 
         if self.is_finite():
             exponent, digits = self._to_decimal_parts(precision, context)
@@ -2114,8 +2116,8 @@ class Binary:
             S *= 10
             exponent += 1
 
-        # If precision is fixed or infinite, generate the digits
         if precision:
+            # Precision is fixed or infinite.  Generate the digits.
             def gen_digits(count):
                 nonlocal R, S
                 while R and count:
@@ -2124,6 +2126,28 @@ class Binary:
                     count -= 1
 
             digits = bytearray(gen_digits(precision))
+            # Rounding
+            if R:
+                R *= 2
+                if R < S:
+                    lost_fraction = LostFraction.LESS_THAN_HALF
+                elif R == S:
+                    lost_fraction = LostFraction.EXACTLY_HALF
+                else:
+                    lost_fraction = LostFraction.MORE_THAN_HALF
+
+                # Handle rounding by bumping
+                if round_up(context.rounding, lost_fraction, self.sign, bool(digits[-1] & 1)):
+                    pos = len(digits)
+                    while True:
+                        pos -= 1
+                        digits[pos] = (digits[pos] - 48 + 1) % 10 + 48
+                        if digits[pos] != 48:
+                            break
+                        if pos == 0:
+                            digits[pos] = 49
+                            exponent += 1
+                            break
         else:
             # Now the arithmetic value is R / S.  M is the value of one high-ulp, and
             # hence is always scaled alongside the significand remainder R.  A low-ulp is

@@ -775,46 +775,37 @@ class TestUnaryOps:
     @pytest.mark.parametrize('line', read_lines('to_decimal.txt'))
     def test_to_decimal(self, line):
         parts = line.split()
-        if len(parts) != 5:
+        if len(parts) != 6:
             assert False, f'bad line: {line}'
-        context, fmt, in_str, status, answer = parts
+        context, fmt, precision, in_str, status, answer = parts
         fmt = format_codes[fmt]
         context = context_string_to_context(context)
+        precision = int(precision)
         value = from_string(fmt, in_str)
         status = status_codes[status]
         text_format = TextFormat(exp_digits=-2, force_exp_sign=True, rstrip_zeroes=True)
-        result = value.to_decimal_string(0, text_format, context)
+        result = value.to_decimal_string(precision, text_format, context)
         assert result == answer
         assert context.flags == status
 
-        # Confirm the round-trip: reading in the decimal value gives the same as the hex
-        # value
-        context.clear_flags()
-        dec_value = fmt.from_string(answer, context)
-        assert dec_value.as_tuple() == value.as_tuple()
-        assert context.flags == status
+        if precision <= 0:
+            # Confirm the round-trip: reading in the decimal value gives the same as the
+            # hex value
+            context.clear_flags()
+            dec_value = fmt.from_string(answer, context)
+            assert dec_value.as_tuple() == value.as_tuple()
+            assert context.flags == status
 
-        # Confirm Python prints the same.
-        if fmt is IEEEdouble:
-            if '0x' in in_str:
-                value = float.fromhex(in_str)
-            else:
-                value = float(in_str)
-            py_str = str(value)
-            if py_str.endswith('.0'):
-                py_str = py_str[:-2]
-            assert py_str == answer
-
-    # def test_to_decimal_hard(self):
-    #     text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
-    #     for exponent in range(-100, 101):
-    #         hex_str = f'0x1p{exponent}'
-    #         value = IEEEdouble.from_string(hex_str)
-    #         context = Context()
-    #         dec_str = value.to_decimal(text_format, 0, context)
-    #         flags = 'I' if context.flags & Flags.INEXACT else 'K'
-    #         print(f'E D {hex_str} {flags} {dec_str}')
-    #     assert False
+            # Confirm Python prints the same.
+            if fmt is IEEEdouble and precision == 0:
+                if '0x' in in_str:
+                    value = float.fromhex(in_str)
+                else:
+                    value = float(in_str)
+                py_str = str(value)
+                if py_str.endswith('.0'):
+                    py_str = py_str[:-2]
+                assert py_str == answer
 
     @pytest.mark.parametrize('line', read_lines('scaleb.txt'))
     def test_scaleb(self, line):
