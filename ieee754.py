@@ -1451,30 +1451,26 @@ x87double = BinaryFormat.from_exponent_width(53, 15)
 x87single = BinaryFormat.from_exponent_width(24, 15)
 
 
-class Binary:
+class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
-    def __init__(self, fmt, sign, biased_exponent, significand):
-        '''Create a floating point number with the given format, sign, biased exponent and
-        significand.  For NaNs - saturing exponents with non-zero signficands - we interpret
-        the significand as the binary payload below the quiet bit.
+    def  __new__(cls, fmt, sign, e_biased, significand):
+        '''Validate and create a floating point number with the given format, sign, biased
+        exponent and significand.
         '''
-        if not isinstance(biased_exponent, int):
-            raise TypeError('biased exponent must be an integer')
+        if not isinstance(e_biased, int):
+            raise TypeError('e_biased must be an integer')
         if not isinstance(significand, int):
             raise TypeError('significand must be an integer')
-        if not 0 <= biased_exponent <= fmt.e_max + fmt.e_bias:
-            raise ValueError(f'biased exponent {biased_exponent:,d} out of range')
-        if biased_exponent == 0:
+        if not 0 <= e_biased <= fmt.e_max + fmt.e_bias:
+            raise ValueError(f'biased exponent {e_biased:,d} out of range')
+        # The significand is an unsigned integer, or payload plus quiet bit for NaNs
+        if e_biased == 0:
             if not 0 <= significand < fmt.int_bit:
                 raise ValueError(f'significand {significand:,d} out of range for non-finite')
         else:
             if not 0 <= significand <= fmt.max_significand:
                 raise ValueError(f'significand {significand:,d} out of range')
-        self.fmt = fmt
-        self.sign = bool(sign)
-        self.e_biased = biased_exponent
-        # The significand as an unsigned integer, or payload including quiet bit for NaNs
-        self.significand = significand
+        return super().__new__(cls, fmt, sign, e_biased, significand)
 
     ##
     ## Non-computational operations.  These are never exceptional so simply return their
