@@ -4,7 +4,7 @@
 # (c) Neil Booth 2007-2021.  All rights reserved.
 #
 
-import math
+from math import floor, ceil, log2, sqrt
 import re
 from collections import namedtuple
 from enum import IntFlag, IntEnum
@@ -12,13 +12,17 @@ from enum import IntFlag, IntEnum
 import attr
 
 
-__all__ = ('Context', 'BinaryFormat', 'IntegerFormat', 'Flags', 'Binary', 'TextFormat', 'Compare',
+__all__ = ('Context', 'Flags', 'Compare',
+           'BinaryFormat', 'Binary', 'DecimalFormat', 'Decimal', 'IntegerFormat', 'TextFormat',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single',)
+
+# Constants
+log2_10 = log2(10)
 
 
 # Rounding modes
@@ -110,10 +114,10 @@ class TextFormat:
 
     def non_finite_string(self, value):
         '''Returns the output text for infinities and NaNs without a sign.'''
-        assert value.e_biased == 0
+        assert not value.is_finite()
 
         # Infinity
-        if value.significand == 0:
+        if value.is_infinite():
             special = self.inf
         else:
             # NaNs
@@ -125,18 +129,27 @@ class TextFormat:
 
         return self.leading_sign(value) + special
 
-    def format_decimal(self, sign, sig_digits, exponent):
+    def format_decimal(self, value):
         '''sign is True if the number has a negative sign.  sig_digits is a string of significant
         digits of a number converted to decimal.  exponent is the exponent of the leading
         digit, i.e. the decimal point appears exponent digits after the leading digit.
         '''
-        if self.rstrip_zeroes:
-            sig_digits = sig_digits.rstrip('0') or '0'
+        if not isinstance(value, Decimal):
+            raise TypeError('expected a decimal')
 
-        assert len(sig_digits) > 0
+        if not value.is_finite():
+            return self.non_finite_string(value)
+
+        exponent = value.exponent
+        digits = value.digits
+
+        if self.rstrip_zeroes:
+            digits = digits.rstrip('0') or '0'
+
+        assert len(digits) > 0
 
         parts = []
-        if sign:
+        if value.sign:
             parts.append('-')
         elif self.force_leading_sign:
             parts.append('+')
@@ -144,16 +157,16 @@ class TextFormat:
         exp_digits = self.exp_digits
         if exp_digits < 0:
             # Apply the fprintf 'g' format specifier rule
-            if max(len(sig_digits), 4) > exponent >= -4:
+            if value.fmt.precision > exponent >= -4:
                 exp_digits = 0
             else:
                 exp_digits = -exp_digits
 
         if exp_digits:
-            if len(sig_digits) > 1 or self.force_point:
-                parts.extend((sig_digits[0], '.', sig_digits[1:]))
+            if len(digits) > 1 or self.force_point:
+                parts.extend((digits[0], '.', digits[1:]))
             else:
-                parts.append(sig_digits)
+                parts.append(digits)
             parts.append('e')
             if exponent < 0:
                 parts.append('-')
@@ -165,14 +178,14 @@ class TextFormat:
         else:
             point = exponent + 1
             if point <= 0:
-                parts.extend(('0.', '0' * -point, sig_digits))
+                parts.extend(('0.', '0' * -point, digits))
             else:
-                if point > len(sig_digits):
-                    sig_digits += (point - len(sig_digits)) * '0'
-                if point < len(sig_digits) or self.force_point:
-                    parts.extend((sig_digits[:point], '.', sig_digits[point:]))
+                if point > len(digits):
+                    digits += (point - len(digits)) * '0'
+                if point < len(digits) or self.force_point:
+                    parts.extend((digits[:point], '.', digits[point:]))
                 else:
-                    parts.append(sig_digits)
+                    parts.append(digits)
 
         result = ''.join(parts)
         if self.upper_case:
@@ -440,12 +453,165 @@ class IntegerFormat:
         return value, False
 
 
+class DecimalFormat:
+    '''Usesd only to specify the target format for binary-to-decimal conversions.'''
+
+    __slots__ = ('precision', 'e_max', 'e_min')
+
+    def __init__(self, precision, e_max, e_min):
+        self.precision = precision
+        self.e_max = e_max
+        self.e_min = e_min
+
+    def make_zero(self, sign):
+        return Decimal(self, sign, 0, '0')
+
+    def make_infinity(self, sign):
+        return Decimal(self, sign, 'F', '')
+
+    def make_NaN(self, sign, is_quiet, payload):
+        assert isinstance(payload, int)
+        return Decimal(self, sign, 'n' if is_quiet else 'N', payload)
+
+
+class Decimal:
+
+    def __init__(self, fmt, sign, exponent, digits):
+        if not isinstance(fmt, DecimalFormat):
+            raise TypeError('fmt must be a DecimalFormat')
+        self.fmt = fmt
+        self.sign = sign
+        self.exponent = exponent
+        # A string, but an integer payload for NaNs
+        self.digits = digits
+
+    def is_zero(self):
+        return self.exponent == 0 and self.digits == '0'
+
+    def is_finite_non_zero(self):
+        return isinstance(self.exponent, int) and self.digits != '0'
+
+    def is_finite(self):
+        return isinstance(self.exponent, int)
+
+    def is_infinity(self):
+        return self.exponent == 'F'
+
+    def is_NaN(self):
+        return self.exponent in ('n', 'N')
+
+    def is_quiet(self):
+        return self.exponent == 'n'
+
+    def is_signalling(self):
+        return self.exponent == 'N'
+
+    def NaN_payload(self):
+        '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''
+        if not self.is_NaN():
+            raise RuntimeError('NaN_payload called on non-NaN')
+        return self.digits
+
+    @classmethod
+    def from_binary(cls, value, decimal_fmt=None, context=None):
+        '''Return the Decimal given by converting the binary floating point value.'''
+        if decimal_fmt is None:
+            decimal_fmt = value.fmt.decimal_fmt
+
+        if value.is_finite():
+            return cls._from_finite_binary(value, decimal_fmt, context)
+
+        if value.is_infinity():
+            return decimal_fmt.make_infinity(value.sign)
+
+        return decimal_fmt.make_NaN(value.sign, value.is_quiet(), value.NaN_payload())
+
+    @classmethod
+    def _from_finite_binary(cls, value, decimal_fmt, context):
+        '''Returns a decimal.
+
+        See "How to Print Floating-Point Numbers Accurately" by Steele and White, in
+        particular Table 3.  This is an optimized implementation of their algorithm.
+        '''
+        if value.is_zero():
+            return decimal_fmt.make_zero(value.sign)
+
+        if not value.is_finite():
+            raise RuntimeError('value must be finite')
+
+        e_p = value.exponent_int()
+        R = value.significand << max(0, e_p)
+        S = 1 << max(0, -e_p)
+
+        # Now the arithmetic value is R / S.  M is the scaled value of an ulp upwards and
+        # is used to detect when correctly-rounded coversion back to binary would give the
+        # same number.  We can stop generating digits when the remainder is strictly
+        # within M of the boundary, because then round-to-nearest of the output is
+        # guaranteed to give our target value.
+        M = 1 << max(0, e_p)
+        low_shift = 2 if value.significand == value.fmt.int_bit else 1
+        k = 0
+
+        # This loop is needed for negative exponents H. It scales R until divmod()
+        # delivers a non-zero digit.
+        while R * 10 < S:
+            k -= 1
+            R *= 10
+            M *= 10
+
+        # This loop is needed for positive exponents H.  It scales S until digits can be
+        # reliably delivered.  This condition is not strictly tested.  can remove M
+        # entirely.
+        while 2 * R + M >= 2 * S:
+            S *= 10
+            k += 1
+
+        H = k - 1
+        is_even = (value.significand & 1) == 0
+
+        digits = bytearray()
+        while True:
+            k -= 1
+            U, R = divmod(R * 10, S)
+            M *= 10
+            # If we have equality with M then the decimal we output is exactly half-an-ulp
+            # from the target value.  If the target value is even then it will be rounded
+            # to and we can stop.
+            low = (R << low_shift) < M + is_even
+            high = 2 * (S - R) < M + is_even
+            if low or high:
+                break
+            digits.append(U + 48)
+
+        # All code paths here are exercised by the to_decimal tests
+        if low and not high:
+            pass
+        elif high and not low:
+            U += 1
+        elif 2 * R < S:
+            pass
+        elif 2 * R > S:
+            U += 1
+        else:
+            U += (U & 1)
+        digits.append(U + 48)
+
+        if R and context:
+            context.set_flags(Flags.INEXACT)
+
+        digits = digits.decode()
+
+        digits += '0' * (decimal_fmt.precision - len(digits))
+
+        return Decimal(decimal_fmt, value.sign, H, digits)
+
+
 class BinaryFormat:
     '''An IEEE-754 binary floating point format.  Does not require e_min = 1 - e_max.'''
 
     __slots__ = ('precision', 'e_max', 'e_min', 'e_bias',
                  'int_bit', 'quiet_bit', 'max_significand', 'fmt_width',
-                 'logb_inf', 'logb_zero', 'logb_NaN')
+                 'decimal_fmt', 'logb_inf', 'logb_zero', 'logb_NaN')
 
     def __init__(self, precision, e_max, e_min):
         '''precision is the number of bits in the significand including an explicit integer bit.
@@ -503,6 +669,13 @@ class BinaryFormat:
         self.int_bit = 1 << (precision - 1)
         self.quiet_bit = 1 << (precision - 2)
         self.max_significand = (1 << precision) - 1
+
+        # The narrowest decimal format capable of round-tripping all binary values
+        # correctly.
+        dec_precision = 1 + floor(precision / log2_10)
+        dec_e_max = ceil((e_max + 1) / log2_10)
+        dec_e_min = floor((e_min - (precision - 1)) / log2_10)
+        self.decimal_fmt = DecimalFormat(dec_precision, dec_e_max, dec_e_min)
 
         # What integer value logb(inf) returns.  IEEE-754 requires this and the values for
         # logb(0) and logb(NaN) be values "outside the range ±2 * (emax + p - 1)".
@@ -881,11 +1054,11 @@ class BinaryFormat:
 
         # Test for obviously over-large exponents
         frac_exp = exponent + len(sig_str)
-        if frac_exp - 1 >= (self.e_max + 1) / math.log2(10):
+        if frac_exp - 1 >= (self.e_max + 1) / log2_10:
             return context.overflow_value(self, sign)
 
         # Test for obviously over-small exponents
-        if frac_exp < (self.e_min - self.precision) / math.log2(10):
+        if frac_exp < (self.e_min - self.precision) / log2_10:
             context.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
             return self.make_zero(sign)
 
@@ -905,7 +1078,7 @@ class BinaryFormat:
 
             # With this many digits, an increment of one is strictly less than one ULP in
             # the binary format.
-            digit_count = min(math.floor(calc_fmt.precision / math.log2(10)) + 2, len(sig_str))
+            digit_count = min(calc_fmt.decimal_fmt.precision + 1, len(sig_str))
 
             # We want to calculate significand * 10^sig_exponent.  sig_exponent may differ
             # from exponent because not all sig_str digits are used.
@@ -1322,7 +1495,7 @@ class BinaryFormat:
         sig <<= precision_bump
 
         # Newton-Raphson loop
-        est = self.make_real(False, exponent // 2, math.floor(math.sqrt(sig)), nearest_context)
+        est = self.make_real(False, exponent // 2, floor(sqrt(sig)), nearest_context)
         n = 1
         while True:
             print(n, "EST", est.as_tuple(), est.to_hex(TextFormat(), Context()))
@@ -1510,7 +1683,8 @@ class Binary:
 
     def NaN_payload(self):
         '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''
-        assert self.is_NaN()
+        if not self.is_NaN():
+            raise RuntimeError('NaN_payload called on non-NaN')
         return self.significand & (self.fmt.quiet_bit - 1)
 
     def is_negative(self):
@@ -1726,89 +1900,9 @@ class Binary:
         '''
         return self.fmt.to_hex(self, text_format, context)
 
-    def to_decimal(self, text_format, precision, context):
-        '''Convert a binary floating point value to a decimal string.'''
-        if not self.is_finite():
-            return text_format.non_finite_string(self.to_quiet(context))
-
-        sig_digits, exponent, is_inexact = self.decimal_digits(precision)
-        if is_inexact:
-            context.set_flags(Flags.INEXACT)
-
-        return text_format.format_decimal(self.sign, sig_digits, exponent)
-
-    def decimal_digits(self, _precision):
-        '''Returns a tuple:
-
-            (digits, exp, inexact)
-
-        digits is a string of digits (most significant first) with no decimal point.  exp
-        is the base 10 exponent of the first digit (so the base 10 exponent of the last is
-        N - (len(digits) - 1).  inexact is True if the conversion to decimal is not exact.
-
-        See "How to Print Floating-Point Numbers Accurately" by Steele and White, in
-        particular Table 3.  This is an optimized implementation of their algorithm.
-        '''
-        if not self.is_finite():
-            raise RuntimeError('decimal_digits() called on a non-finite number')
-
-        # Special-case zero.
-        if self.is_zero():
-            return '0', 0, False
-
-        e_p = self.exponent_int()
-        R = self.significand << max(0, e_p)
-        S = 1 << max(0, -e_p)
-
-        # Now the arithmetic value is R / S.  M is the scaled value of an ulp upwards.  We
-        # can stop generating digits when the remainder is within M of the boundary,
-        # because then round-to-nearest of the output is guaranteed to give our target
-        # value.
-        M = 1 << max(0, e_p)
-        low_shift = 2 if self.significand == self.fmt.int_bit else 1
-        k = 0
-
-        # This loop is needed for negative exponents H. It scales R until divmod()
-        # delivers a non-zero digit.
-        while R * 10 < S:
-            k -= 1
-            R *= 10
-            M *= 10
-
-        # This loop is needed for positive exponents H.  It scales S until digits can be
-        # reliably delivered.  This condition is not strictly tested.  can remove M
-        # entirely.
-        while 2 * R + M >= 2 * S:
-            S *= 10
-            k += 1
-
-        H = k - 1
-
-        digits = bytearray()
-        while True:
-            k -= 1
-            U, R = divmod(R * 10, S)
-            M *= 10
-            low = (R << low_shift) < M
-            high = 2 * R > (2 * S) - M
-            if low or high:
-                break
-            digits.append(U + 48)
-
-        # All code paths here are exercised by the to_decimal tests
-        if low and not high:
-            pass
-        elif high and not low:
-            U += 1
-        elif 2 * R < S:
-            pass
-        elif 2 * R > S:
-            U += 1
-        else:
-            U += (U & 1)
-        digits.append(U + 48)
-
-        return digits.decode(), H, R != 0
+    def to_decimal(self, decimal_fmt=None, context=None):
+        '''Convert a binary floating point value to a Decimal.'''
+        return Decimal.from_binary(self, decimal_fmt, context)
 
     def to_quiet(self, context):
         '''Return a copy except that a signalling NaN becomes its quiet twin (in which case

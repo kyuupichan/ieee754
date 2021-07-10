@@ -581,7 +581,7 @@ class TestUnaryOps:
         if len(parts) != 10:
             assert False, f'bad line: {line}'
         (exp_digits, force_exp_sign, force_leading_sign, force_point, upper_case,
-         rstrip_zeroes, sign, sig_digits, exponent, answer) = parts
+         rstrip_zeroes, sign, digits, exponent, answer) = parts
         text_format = TextFormat(exp_digits=int(exp_digits),
                                  force_exp_sign=boolean_codes[force_exp_sign],
                                  force_leading_sign=boolean_codes[force_leading_sign],
@@ -590,7 +590,9 @@ class TestUnaryOps:
                                  rstrip_zeroes=boolean_codes[rstrip_zeroes])
         sign = boolean_codes[sign]
         exponent = int(exponent)
-        assert text_format.format_decimal(sign, sig_digits, exponent) == answer
+        decimal_fmt = DecimalFormat(len(digits), 999, -999)
+        decimal = Decimal(decimal_fmt, sign, exponent, digits)
+        assert text_format.format_decimal(decimal) == answer
 
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
@@ -748,9 +750,10 @@ class TestUnaryOps:
         context = context_string_to_context(context)
         value = from_string(fmt, in_str)
         status = status_codes[status]
-        text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
+        text_format = TextFormat(exp_digits=-2, force_exp_sign=True, rstrip_zeroes=True)
 
-        result = value.to_decimal(text_format, 0, context)
+        decimal = value.to_decimal(context=context)
+        result = text_format.format_decimal(decimal)
         assert result == answer
         assert context.flags == status
 
@@ -761,17 +764,15 @@ class TestUnaryOps:
         assert dec_value.as_tuple() == value.as_tuple()
         assert context.flags == status
 
-        # Confirm Python prints the same.  Python gets 18014398509481984 wrong; in
-        # unnecessarily puts it in 'e' mode.
-        if answer != '18014398509481984':
-            if '0x' in in_str:
-                value = float.fromhex(in_str)
-            else:
-                value = float(in_str)
-            py_str = str(value)
-            if py_str.endswith('.0'):
-                py_str = py_str[:-2]
-            assert py_str == answer
+        # Confirm Python prints the same.
+        if '0x' in in_str:
+            value = float.fromhex(in_str)
+        else:
+            value = float(in_str)
+        py_str = str(value)
+        if py_str.endswith('.0'):
+            py_str = py_str[:-2]
+        assert py_str == answer
 
     # def test_to_decimal_hard(self):
     #     text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
@@ -971,6 +972,7 @@ class TestUnaryOps:
         assert value.as_tuple() == value.fmt.unpack_value(result, 'big').as_tuple()
         # Test little-endian unpacking
         assert value.as_tuple() == value.fmt.unpack_value(le_packing, 'little').as_tuple()
+
 
 def binary_operation(line, operation):
     parts = line.split()
