@@ -306,6 +306,10 @@ class TestDecimalFormat:
         fmt = DecimalFormat(8, 99, -99)
         assert repr(fmt) == 'DecimalFormat(precision=8, e_max=99, e_min=-99)'
 
+    def test_make_smallest(self):
+        fmt = DecimalFormat(8, 99, -99)
+        d = fmt.make_smallest_finite(False)
+        assert str(d) == '0.0000001e-99'
 
 class TestDecimal:
 

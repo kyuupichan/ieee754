@@ -394,7 +394,7 @@ class Context:
         elif is_inexact:
             self.set_flags(Flags.INEXACT)
 
-    def overflow_value(self, binary_format, sign):
+    def overflow_value(self, dest_fmt, sign):
         '''Call when an overflow occurs on a number of the given format and sign, because
         the rounded result would have too large an exponent.
 
@@ -402,19 +402,20 @@ class Context:
         finite number or infinity depending on the rounding mode.'''
         self.set_flags(Flags.OVERFLOW | Flags.INEXACT)
 
-        rounding = self.rounding
-        if rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP, ROUND_UP}:
-            is_up = True
-        elif rounding == ROUND_CEILING:
-            is_up = not sign
-        elif rounding == ROUND_FLOOR:
-            is_up = sign
-        else: # ROUND_DOWN
-            is_up = False
+        if round_up(self.rounding, LostFraction.MORE_THAN_HALF, sign, False):
+            return dest_fmt.make_infinity(sign)
+        return dest_fmt.make_largest_finite(sign)
 
-        if is_up:
-            return binary_format.make_infinity(sign)
-        return binary_format.make_largest_finite(sign)
+    def underflow_value(self, dest_fmt, sign):
+        '''Call when underflowing to zero.
+
+        Flags overflow and returns the result, which is signed and either the largest
+        finite number or infinity depending on the rounding mode.'''
+        self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
+
+        if round_up(self.rounding, LostFraction.LESS_THAN_HALF, sign, False):
+            return dest_fmt.make_smallest_finite(sign)
+        return dest_fmt.make_zero(sign)
 
     def round_to_nearest(self):
         '''Return True if the rounding mode rounds to nearest (ignoring ties).'''
@@ -475,6 +476,14 @@ class DecimalFormat:
     def make_NaN(self, sign, is_quiet, payload):
         assert isinstance(payload, int)
         return Decimal(self, sign, 'n' if is_quiet else 'N', payload)
+
+    def make_largest_finite(self, sign):
+        '''Returns the finite number of maximal magnitude with the given sign.'''
+        return Decimal(self, sign, self.e_max, '9' * self.precision)
+
+    def make_smallest_finite(self, sign):
+        '''Returns the finite number of maximal magnitude with the given sign.'''
+        return Decimal(self, sign, self.e_min, '0' * (self.precision - 1) + '1')
 
     def __repr__(self):
         return f'DecimalFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
@@ -602,7 +611,12 @@ class Decimal:
             U += (U & 1)
         digits.append(U + 48)
 
-        if R and context:
+        if H > decimal_fmt.e_max:
+            return context.overflow_value(decimal_fmt, value.sign)
+        # FIXME: gradual underflow
+        if H < decimal_fmt.e_min:
+            return context.underflow_value(decimal_fmt, value.sign)
+        if R:
             context.set_flags(Flags.INEXACT)
 
         digits = digits.decode()
@@ -735,6 +749,10 @@ class BinaryFormat:
     def make_largest_finite(self, sign):
         '''Returns the finite number of maximal magnitude with the given sign.'''
         return Binary(self, sign, self.e_max + self.e_bias, self.max_significand)
+
+    def make_smallest_finite(self, sign):
+        '''Returns the finite number of maximal magnitude with the given sign.'''
+        return Binary(self, sign, 1, 1)
 
     def make_NaN(self, sign, is_quiet, payload, context, flag_invalid):
         '''Return a NaN with the given sign and payload; the NaN is quiet iff is_quiet.
@@ -1086,8 +1104,7 @@ class BinaryFormat:
 
         # Test for obviously over-small exponents
         if frac_exp < (self.e_min - self.precision) / log2_10:
-            context.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
-            return self.make_zero(sign)
+            return context.underflow_value(self, sign)
 
         # Start with a precision a multiple of 64 bits with some room over the format
         # precision, and always an exponent range 1 bit larger - we eliminate obviously
