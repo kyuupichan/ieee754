@@ -276,7 +276,7 @@ class TestBinaryFormat:
         assert BinaryFormat(8, 99, -99) != BinaryFormat(8, 99, -100)
         assert BinaryFormat(8, 99, -99) != BinaryFormat(8, 100, -99)
         assert BinaryFormat(8, 99, -99) != BinaryFormat(9, 99, -99)
-        assert BinaryFormat(8, 99, -99) != DecimalFormat(8, 99, -99)
+        assert BinaryFormat(8, 99, -99) != 1
 
 
 class TestBinary:
@@ -310,34 +310,6 @@ class TestIntegerFormat:
         assert IntegerFormat(8, True) == IntegerFormat(8, True)
         assert IntegerFormat(8, True) != IntegerFormat(8, False)
         assert IntegerFormat(8, True) != 6
-
-
-class TestDecimalFormat:
-
-    def test_repr(self):
-        fmt = DecimalFormat(8, 99, -99)
-        assert repr(fmt) == 'DecimalFormat(precision=8, e_max=99, e_min=-99)'
-
-    def test_make_smallest(self):
-        fmt = DecimalFormat(8, 99, -99)
-        d = fmt.make_smallest_finite(False)
-        assert str(d) == '0.0000001e-99'
-
-    def test_eq(self):
-        assert DecimalFormat(8, 99, -99) == DecimalFormat(8, 99, -99)
-        assert DecimalFormat(8, 99, -99) != DecimalFormat(8, 99, -100)
-        assert DecimalFormat(8, 99, -99) != DecimalFormat(8, 100, -99)
-        assert DecimalFormat(8, 99, -99) != DecimalFormat(9, 99, -99)
-        assert DecimalFormat(8, 99, -99) != BinaryFormat(8, 99, -99)
-
-
-class TestDecimal:
-
-    def test_repr_str(self):
-        d = IEEEdouble.from_string('1.25')
-        d = Decimal.from_binary(d)
-        assert repr(d) == '1.25'
-        assert str(d) == '1.25'
 
 
 # Test basic class functions before reading test files
@@ -652,9 +624,7 @@ class TestUnaryOps:
                                  rstrip_zeroes=boolean_codes[rstrip_zeroes])
         sign = boolean_codes[sign]
         exponent = int(exponent)
-        decimal_fmt = DecimalFormat(len(digits), 999, -999)
-        decimal = Decimal(decimal_fmt, sign, exponent, digits)
-        assert text_format.format_decimal(decimal) == answer
+        assert text_format.format_decimal(sign, exponent, digits) == answer
 
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
@@ -813,9 +783,7 @@ class TestUnaryOps:
         value = from_string(fmt, in_str)
         status = status_codes[status]
         text_format = TextFormat(exp_digits=-2, force_exp_sign=True, rstrip_zeroes=True)
-
-        decimal = value.to_decimal(context=context)
-        result = text_format.format_decimal(decimal)
+        result = value.to_decimal_string(0, text_format, context)
         assert result == answer
         assert context.flags == status
 
@@ -827,14 +795,15 @@ class TestUnaryOps:
         assert context.flags == status
 
         # Confirm Python prints the same.
-        if '0x' in in_str:
-            value = float.fromhex(in_str)
-        else:
-            value = float(in_str)
-        py_str = str(value)
-        if py_str.endswith('.0'):
-            py_str = py_str[:-2]
-        assert py_str == answer
+        if fmt is IEEEdouble:
+            if '0x' in in_str:
+                value = float.fromhex(in_str)
+            else:
+                value = float(in_str)
+            py_str = str(value)
+            if py_str.endswith('.0'):
+                py_str = py_str[:-2]
+            assert py_str == answer
 
     # def test_to_decimal_hard(self):
     #     text_format = TextFormat(exp_digits=-2, force_exp_sign=True)

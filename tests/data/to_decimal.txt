@@ -28,6 +28,22 @@ E D 0x1.0p1023 I 8.98846567431158e+307
 E D 0 K 0
 E D -0 K -0
 
+#
+# Algorithm correctness corner-cases
+#
+
+E S 0x1.999998p-3 I 0.19999999
+E S 0x1.99999ap-3 I 0.2
+
+E S 0x1.3ffffep3 I 9.999999
+E S 0x1.4p3      K 10
+E S 0x1.400002p3 I 10.000001
+
+E S 0x1.312cfep23 K 9999999
+E S 0x1.312d00p23 K 10000000
+E S 0x1.312d02p23 K 10000001
+
+
 # These exercise the equality and is_even "high" condition
 E D 0x1.1c37937e08001p54 K 2.0000000000000004e+16
 E D 0x1.1c37937e08002p54 I 2.000000000000001e+16
