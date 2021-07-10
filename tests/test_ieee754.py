@@ -1089,14 +1089,21 @@ class TestBinaryOps:
 
         # Compare quietly
         context = std_context()
-        result = lhs.compare(rhs, context, False)
+        result = lhs.compare(rhs, context)
         assert result == answer
         assert context.flags == status
+
+        # Compare singalling
+        context = std_context()
+        result = lhs.compare_signal(rhs, context)
+        op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
+        assert result == answer
+        assert context.flags == op_status
 
         # Now check all the other comparison operations
         for op, true_set in comparison_ops.items():
             # Test the quiet form:
-            op_name = f'compare_quiet_{op}'
+            op_name = f'compare_{op}'
             op_result = answer_code in true_set
             op_status = Flags.INVALID if lhs.is_signalling() or rhs.is_signalling() else 0
             context = std_context()
@@ -1106,15 +1113,15 @@ class TestBinaryOps:
 
             # Test the singalling form:
             if op not in {'un', 'or'}:
-                op_name = f'compare_signalling_{op}'
+                op_name = f'compare_{op}_signal'
                 op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
                 context = std_context()
                 result = getattr(lhs, op_name)(rhs, context)
                 assert result == op_result
                 assert context.flags == op_status
 
-    @pytest.mark.parametrize('line', read_lines('total_order.txt'))
-    def test_total_order(self, line):
+    @pytest.mark.parametrize('line', read_lines('compare_total.txt'))
+    def test_compare_total(self, line):
         parts = line.split()
         if len(parts) != 4:
             assert False, f'bad line: {line}'
@@ -1124,11 +1131,11 @@ class TestBinaryOps:
         rhs = from_string(format_codes[fmt], rhs)
         answer = boolean_codes[answer_code]
 
-        assert lhs.total_order(rhs) is answer
+        assert lhs.compare_total(rhs) is answer
         lhs_abs = lhs.copy_abs()
         rhs_abs = rhs.copy_abs()
 
-        assert lhs.total_order_mag(rhs) is lhs_abs.total_order(rhs_abs)
+        assert lhs.compare_total_mag(rhs) is lhs_abs.compare_total(rhs_abs)
 
 
 class TestFMA:

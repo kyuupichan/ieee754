@@ -1383,9 +1383,9 @@ class BinaryFormat:
                 return est
 
             est_squared = value.fmt.multiply(est, est, down_context)
-            if est_squared.compare_quiet_ge(value, down_context):
+            if est_squared.compare_ge(value, down_context):
                 est = est.next_down(down_context)
-        elif est.compare_quiet_ge(div, down_context):
+        elif est.compare_ge(div, down_context):
             est = div
 
         print("EST", est.as_tuple(), est)
@@ -1400,7 +1400,7 @@ class BinaryFormat:
             assert not (nearest_context.flags & Flags.INEXACT)
             down_context.clear_flags()
             half_squared = value.fmt.multiply(half, half, down_context)
-            compare = half_squared.compare(value, down_context, False)
+            compare = half_squared.compare(value, down_context)
             if compare == Compare.LESS_THAN:
                 lost_fraction = LostFraction.MORE_THAN_HALF
             elif compare == Compare.EQUAL:
@@ -1878,7 +1878,7 @@ class Binary:
     ## Signalling computational operations
     ##
 
-    def compare(self, rhs, context, signalling):
+    def _compare(self, rhs, context, signalling):
         '''Return LHS vs RHS as one of the four comparison constants.
 
         Comparisons of NaNs signal INVALID if either is signalling or if signalling is True.
@@ -1949,77 +1949,87 @@ class Binary:
             context.set_flags(Flags.INVALID)
         return Compare.UNORDERED
 
-    def compare_quiet_eq(self, rhs, context):
-        return self.compare(rhs, context, False) == Compare.EQUAL
+    def compare(self, rhs, context=None):
+        '''Return LHS vs RHS as one of the four comparison constants.  Comparing NaNs signals
+        INVALID only if either is signalling.
+        '''
+        return self._compare(rhs, context, False)
 
-    def compare_quiet_ne(self, rhs, context):
-        return self.compare(rhs, context, False) != Compare.EQUAL
+    def compare_signal(self, rhs, context=None):
+        '''This operation is identical to the compare() method, except that all NaNs signal.'''
+        return self._compare(rhs, context, True)
 
-    def compare_quiet_gt(self, rhs, context):
-        return self.compare(rhs, context, False) == Compare.GREATER_THAN
+    def compare_eq(self, rhs, context):
+        return self._compare(rhs, context, False) == Compare.EQUAL
 
-    def compare_quiet_ng(self, rhs, context):
-        return self.compare(rhs, context, False) != Compare.GREATER_THAN
+    def compare_ne(self, rhs, context):
+        return self._compare(rhs, context, False) != Compare.EQUAL
 
-    def compare_quiet_ge(self, rhs, context):
-        return self.compare(rhs, context, False) in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_gt(self, rhs, context):
+        return self._compare(rhs, context, False) == Compare.GREATER_THAN
 
-    def compare_quiet_lu(self, rhs, context):
-        return self.compare(rhs, context, False) not in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_ng(self, rhs, context):
+        return self._compare(rhs, context, False) != Compare.GREATER_THAN
 
-    def compare_quiet_lt(self, rhs, context):
-        return self.compare(rhs, context, False) == Compare.LESS_THAN
+    def compare_ge(self, rhs, context):
+        return self._compare(rhs, context, False) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_quiet_nl(self, rhs, context):
-        return self.compare(rhs, context, False) != Compare.LESS_THAN
+    def compare_lu(self, rhs, context):
+        return self._compare(rhs, context, False) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_quiet_le(self, rhs, context):
-        return self.compare(rhs, context, False) in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_lt(self, rhs, context):
+        return self._compare(rhs, context, False) == Compare.LESS_THAN
 
-    def compare_quiet_gu(self, rhs, context):
-        return self.compare(rhs, context, False) not in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_nl(self, rhs, context):
+        return self._compare(rhs, context, False) != Compare.LESS_THAN
 
-    def compare_quiet_un(self, rhs, context):
-        return self.compare(rhs, context, False) == Compare.UNORDERED
+    def compare_le(self, rhs, context):
+        return self._compare(rhs, context, False) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_quiet_or(self, rhs, context):
-        return self.compare(rhs, context, False) != Compare.UNORDERED
+    def compare_gu(self, rhs, context):
+        return self._compare(rhs, context, False) not in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_signalling_eq(self, rhs, context):
-        return self.compare(rhs, context, True) == Compare.EQUAL
+    def compare_un(self, rhs, context):
+        return self._compare(rhs, context, False) == Compare.UNORDERED
 
-    def compare_signalling_ne(self, rhs, context):
-        return self.compare(rhs, context, True) != Compare.EQUAL
+    def compare_or(self, rhs, context):
+        return self._compare(rhs, context, False) != Compare.UNORDERED
 
-    def compare_signalling_gt(self, rhs, context):
-        return self.compare(rhs, context, True) == Compare.GREATER_THAN
+    def compare_eq_signal(self, rhs, context):
+        return self._compare(rhs, context, True) == Compare.EQUAL
 
-    def compare_signalling_ge(self, rhs, context):
-        return self.compare(rhs, context, True) in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_ne_signal(self, rhs, context):
+        return self._compare(rhs, context, True) != Compare.EQUAL
 
-    def compare_signalling_lt(self, rhs, context):
-        return self.compare(rhs, context, True) == Compare.LESS_THAN
+    def compare_gt_signal(self, rhs, context):
+        return self._compare(rhs, context, True) == Compare.GREATER_THAN
 
-    def compare_signalling_le(self, rhs, context):
-        return self.compare(rhs, context, True) in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_ge_signal(self, rhs, context):
+        return self._compare(rhs, context, True) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_signalling_ng(self, rhs, context):
-        return self.compare(rhs, context, True) != Compare.GREATER_THAN
+    def compare_lt_signal(self, rhs, context):
+        return self._compare(rhs, context, True) == Compare.LESS_THAN
 
-    def compare_signalling_lu(self, rhs, context):
-        return self.compare(rhs, context, True) not in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_le_signal(self, rhs, context):
+        return self._compare(rhs, context, True) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_signalling_nl(self, rhs, context):
-        return self.compare(rhs, context, True) != Compare.LESS_THAN
+    def compare_ng_signal(self, rhs, context):
+        return self._compare(rhs, context, True) != Compare.GREATER_THAN
 
-    def compare_signalling_gu(self, rhs, context):
-        return self.compare(rhs, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_lu_signal(self, rhs, context):
+        return self._compare(rhs, context, True) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def total_order(self, rhs):
+    def compare_nl_signal(self, rhs, context):
+        return self._compare(rhs, context, True) != Compare.LESS_THAN
+
+    def compare_gu_signal(self, rhs, context):
+        return self._compare(rhs, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)
+
+    def compare_total(self, rhs):
         '''The total order relation on a format.  A loose equivalent of <=.'''
         if self.fmt != rhs.fmt:
             raise ValueError('total order requires both operands have the same format')
-        comp = self.compare(rhs, None, False)
+        comp = self._compare(rhs, None, False)
         if comp == Compare.LESS_THAN:
             return True
         if comp == Compare.GREATER_THAN:
@@ -2041,9 +2051,9 @@ class Binary:
             return not rhs.sign
         return self.sign
 
-    def total_order_mag(self, rhs):
+    def compare_total_mag(self, rhs):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
-        return self.copy_abs().total_order(rhs.copy_abs())
+        return self.copy_abs().compare_total(rhs.copy_abs())
 
     def __repr__(self):
         return self.to_string()
