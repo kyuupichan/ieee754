@@ -453,6 +453,11 @@ class IntegerFormat:
             return self.min_int, True
         return value, False
 
+    def __eq__(self, other):
+        '''Returns True if two formats are equal.'''
+        return (isinstance(other, IntegerFormat) and
+                (self.width, self.is_signed) == (other.width, other.is_signed))
+
     def __repr__(self):
         return f'IntegerFormat(width={self.width}, is_signed={self.is_signed})'
 
@@ -466,6 +471,12 @@ class DecimalFormat:
         self.precision = precision
         self.e_max = e_max
         self.e_min = e_min
+
+    def __eq__(self, other):
+        '''Returns True if two formats are equal.'''
+        return (isinstance(other, DecimalFormat) and
+                (self.precision, self.e_max, self.e_min)
+                == (other.precision, other.e_max, other.e_min))
 
     def make_zero(self, sign):
         return Decimal(self, sign, 0, '0')
@@ -732,6 +743,12 @@ class BinaryFormat:
 
     def __repr__(self):
         return f'BinaryFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
+
+    def __eq__(self, other):
+        '''Returns True if two formats are equal.'''
+        return (isinstance(other, BinaryFormat) and
+                (self.precision, self.e_max, self.e_min)
+                == (other.precision, other.e_max, other.e_min))
 
     @classmethod
     def from_exponent_width(cls, precision, e_width):

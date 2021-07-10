@@ -271,6 +271,13 @@ class TestBinaryFormat:
     def test_repr(self):
         assert repr(IEEEdouble) == 'BinaryFormat(precision=53, e_max=1023, e_min=-1022)'
 
+    def test_eq(self):
+        assert BinaryFormat(8, 99, -99) == BinaryFormat(8, 99, -99)
+        assert BinaryFormat(8, 99, -99) != BinaryFormat(8, 99, -100)
+        assert BinaryFormat(8, 99, -99) != BinaryFormat(8, 100, -99)
+        assert BinaryFormat(8, 99, -99) != BinaryFormat(9, 99, -99)
+        assert BinaryFormat(8, 99, -99) != DecimalFormat(8, 99, -99)
+
 
 class TestBinary:
 
@@ -299,6 +306,11 @@ class TestIntegerFormat:
         fmt = IntegerFormat(8, True)
         assert repr(fmt) == 'IntegerFormat(width=8, is_signed=True)'
 
+    def test_eq(self):
+        assert IntegerFormat(8, True) == IntegerFormat(8, True)
+        assert IntegerFormat(8, True) != IntegerFormat(8, False)
+        assert IntegerFormat(8, True) != 6
+
 
 class TestDecimalFormat:
 
@@ -310,6 +322,14 @@ class TestDecimalFormat:
         fmt = DecimalFormat(8, 99, -99)
         d = fmt.make_smallest_finite(False)
         assert str(d) == '0.0000001e-99'
+
+    def test_eq(self):
+        assert DecimalFormat(8, 99, -99) == DecimalFormat(8, 99, -99)
+        assert DecimalFormat(8, 99, -99) != DecimalFormat(8, 99, -100)
+        assert DecimalFormat(8, 99, -99) != DecimalFormat(8, 100, -99)
+        assert DecimalFormat(8, 99, -99) != DecimalFormat(9, 99, -99)
+        assert DecimalFormat(8, 99, -99) != BinaryFormat(8, 99, -99)
+
 
 class TestDecimal:
 
