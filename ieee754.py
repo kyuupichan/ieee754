@@ -1621,18 +1621,6 @@ class Binary:
         '''Returns a copy of this number with sign False (positive).'''
         return Binary(self.fmt, False, self.e_biased, self.significand)
 
-    def take_sign(self, y):
-        '''Sets the sign of this number to that of y.  copy_sign without a copy.'''
-        self.sign = y.sign
-
-    def negate(self):
-        '''Negates this number in-place.'''
-        self.sign = not self.sign
-
-    def abs(self):
-        '''Sets the sign to False (positive).'''
-        self.sign = False
-
     ##
     ## General homogeneous computational operations.
     ##
