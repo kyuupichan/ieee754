@@ -244,6 +244,13 @@ class TestTraps:
         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
 
 
+class TestContext:
+
+    def test_repr(self):
+        c = Context(rounding=ROUND_UP, flags=Flags.SUBNORMAL|Flags.INEXACT, traps=0)
+        assert repr(c) == '<Context rounding=ROUND_UP flags=<Flags.INEXACT|SUBNORMAL: 40> traps=0>'
+
+
 class TestBinaryFormat:
 
     @pytest.mark.parametrize('fmt, is_if, precision, e_max', (
@@ -261,10 +268,21 @@ class TestBinaryFormat:
         assert fmt.e_max == e_max
         assert fmt.e_min == 1 - fmt.e_max
 
+    def test_repr(self):
+        assert repr(IEEEdouble) == 'BinaryFormat(precision=53, e_max=1023, e_min=-1022)'
+
+
+class TestBinary:
+
+    def test_repr_str(self):
+        d = IEEEdouble.from_string('1.25')
+        assert repr(d) == '0x1.4p0'
+        assert str(d) == '0x1.4p0'
+
 
 class TestIntegerFormat:
 
-    @pytest.mark.parametrize('width, is_signed, min_int, max_int',(
+    @pytest.mark.parametrize('width, is_signed, min_int, max_int', (
         (8, True, -128, 127),
         (8, False, 0, 255),
         (32, True, -(1 << 31), (1 << 31) - 1),
@@ -276,6 +294,26 @@ class TestIntegerFormat:
         assert fmt.max_int == max_int
         assert fmt.width == width
         assert fmt.is_signed == is_signed
+
+    def test_repr(self):
+        fmt = IntegerFormat(8, True)
+        assert repr(fmt) == 'IntegerFormat(width=8, is_signed=True)'
+
+
+class TestDecimalFormat:
+
+    def test_repr(self):
+        fmt = DecimalFormat(8, 99, -99)
+        assert repr(fmt) == 'DecimalFormat(precision=8, e_max=99, e_min=-99)'
+
+
+class TestDecimal:
+
+    def test_repr_str(self):
+        d = IEEEdouble.from_string('1.25')
+        d = Decimal.from_binary(d)
+        assert repr(d) == '1.25'
+        assert str(d) == '1.25'
 
 
 # Test basic class functions before reading test files
@@ -736,7 +774,7 @@ class TestUnaryOps:
         dst_fmt = format_codes[dst_fmt]
         status = status_codes[status]
 
-        result = dst_fmt.to_hex(in_value, text_format, context)
+        result = dst_fmt.to_string(in_value, text_format, context)
         assert result == answer
         assert context.flags == status
 
@@ -778,7 +816,7 @@ class TestUnaryOps:
     #     text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
     #     for exponent in range(-100, 101):
     #         hex_str = f'0x1p{exponent}'
-    #         value = IEEEdouble.from_string(hex_str, Context())
+    #         value = IEEEdouble.from_string(hex_str)
     #         context = Context()
     #         dec_str = value.to_decimal(text_format, 0, context)
     #         flags = 'I' if context.flags & Flags.INEXACT else 'K'
@@ -911,7 +949,7 @@ class TestUnaryOps:
         # integer bit (making it an unnormal) and check
         for hex_str in ('3fff9180000000000000', '3fff1180000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert value.to_hex(TextFormat(), Context()) == '0x1.2300000000000000p0'
+            assert str(value) == '0x1.23p0'
 
         # 7fffc000000000000000 is the canonical representation of a NaN with integer bit
         # set.  Test clearing it (a pseudo-NaN) gives the right answer.
@@ -925,12 +963,12 @@ class TestUnaryOps:
         # set.  Test clearing it gives the right answer.
         for hex_str in ('7fff8000000000000000', '7fff0000000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert value.to_hex(TextFormat(), Context()) == 'Inf'
+            assert str(value) == 'Inf'
 
         # 00000000a03000000000 is the canonical representation of 0x1.85p-16400, or
         # 0x0.0000614p-16382, a subnormal with integer bit clear.  Test setting it gives
         # the right answer.
-        answer = x87extended.from_string('0x1.85p-16400', Context())
+        answer = x87extended.from_string('0x1.85p-16400')
         for hex_str in ('0000000030a000000000', '0000800030a000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
             assert value.as_tuple() == answer.as_tuple()

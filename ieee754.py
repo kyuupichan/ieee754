@@ -95,7 +95,7 @@ class TextFormat:
     # the inf, qNaN and sNaN indicators below which are copied unmodified.
     upper_case = attr.ib(default=False)
     # If True, trailing insignificant zeroes are stripped
-    rstrip_zeroes = attr.ib(default=False)
+    rstrip_zeroes = attr.ib(default=True)
     # The string output for infinity
     inf = attr.ib(default='Inf')
     # The string output for quiet NaNs
@@ -193,7 +193,7 @@ class TextFormat:
 
         return result
 
-    def to_hex(self, value):
+    def format_hex(self, value):
         if not value.is_finite():
             return self.non_finite_string(value)
 
@@ -421,7 +421,7 @@ class Context:
         return self.rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP}
 
     def __repr__(self):
-        return f'Context(rounding={self.rounding}, flags={self.flags!r} traps={self.traps!r})'
+        return f'<Context rounding={self.rounding} flags={self.flags!r} traps={self.traps!r}>'
 
 
 class IntegerFormat:
@@ -452,6 +452,9 @@ class IntegerFormat:
             return self.min_int, True
         return value, False
 
+    def __repr__(self):
+        return f'IntegerFormat(width={self.width}, is_signed={self.is_signed})'
+
 
 class DecimalFormat:
     '''Usesd only to specify the target format for binary-to-decimal conversions.'''
@@ -472,6 +475,9 @@ class DecimalFormat:
     def make_NaN(self, sign, is_quiet, payload):
         assert isinstance(payload, int)
         return Decimal(self, sign, 'n' if is_quiet else 'N', payload)
+
+    def __repr__(self):
+        return f'DecimalFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
 
 
 class Decimal:
@@ -494,7 +500,7 @@ class Decimal:
     def is_finite(self):
         return isinstance(self.exponent, int)
 
-    def is_infinity(self):
+    def is_infinite(self):
         return self.exponent == 'F'
 
     def is_NaN(self):
@@ -521,7 +527,7 @@ class Decimal:
         if value.is_finite():
             return cls._from_finite_binary(value, decimal_fmt, context)
 
-        if value.is_infinity():
+        if value.is_infinite():
             return decimal_fmt.make_infinity(value.sign)
 
         return decimal_fmt.make_NaN(value.sign, value.is_quiet(), value.NaN_payload())
@@ -604,6 +610,22 @@ class Decimal:
         digits += '0' * (decimal_fmt.precision - len(digits))
 
         return Decimal(decimal_fmt, value.sign, H, digits)
+
+    def to_string(self, text_format=None, context=None):
+        '''Return text, with a hexadecimal significand for finite numbers, that is a
+        representation of the floating point value.  See TextFormat docstring for output
+        control.  All signals are raised as appropriate, and zeroes are output with an
+        exponent of 0.
+        '''
+        if text_format is None:
+            text_format = TextFormat(exp_digits=-2)
+        return text_format.format_decimal(self)
+
+    def __repr__(self):
+        return self.to_string()
+
+    def __str__(self):
+        return self.to_string()
 
 
 class BinaryFormat:
@@ -693,6 +715,9 @@ class BinaryFormat:
             fmt_width = 1 + e_width + precision   # With integer bit
             if 0 <= fmt_width % 16 <= 1:
                 self.fmt_width = fmt_width
+
+    def __repr__(self):
+        return f'BinaryFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
 
     @classmethod
     def from_exponent_width(cls, precision, e_width):
@@ -942,8 +967,10 @@ class BinaryFormat:
 
         return Binary(self, sign, exponent, significand)
 
-    def from_string(self, string, context):
+    def from_string(self, string, context=None):
         '''Convert a string to a rounded floating number of this format.'''
+        if context is None:
+            context = Context()
         if HEX_SIGNIFICAND_PREFIX.match(string):
             return self._from_hex_significand_string(string, context)
         return self._from_decimal_string(string, context)
@@ -1174,16 +1201,17 @@ class BinaryFormat:
     ## the destination format is self.
     ##
 
-    def to_hex(self, value, text_format, context):
+    def to_string(self, value, text_format=None, context=None):
         '''Return text, with a hexadecimal significand for finite numbers, that is a
-        representation of the floating point value converted to this format.  See the
-        docstring of OutputSpec for output control.
-
-        After rounding, normal numbers have a hex integer digit of 1, subnormal numbers 0.
-        Zeroes are output with an exponent of 0.
-
-        All flags / traps are raised as appropriate.
+        representation of the floating point value converted to this format.  See
+        TextFormat docstring for output control.  All signals are raised as appropriate,
+        and zeroes are output with an exponent of 0.
         '''
+        if text_format is None:
+            text_format = TextFormat()
+        if context is None:
+            context = Context()
+
         # convert() converts NaNs to quiet; avoid that if we preserve them
         if value.is_NaN():
             # Rather ugly code to handle the myriad of cases
@@ -1209,7 +1237,7 @@ class BinaryFormat:
         else:
             value = self.convert(value, context)
 
-        return text_format.to_hex(value)
+        return text_format.format_hex(value)
 
     def from_int(self, x, context):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
@@ -1498,7 +1526,7 @@ class BinaryFormat:
         est = self.make_real(False, exponent // 2, floor(sqrt(sig)), nearest_context)
         n = 1
         while True:
-            print(n, "EST", est.as_tuple(), est.to_hex(TextFormat(), Context()))
+            print(n, "EST", est.as_tuple(), est)
             assert est.significand
 
             nearest_context.clear_flags()
@@ -1532,7 +1560,7 @@ class BinaryFormat:
         elif est.compare_quiet_ge(div, down_context):
             est = div
 
-        print("EST", est.as_tuple(), est.to_hex(TextFormat(), Context()))
+        print("EST", est.as_tuple(), est)
 
         # EST and EST.next_up() now bound the precise result.  Decide if we need to round
         # it up.  This is only difficult with non-directed roundings.
@@ -1596,6 +1624,7 @@ x87single = BinaryFormat.from_exponent_width(24, 15)
 
 
 class Binary:
+
     def __init__(self, fmt, sign, biased_exponent, significand):
         '''Create a floating point number with the given format, sign, biased exponent and
         significand.  For NaNs - saturing exponents with non-zero signficands - we interpret
@@ -1888,17 +1917,13 @@ class Binary:
     ## General computational operations
     ##
 
-    def to_hex(self, text_format, context):
-        '''Return text that is a representation of the floating point value that is hexadecimal if
-        the number is finite.  See the docstring of OutputSpec for output control.
-
-        Normal numbers are returned with a hex integer digit of 1, subnormal numbers 0.
-        Zeroes are output with an exponent of 0.
-
-        Only conversion of signalling NaNs to quiet NaNs can set flags (INVALID and
-        possibly INEXACT).
+    def to_string(self, text_format=None, context=None):
+        '''Return text, with a hexadecimal significand for finite numbers, that is a
+        representation of the floating point value.  See TextFormat docstring for output
+        control.  All signals are raised as appropriate, and zeroes are output with an
+        exponent of 0.
         '''
-        return self.fmt.to_hex(self, text_format, context)
+        return self.fmt.to_string(self, text_format, context)
 
     def to_decimal(self, decimal_fmt=None, context=None):
         '''Convert a binary floating point value to a Decimal.'''
@@ -2203,3 +2228,9 @@ class Binary:
     def total_order_mag(self, rhs):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
         return self.copy_abs().total_order(rhs.copy_abs())
+
+    def __repr__(self):
+        return self.to_string()
+
+    def __str__(self):
+        return self.to_string()
