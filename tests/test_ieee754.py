@@ -164,7 +164,7 @@ def to_text_format(hex_format):
 
 #     def test_invalid_operation_inexact(self):
 #         context = Context(traps=Flags.INVALID)
-#         lhs = IEEEdouble.make_NaN(False, False, 0x123456789, False, context)
+#         lhs = IEEEdouble.make_NaN(False, False, 0x123456789, context)
 #         assert not context.flags
 #         assert issubclass(InvalidOperationInexact, InvalidOperation)
 #         assert issubclass(InvalidOperationInexact, Inexact)
@@ -460,7 +460,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_NaN(self, fmt, sign, quiet, payload):
         context = std_context()
-        value = fmt.make_NaN(sign, quiet, payload, False, context)
+        value = fmt.make_NaN(sign, quiet, payload, context)
         if payload == 0 and not quiet:
             assert context.flags == Flags.INEXACT
             payload = 1
@@ -491,14 +491,14 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_NaN_quiet_payload(self, fmt, sign):
         context = std_context()
-        fmt.make_NaN(sign, True, 0, False, context)
-        fmt.make_NaN(sign, True, fmt.quiet_bit - 1, False, context)
+        fmt.make_NaN(sign, True, 0, context)
+        fmt.make_NaN(sign, True, fmt.quiet_bit - 1, context)
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, True, -1, context, False)
+            fmt.make_NaN(sign, True, -1, context)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, True, 1.2, context, False)
+            fmt.make_NaN(sign, True, 1.2, context)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, True, 1.2, context, False)
+            fmt.make_NaN(sign, True, 1.2, context)
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts,
@@ -506,13 +506,13 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_NaN_signalling_payload(self, fmt, sign):
         context = std_context()
-        fmt.make_NaN(sign, False, fmt.quiet_bit - 1, False, context)
+        fmt.make_NaN(sign, False, fmt.quiet_bit - 1, context)
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, False, -1, False, context)
+            fmt.make_NaN(sign, False, -1, context)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, False, 1.2, False, context)
+            fmt.make_NaN(sign, False, 1.2, context)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, False, 1.2, False, context)
+            fmt.make_NaN(sign, False, 1.2, context)
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts, (False, True),
