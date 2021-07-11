@@ -4,14 +4,16 @@
 # (c) Neil Booth 2007-2021.  All rights reserved.
 #
 
-from math import floor, log2, sqrt
 import re
+import threading
 from collections import namedtuple
 from enum import IntFlag, IntEnum
+from math import floor, log2, sqrt
 
 import attr
 
-__all__ = ('Context', 'Flags', 'Compare',
+__all__ = ('Context', 'DefaultContext', 'get_context', 'set_context',
+           'Flags', 'Compare',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
@@ -2075,7 +2077,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
 
 #
-# Useful helper routines
+# Useful internal helper routines
 #
 
 def lost_bits_from_rshift(significand, bits):
@@ -2132,6 +2134,27 @@ def round_up(rounding, lost_fraction, sign, is_odd):
     else:
         assert rounding == ROUND_HALF_UP
         return lost_fraction != LF_LESS_THAN_HALF
+
+#
+# Exported functions
+#
+
+DefaultContext = Context(rounding=ROUND_HALF_EVEN, flags=0)
+tls = threading.local()
+
+
+def get_context():
+    try:
+        return tls.context
+    except AttributeError:
+        tls.context = DefaultContext.copy()
+        return tls.context
+
+
+def set_context(context):
+    '''Sets the current thread's context to context (not a copy of it).'''
+    tls.context = context
+
 
 #
 # Internal constants

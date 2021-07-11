@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 from itertools import product
 
 import pytest
@@ -245,6 +246,52 @@ def to_text_format(hex_format):
 
 
 class TestContext:
+
+    def test_default_context(self):
+        assert DefaultContext.rounding == ROUND_HALF_EVEN
+        assert DefaultContext.flags == 0
+
+    def contexts_equal(self, lhs, rhs):
+        return lhs.flags == rhs.flags and lhs.rounding == rhs.rounding
+
+    def test_get_context(self):
+        context = get_context()
+        assert context is not DefaultContext
+        assert self.contexts_equal(context, DefaultContext)
+        assert get_context() is context
+
+        def target():
+            thread_context = get_context()
+            assert self.contexts_equal(thread_context, DefaultContext)
+            assert thread_context not in (context, DefaultContext)
+            event.set()
+
+        event = threading.Event()
+        thread = threading.Thread(target=target)
+        thread.start()
+        event.wait()
+        event.clear()
+
+        # Now change DefaultContext
+        thread = threading.Thread(target=target)
+        DefaultContext.rounding = ROUND_DOWN
+        try:
+            thread.start()
+            event.wait()
+        finally:
+            # Restore DefaultContext
+            DefaultContext.rounding = ROUND_HALF_EVEN
+
+    def test_set_context(self):
+        context1 = get_context()
+        context = Context(ROUND_CEILING, Flags.INVALID)
+        assert not self.contexts_equal(context, context1)
+
+        set_context(context)
+        context2 = get_context()
+
+        assert context2 is context
+        assert context2.rounding == ROUND_CEILING and context2.flags == Flags.INVALID
 
     def test_repr(self):
         c = Context(rounding=ROUND_UP, flags=Flags.SUBNORMAL|Flags.INEXACT)
