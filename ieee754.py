@@ -462,12 +462,13 @@ class BinaryFormat:
         '''Returns the finite number of maximal magnitude with the given sign.'''
         return Binary(self, sign, 1, 1)
 
-    def make_NaN(self, sign, is_quiet, payload, context, flag_invalid):
+    def make_NaN(self, sign, is_quiet, payload, flag_invalid, context=None):
         '''Return a NaN with the given sign and payload; the NaN is quiet iff is_quiet.
 
         If flag_invalid is true, invalid operation is flagged.  If payload bits are lost,
         or payload is 0 and is_quiet is False, then INEXACT is flagged.
         '''
+        context = context or get_context()
         if payload < 0:
             raise ValueError(f'NaN payload cannot be negative: {payload}')
         mask = self.quiet_bit - 1
@@ -490,13 +491,13 @@ class BinaryFormat:
         assert nan.is_NaN()
 
         is_invalid = nan.is_signalling() or other.is_signalling()
-        return self.make_NaN(nan.sign, True, nan.NaN_payload(), context, is_invalid)
+        return self.make_NaN(nan.sign, True, nan.NaN_payload(), is_invalid, context)
 
     def _invalid_op_NaN(self, context):
         '''Call when an invalid operation happens.  Returns a canonical quiet NaN.'''
-        return self.make_NaN(False, True, 0, context, True)
+        return self.make_NaN(False, True, 0, True, context)
 
-    def make_real(self, sign, exponent, significand, context, lost_fraction=LF_EXACTLY_ZERO):
+    def make_real(self, sign, exponent, significand, context=None, lost_fraction=LF_EXACTLY_ZERO):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
         the infinitely precise result
 
@@ -512,6 +513,7 @@ class BinaryFormat:
         if significand == 0:
             return self.make_zero(sign)
 
+        context = context or get_context()
         size = significand.bit_length()
 
         # Shifting the significand so the MSB is one gives us the natural shift.  There t
@@ -561,6 +563,7 @@ class BinaryFormat:
         Signs are flipped on read and write if flip_sign is True.
         '''
         assert value.fmt is self
+        context = context or get_context()
         sign = value.sign ^ flip_sign
         e_biased = value.e_biased
         significand = value.significand
@@ -599,18 +602,20 @@ class BinaryFormat:
 
         return Binary(self, sign ^ flip_sign, e_biased, significand)
 
-    def convert(self, value, context):
+    def convert(self, value, context=None):
         '''Return the value converted to this format and rounding if necessary.
 
         If value is a signalling NaN it is converted to a quiet NaN and invalid operation
         is flagged.
         '''
+        context = context or get_context()
+
         if value.e_biased:
             # Avoid expensive normalisation to same format; copy and check for subnormals
             if value.fmt is self:
                 if value.is_subnormal():
                     context.set_flags(Flags.SUBNORMAL)
-                return value.copy()
+                return value
 
             if value.significand:
                 return self.make_real(value.sign, value.exponent_int(), value.significand, context)
@@ -693,8 +698,7 @@ class BinaryFormat:
 
     def from_string(self, string, context=None):
         '''Convert a string to a rounded floating number of this format.'''
-        if context is None:
-            context = Context()
+        context = context or get_context()
         if HEX_SIGNIFICAND_PREFIX.match(string):
             return self._from_hex_significand_string(string, context)
         return self._from_decimal_string(string, context)
@@ -780,7 +784,7 @@ class BinaryFormat:
             payload = int(groups[13])
         else:
             payload = 1 - is_quiet
-        return self.make_NaN(sign, is_quiet, payload, context, False)
+        return self.make_NaN(sign, is_quiet, payload, False, context)
 
     def _decimal_to_binary(self, sign, exponent, sig_str, context):
         '''Return a correctly-rounded binary value of
@@ -930,10 +934,8 @@ class BinaryFormat:
         TextFormat docstring for output control.  All signals are raised as appropriate,
         and zeroes are output with an exponent of 0.
         '''
-        if text_format is None:
-            text_format = TextFormat()
-        if context is None:
-            context = Context()
+        text_format = text_format or TextFormat()
+        context = context or get_context()
 
         # convert() converts NaNs to quiet; avoid that if we preserve them
         if value.is_NaN():
@@ -962,19 +964,20 @@ class BinaryFormat:
 
         return text_format.format_hex(value)
 
-    def from_int(self, x, context):
+    def from_int(self, x, context=None):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
         return self.make_real(x < 0, 0, abs(x), context)
 
-    def add(self, lhs, rhs, context):
+    def add(self, lhs, rhs, context=None):
         '''Return the sum LHS + RHS in this format.'''
         return self._add_sub(lhs, rhs, False, context)
 
-    def subtract(self, lhs, rhs, context):
+    def subtract(self, lhs, rhs, context=None):
         '''Return the difference LHS - RHS in this format.'''
         return self._add_sub(lhs, rhs, True, context)
 
     def _add_sub(self, lhs, rhs, is_sub, context):
+        context = context or get_context()
         if lhs.e_biased == 0:
             return self._add_sub_special(lhs, rhs, is_sub, False, context)
         if rhs.e_biased == 0:
@@ -1044,8 +1047,9 @@ class BinaryFormat:
 
         return self.make_real(sign, exponent, significand, context)
 
-    def multiply(self, lhs, rhs, context):
+    def multiply(self, lhs, rhs, context=None):
         '''Returns the product of LHS and RHS in this format.'''
+        context = context or get_context()
         # Multiplication is commutative
         if lhs.e_biased == 0:
             return self._multiply_special(lhs, rhs, context)
@@ -1075,8 +1079,9 @@ class BinaryFormat:
         # Propagate the NaN in the LHS
         return self._propagate_NaN(lhs, rhs, context)
 
-    def divide(self, lhs, rhs, context):
+    def divide(self, lhs, rhs, context=None):
         '''Return lhs / rhs in this format.'''
+        context = context or get_context()
         sign = lhs.sign ^ rhs.sign
 
         if lhs.e_biased:
@@ -1216,9 +1221,11 @@ class BinaryFormat:
         # Return the remainder
         return self.make_real(sign, lhs_exponent - (bits - 1), lhs_sig, context)
 
-    def sqrt(self, value, context):
+    def sqrt(self, value, context=None):
         '''Return sqrt(value) in this format.  It has a positive sign for all operands >= 0,
         except that sqrt(-0) shall be -0.'''
+        context = context or get_context()
+
         if value.e_biased == 0:
             if value.significand:
                 # Propagate NaNs
@@ -1228,7 +1235,7 @@ class BinaryFormat:
                 return self._invalid_op_NaN(context)
         if not value.significand:
             # +0 -> +0, -0 -> -0, +Inf -> +Inf
-            return value.copy()
+            return value
         if value.sign:
             return self._invalid_op_NaN(context)
 
@@ -1316,7 +1323,7 @@ class BinaryFormat:
         context.on_normalized_finite(is_tiny_before, est.is_subnormal(), True)
         return est
 
-    def fma(self, lhs, rhs, addend, context):
+    def fma(self, lhs, rhs, addend, context=None):
         '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
         rounded to this format.
         '''
@@ -1330,6 +1337,8 @@ class BinaryFormat:
         product_context = Context()
         product = product_fmt.multiply(lhs, rhs, product_context)
         assert product_context.flags & ~Flags.INVALID == 0
+
+        context = context or get_context()
         context.set_flags(product_context.flags)
         return self.add(product, addend, context)
 
@@ -1484,12 +1493,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## Quiet computational operations
     ##
 
-    def copy(self):
-        '''Returns a copy of this number.'''
-        return Binary(self.fmt, self.sign, self.e_biased, self.significand)
-
     def copy_sign(self, y):
         '''Retuns a copy of this number but with the sign of y.'''
+        if y.sign == self.sign:
+            return self
         return Binary(self.fmt, y.sign, self.e_biased, self.significand)
 
     def copy_negate(self):
@@ -1498,7 +1505,9 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def copy_abs(self):
         '''Returns a copy of this number with sign False (positive).'''
-        return Binary(self.fmt, False, self.e_biased, self.significand)
+        if self.sign:
+            return Binary(self.fmt, False, self.e_biased, self.significand)
+        return self
 
     ##
     ## General homogeneous computational operations.
@@ -1506,7 +1515,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## Format is preserved and the result is in-place.
     ##
 
-    def remainder(self, rhs, context):
+    def remainder(self, rhs, context=None):
         '''Set to the remainder when divided by rhs.
 
         If rhs != 0, the remainder is defined for finite operands as r = lhs - rhs * n,
@@ -1521,6 +1530,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         if self.fmt != rhs.fmt:
             raise ValueError('remainder requires an operand of the same format')
+
+        context = context or get_context()
 
         # Are we an infinity or NaN?
         if self.e_biased == 0:
@@ -1540,7 +1551,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 # exact, sets a subnormal flag.
                 if self.is_subnormal():
                     context.set_flags(Flags.SUBNORMAL)
-                return self.copy()
+                return self
         elif rhs.significand == 0:
             # remainder (finite, zero) is an invalid operation
             return self.fmt._invalid_op_NaN(context)
@@ -1552,12 +1563,13 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## logBFormat operations (logBFormat is an integer format)
     ##
 
-    def scaleb(self, N, context):
+    def scaleb(self, N, context=None):
         '''Return x * 2^N for integral values N, correctly-rounded. and in the format of
         x.  For non-zero values of N, scalb(±0, N) is ±0 and scalb(±∞) is ±∞.  For zero values
         of N, scalb(x, N) is x.
         '''
         # NaNs and infinities are unchanged (but NaNs are made quiet)
+        context = context or get_context()
         if self.e_biased == 0:
             return self.to_quiet(context)
         return self.fmt.make_real(self.sign, self.exponent_int() + N, self.significand, context)
@@ -1574,7 +1586,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         return self.exponent() + self.significand.bit_length() - self.fmt.precision
 
-    def logb_integral(self, context):
+    def logb_integral(self, context=None):
         '''Return the exponent e of x, a signed integer, when represented with infinite range and
         minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is positive and finite.
         logb(1) is +0.  logb(NaN), logb(∞) and logb(0) return implementation-defined
@@ -1584,6 +1596,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if isinstance(result, int):
             return result
 
+        context = context or get_context()
         context.set_flags(Flags.INVALID)
         if result == 'Inf':
             return self.fmt.logb_inf
@@ -1591,12 +1604,14 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return self.fmt.logb_NaN
         return self.fmt.logb_zero
 
-    def logb(self, context):
+    def logb(self, context=None):
         '''Return the exponent e of x, a signed integer, when represented with infinite range and
         minimum exponent.  Thus 1 <= scalb(x, -logb(x)) < 2 when x is positive and finite.
         logb(1) is +0.  logb(NaN) is a NaN, logb(∞) is +∞, and logb(0) is -∞ and signals
         the divide-by-zero exception.
         '''
+        context = context or get_context()
+
         result = self._logb()
         if isinstance(result, int):
             return self.fmt.make_real(result < 0, 0, abs(result), context)
@@ -1612,23 +1627,24 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## General computational operations
     ##
 
-    def to_quiet(self, context):
-        '''Return a copy except that a signalling NaN becomes its quiet twin (in which case
+    def to_quiet(self, context=None):
+        '''Return self except that a signalling NaN becomes its quiet twin (in which case
         an invalid operation is flagged).
         '''
         if self.is_signalling():
+            context = context or get_context()
             context.set_flags(Flags.INVALID)
             return Binary(self.fmt, self.sign, self.e_biased,
                              self.significand | self.fmt.quiet_bit)
-        return self.copy()
+        return self
 
-    def next_up(self, context):
+    def next_up(self, context=None):
         '''Set to the smallest floating point value (unless operating on a positive infinity or
         NaN) that compares greater.
         '''
         return self.fmt._next_up(self, context, False)
 
-    def next_down(self, context):
+    def next_down(self, context=None):
         '''Set to the greatest floating point value (unless operating on a negative infinity or
         NaN) that compares less.
 
@@ -1653,6 +1669,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if not isinstance(integer_fmt, (type(None), IntegerFormat)):
             raise TypeError('integer_fmt must be an integer format or None')
 
+        context = context or get_context()
+
         if self.e_biased == 0:
             if integer_fmt is None:
                 # Quiet NaNs and infinites stay unchanged; signalling NaNs are converted to quiet.
@@ -1665,7 +1683,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         # Zeroes return unchanged.
         if self.significand == 0:
             if integer_fmt is None:
-                return self.copy()
+                return self
             return 0
 
         # Strategy: truncate the significand, capture the lost fraction, and round.
@@ -1677,7 +1695,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         # We're already a (large) integer if count is <= 0
         if rshift <= 0:
             if integer_fmt is None:
-                return self.copy()
+                return self
             value <<= -rshift
             value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
             if was_clamped:
@@ -1709,7 +1727,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             context.set_flags(Flags.INEXACT)
         return value
 
-    def round_to_integral(self, rounding, context):
+    def round_to_integral(self, rounding, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
         method is given explicitly; that in context is ignored.
 
@@ -1717,7 +1735,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self._to_integer(None, rounding, False, context)
 
-    def round_to_integral_exact(self, context):
+    def round_to_integral_exact(self, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
         method is taken from context.
 
@@ -1726,7 +1744,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self._to_integer(None, context.rounding, True, context)
 
-    def convert_to_integer(self, integer_fmt, rounding, context):
+    def convert_to_integer(self, integer_fmt, rounding, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
         method is given explicitly; that in context is ignored.
 
@@ -1735,7 +1753,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self._to_integer(integer_fmt, rounding, False, context)
 
-    def convert_to_integer_exact(self, integer_fmt, rounding, context):
+    def convert_to_integer_exact(self, integer_fmt, rounding, context=None):
         '''As for convert_to_integer, except that INEXACT is signaled if the result is in-range
         and not numerically equal to the original value (i.e. it was not an integer).
         '''
@@ -1826,70 +1844,70 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''This operation is identical to the compare() method, except that all NaNs signal.'''
         return self._compare(rhs, context, True)
 
-    def compare_eq(self, rhs, context):
+    def compare_eq(self, rhs, context=None):
         return self._compare(rhs, context, False) == Compare.EQUAL
 
-    def compare_ne(self, rhs, context):
+    def compare_ne(self, rhs, context=None):
         return self._compare(rhs, context, False) != Compare.EQUAL
 
-    def compare_gt(self, rhs, context):
+    def compare_gt(self, rhs, context=None):
         return self._compare(rhs, context, False) == Compare.GREATER_THAN
 
-    def compare_ng(self, rhs, context):
+    def compare_ng(self, rhs, context=None):
         return self._compare(rhs, context, False) != Compare.GREATER_THAN
 
-    def compare_ge(self, rhs, context):
+    def compare_ge(self, rhs, context=None):
         return self._compare(rhs, context, False) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_lu(self, rhs, context):
+    def compare_lu(self, rhs, context=None):
         return self._compare(rhs, context, False) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_lt(self, rhs, context):
+    def compare_lt(self, rhs, context=None):
         return self._compare(rhs, context, False) == Compare.LESS_THAN
 
-    def compare_nl(self, rhs, context):
+    def compare_nl(self, rhs, context=None):
         return self._compare(rhs, context, False) != Compare.LESS_THAN
 
-    def compare_le(self, rhs, context):
+    def compare_le(self, rhs, context=None):
         return self._compare(rhs, context, False) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_gu(self, rhs, context):
+    def compare_gu(self, rhs, context=None):
         return self._compare(rhs, context, False) not in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_un(self, rhs, context):
+    def compare_un(self, rhs, context=None):
         return self._compare(rhs, context, False) == Compare.UNORDERED
 
-    def compare_or(self, rhs, context):
+    def compare_or(self, rhs, context=None):
         return self._compare(rhs, context, False) != Compare.UNORDERED
 
-    def compare_eq_signal(self, rhs, context):
+    def compare_eq_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) == Compare.EQUAL
 
-    def compare_ne_signal(self, rhs, context):
+    def compare_ne_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) != Compare.EQUAL
 
-    def compare_gt_signal(self, rhs, context):
+    def compare_gt_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) == Compare.GREATER_THAN
 
-    def compare_ge_signal(self, rhs, context):
+    def compare_ge_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_lt_signal(self, rhs, context):
+    def compare_lt_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) == Compare.LESS_THAN
 
-    def compare_le_signal(self, rhs, context):
+    def compare_le_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_ng_signal(self, rhs, context):
+    def compare_ng_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) != Compare.GREATER_THAN
 
-    def compare_lu_signal(self, rhs, context):
+    def compare_lu_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_nl_signal(self, rhs, context):
+    def compare_nl_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) != Compare.LESS_THAN
 
-    def compare_gu_signal(self, rhs, context):
+    def compare_gu_signal(self, rhs, context=None):
         return self._compare(rhs, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)
 
     def compare_total(self, rhs):
@@ -1944,10 +1962,9 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         if text_format is None:
             text_format = TextFormat(exp_digits=-2)
-        if context is None:
-            context = Context()
 
         if self.is_finite():
+            context = context or get_context()
             exponent, digits = self._to_decimal_parts(precision, context)
             if precision == 0:
                 precision = self.fmt.decimal_precision - 1
