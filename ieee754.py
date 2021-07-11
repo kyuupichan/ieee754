@@ -12,7 +12,7 @@ from math import floor, log2, sqrt
 
 import attr
 
-__all__ = ('Context', 'DefaultContext', 'get_context', 'set_context',
+__all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
            'Flags', 'Compare',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
@@ -2172,6 +2172,29 @@ def set_context(context):
     '''Sets the current thread's context to context (not a copy of it).'''
     tls.context = context
 
+
+class LocalContext:
+    '''A context manager that will set the current context for the active thread to a copy of
+    context on entry to the with-statement and restore the previous context when exiting
+    the with-statement.  If no context is specified, a copy of the current context is
+    taken on entry to the with statement.
+    '''
+
+    def __init__(self, context=None):
+        self.saved_context = None
+        self.context_to_set = context
+
+    def __enter__(self):
+        self.saved_context = get_context()
+        context = (self.context_to_set or self.saved_context).copy()
+        set_context(context)
+        return context
+
+    def __exit__(self, type, value, traceback):
+        set_context(self.saved_context)
+
+
+local_context = LocalContext
 
 #
 # Internal constants

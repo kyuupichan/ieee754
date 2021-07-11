@@ -293,6 +293,52 @@ class TestContext:
         assert context2 is context
         assert context2.rounding == ROUND_CEILING and context2.flags == Flags.INVALID
 
+    def test_local_context_omitted(self):
+        context = get_context()
+        context_copy = context.copy()
+        try:
+            context.flags ^= Flags.INVALID
+
+            with local_context() as ctx:
+                assert get_context() is ctx
+                assert ctx is not context
+                assert self.contexts_equal(ctx, context)
+                assert not self.contexts_equal(ctx, context_copy)
+
+            assert get_context() is context
+        finally:
+            set_context(context_copy)
+
+    def test_local_context(self):
+        context = get_context()
+        new_context = Context(ROUND_DOWN, Flags.DIV_BY_ZERO)
+        with local_context(new_context) as ctx:
+            assert get_context() is ctx
+            assert ctx not in (context, new_context)
+            assert self.contexts_equal(ctx, new_context)
+            assert self.contexts_equal(new_context, Context(ROUND_DOWN, Flags.DIV_BY_ZERO))
+
+        assert get_context() is context
+
+    def test_local_context_timing(self):
+        set_context(DefaultContext)
+
+        orig_context = get_context()
+        try:
+            # Want to check that the saved context is taken not on construction but on entry
+            my_context = Context(ROUND_DOWN, Flags.INVALID)
+            manager = local_context(my_context)
+            my_context.flags |= Flags.DIV_BY_ZERO
+            set_context(my_context)
+            with manager as ctx:
+                assert get_context() is ctx
+                assert ctx is not my_context   # must be a copy
+                assert self.contexts_equal(ctx, my_context)
+                assert not self.contexts_equal(ctx, orig_context)
+            assert get_context() is my_context
+        finally:
+            set_context(orig_context)
+
     def test_repr(self):
         c = Context(rounding=ROUND_UP, flags=Flags.SUBNORMAL|Flags.INEXACT)
         assert repr(c) == '<Context rounding=ROUND_UP flags=<Flags.INEXACT|SUBNORMAL: 40>>'
