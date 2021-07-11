@@ -33,6 +33,21 @@ ROUND_HALF_DOWN = 'ROUND_HALF_DOWN'     # To nearest with ties towards zero
 ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
 
 
+# Operation names
+OP_ADD = 'add'
+OP_SUBTRACT = 'subtract'
+OP_MULTIPLY = 'multiply'
+OP_DIVIDE = 'divide'
+OP_FMA = 'fma'
+OP_REMAINDER = 'remainder'
+OP_SQRT = 'sqrt'
+OP_SCALEB = 'scaleb'
+OP_LOGB = 'logb'
+OP_CONVERT = 'convert'
+OP_FROM_STRING = 'from_string'
+OP_FROM_INT = 'from_int'
+
+
 # Four-way result of the compare() operation.
 class Compare(IntEnum):
     LESS_THAN = 0
@@ -483,21 +498,27 @@ class BinaryFormat:
         context.set_flags(flags)
         return Binary(self, sign, 0, adj_payload)
 
-    def _propagate_NaN(self, nan, other, context):
-        '''Call to get the result of a binary operation with at least one NaN.  The NaN is
-        converted to a quiet one for this format, and invalid_op is flagged if either
-        this, or the other operand, is a signalling NaN.
+    def _propagate_NaN(self, op_tuple, context):
+        '''Call to get the result of an operation with at least one NaN.  The NaN is converted to
+        a quiet one for this format, and invalid_op is flagged if any operand is a
+        signalling NaN.
         '''
-        assert nan.is_NaN()
+        nan = None
+        is_invalid = False
 
-        is_invalid = nan.is_signalling() or other.is_signalling()
+        for item in op_tuple:
+            if isinstance(item, Binary) and item.is_NaN():
+                nan = nan or item
+                is_invalid = is_invalid or item.is_signalling()
+
         return self.make_NaN(nan.sign, True, nan.NaN_payload(), is_invalid, context)
 
     def _invalid_op_NaN(self, context):
         '''Call when an invalid operation happens.  Returns a canonical quiet NaN.'''
         return self.make_NaN(False, True, 0, True, context)
 
-    def make_real(self, sign, exponent, significand, context=None, lost_fraction=LF_EXACTLY_ZERO):
+    def make_real(self, sign, exponent, significand, _op_tuple, context=None,
+                  lost_fraction=LF_EXACTLY_ZERO):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
         the infinitely precise result
 
@@ -609,6 +630,7 @@ class BinaryFormat:
         is flagged.
         '''
         context = context or get_context()
+        op_tuple = (OP_CONVERT, value)
 
         if value.e_biased:
             # Avoid expensive normalisation to same format; copy and check for subnormals
@@ -618,14 +640,15 @@ class BinaryFormat:
                 return value
 
             if value.significand:
-                return self.make_real(value.sign, value.exponent_int(), value.significand, context)
+                return self.make_real(value.sign, value.exponent_int(), value.significand,
+                                      op_tuple, context)
 
             # Zeroes
             return self.make_zero(value.sign)
 
         if value.significand:
             # NaNs
-            return self._propagate_NaN(value, value, context)
+            return self._propagate_NaN(op_tuple, context)
 
         # Infinities
         return self.make_infinity(value.sign)
@@ -699,14 +722,17 @@ class BinaryFormat:
     def from_string(self, string, context=None):
         '''Convert a string to a rounded floating number of this format.'''
         context = context or get_context()
-        if HEX_SIGNIFICAND_PREFIX.match(string):
-            return self._from_hex_significand_string(string, context)
-        return self._from_decimal_string(string, context)
+        op_tuple = (OP_FROM_STRING, string)
 
-    def _from_hex_significand_string(self, string, context):
+        if HEX_SIGNIFICAND_PREFIX.match(string):
+            return self._from_hex_significand_string(op_tuple, context)
+        return self._from_decimal_string(op_tuple, context)
+
+    def _from_hex_significand_string(self, op_tuple, context):
         '''Convert a string with hexadecimal significand to a rounded floating number of this
         format.
         '''
+        _, string = op_tuple
         match = HEX_SIGNIFICAND_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid hexadecimal float: {string}')
@@ -725,9 +751,9 @@ class BinaryFormat:
             significand = int((groups[1] + fraction) or '0', 16)
             exponent -= len(fraction) * 4
 
-        return self.make_real(sign, exponent, significand, context)
+        return self.make_real(sign, exponent, significand, op_tuple, context)
 
-    def _from_decimal_string(self, string, context):
+    def _from_decimal_string(self, op_tuple, context):
         '''Converts a string with a hexadecimal significand to a floating number of the
         required format.
 
@@ -737,6 +763,7 @@ class BinaryFormat:
         becomes 1.  If the payload of the returned NaN does not equal the given payload
         INEXACT is flagged.
         '''
+        _, string = op_tuple
         match = DEC_FLOAT_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid floating point number: {string}')
@@ -767,7 +794,7 @@ class BinaryFormat:
             exponent += len(int_str) - len(sig_str)
 
             # Now the value is significand * 10^exponent.
-            return self._decimal_to_binary(sign, exponent, sig_str, context)
+            return self._decimal_to_binary(sign, exponent, sig_str, op_tuple, context)
 
         # groups[7] matches infinities
         if groups[7] is not None:
@@ -786,7 +813,7 @@ class BinaryFormat:
             payload = 1 - is_quiet
         return self.make_NaN(sign, is_quiet, payload, False, context)
 
-    def _decimal_to_binary(self, sign, exponent, sig_str, context):
+    def _decimal_to_binary(self, sign, exponent, sig_str, op_tuple, context):
         '''Return a correctly-rounded binary value of
 
              (-1)^sign * int(sig_str) * 10^exponent
@@ -861,11 +888,11 @@ class BinaryFormat:
 
             # Call scaleb() since we scaled by 5^n and actually want 10^n
             if sig_exponent >= 0:
-                scaled_sig = calc_fmt._multiply_finite(sig, pow5, calc_context)
+                scaled_sig = calc_fmt._multiply_finite(sig, pow5, op_tuple, calc_context)
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
                 scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
             else:
-                scaled_sig = calc_fmt._divide_finite(sig, pow5, 'D', calc_context)
+                scaled_sig = calc_fmt._divide_finite(sig, pow5, op_tuple, calc_context)
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
                 scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
                 # If the exponent is below our e_min, the number is subnormal, and so
@@ -966,48 +993,45 @@ class BinaryFormat:
 
     def from_int(self, x, context=None):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
-        return self.make_real(x < 0, 0, abs(x), context)
+        op_tuple = (OP_FROM_INT, x)
+        return self.make_real(x < 0, 0, abs(x), op_tuple, context)
 
     def add(self, lhs, rhs, context=None):
         '''Return the sum LHS + RHS in this format.'''
-        return self._add_sub(lhs, rhs, False, context)
+        return self._add_sub((OP_ADD, lhs, rhs), context)
 
     def subtract(self, lhs, rhs, context=None):
         '''Return the difference LHS - RHS in this format.'''
-        return self._add_sub(lhs, rhs, True, context)
+        return self._add_sub((OP_SUBTRACT, lhs, rhs), context)
 
-    def _add_sub(self, lhs, rhs, is_sub, context):
+    def _add_sub(self, op_tuple, context):
         context = context or get_context()
-        if lhs.e_biased == 0:
-            return self._add_sub_special(lhs, rhs, is_sub, False, context)
-        if rhs.e_biased == 0:
-            return self._add_sub_special(rhs, lhs, is_sub, True, context)
-        return self._add_sub_finite(lhs, rhs, is_sub, context)
+        op_name, lhs, rhs = op_tuple
 
-    def _add_sub_special(self, lhs, rhs, is_sub, flipped, context):
-        '''Return a lhs * rhs where the LHS is a NaN or infinity.'''
-        assert lhs.e_biased == 0
+        # Handle either being non-finite
+        if lhs.e_biased == 0 or rhs.e_biased == 0:
+            # Put the non-finite in LHS
+            flipped = lhs.e_biased != 0
+            if flipped:
+                lhs, rhs = rhs, lhs
 
-        if lhs.significand == 0:
-            # infinity + finite -> infinity
-            if rhs.is_finite():
-                return self.make_infinity(lhs.sign ^ (is_sub and flipped))
-            if rhs.significand == 0:
-                if is_sub == (lhs.sign == rhs.sign):
-                    # Subtraction of like-signed infinities is an invalid op
-                    return self._invalid_op_NaN(context)
-                # Addition of like-signed infinites preserves its sign
-                return self.make_infinity(lhs.sign)
-            # infinity +- NaN propagates the NaN
-            lhs, rhs = rhs, lhs
+            if lhs.significand == 0:
+                # infinity + finite -> infinity
+                if rhs.is_finite():
+                    return self.make_infinity(lhs.sign ^ (op_name == OP_SUBTRACT and flipped))
+                if rhs.significand == 0:
+                    if (op_name == OP_SUBTRACT) == (lhs.sign == rhs.sign):
+                        # Subtraction of like-signed infinities is an invalid op
+                        return self._invalid_op_NaN(context)
+                    # Addition of like-signed infinites preserves its sign
+                    return self.make_infinity(lhs.sign)
 
-        # Propagate the NaN in the LHS
-        return self._propagate_NaN(lhs, rhs, context)
+            # Propagate the NaN in the LHS
+            return self._propagate_NaN(op_tuple, context)
 
-    def _add_sub_finite(self, lhs, rhs, is_sub, context):
-        # Determine if the operation on the absolute values is effectively an addition
-        # or subtraction of shifted significands.
-        is_sub ^= lhs.sign ^ rhs.sign
+        # Both operations are finite.  Determine if the operation on the absolute values
+        # is effectively an addition or subtraction of shifted significands.
+        is_sub = (op_name == OP_SUBTRACT) ^ lhs.sign ^ rhs.sign
         sign = lhs.sign
 
         # How much the LHS significand needs to be shifted left for exponents to match
@@ -1045,43 +1069,42 @@ class BinaryFormat:
         if not significand and (lhs.significand or rhs.significand or is_sub):
             sign = context.rounding == ROUND_FLOOR
 
-        return self.make_real(sign, exponent, significand, context)
+        return self.make_real(sign, exponent, significand, op_tuple, context)
 
     def multiply(self, lhs, rhs, context=None):
         '''Returns the product of LHS and RHS in this format.'''
         context = context or get_context()
-        # Multiplication is commutative
-        if lhs.e_biased == 0:
-            return self._multiply_special(lhs, rhs, context)
-        if rhs.e_biased == 0:
-            return self._multiply_special(rhs, lhs, context)
-        return self._multiply_finite(lhs, rhs, context)
+        op_tuple = (OP_MULTIPLY, lhs, rhs)
 
-    def _multiply_finite(self, lhs, rhs, context):
+        if lhs.e_biased == 0 or rhs.e_biased == 0:
+            # Ensure the LHS is special
+            if lhs.e_biased:
+                lhs, rhs = rhs, lhs
+
+            if lhs.significand == 0:
+                # infinity * zero -> invalid op
+                if rhs.is_zero():
+                    return self._invalid_op_NaN(context)
+                # infinity * infinity -> infinity
+                # infinity * finite-non-zero -> infinity
+                if not rhs.is_NaN():
+                    return self.make_infinity(lhs.sign ^ rhs.sign)
+
+            return self._propagate_NaN(op_tuple, context)
+
+        return self._multiply_finite(lhs, rhs, op_tuple, context)
+
+    def _multiply_finite(self, lhs, rhs, op_tuple, context):
         '''Returns the product of two finite floating point numbers in this format.'''
         sign = lhs.sign ^ rhs.sign
         exponent = lhs.exponent_int() + rhs.exponent_int()
-        return self.make_real(sign, exponent, lhs.significand * rhs.significand, context)
-
-    def _multiply_special(self, lhs, rhs, context):
-        '''Return a lhs * rhs where the LHS is a NaN or infinity.'''
-        if lhs.significand == 0:
-            # infinity * zero -> invalid op
-            if rhs.is_zero():
-                return self._invalid_op_NaN(context)
-            # infinity * infinity -> infinity
-            # infinity * finite-non-zero -> infinity
-            if not rhs.is_NaN():
-                return self.make_infinity(lhs.sign ^ rhs.sign)
-            # infinity * NaN propagates the NaN
-            lhs, rhs = rhs, lhs
-
-        # Propagate the NaN in the LHS
-        return self._propagate_NaN(lhs, rhs, context)
+        return self.make_real(sign, exponent, lhs.significand * rhs.significand,
+                              op_tuple, context)
 
     def divide(self, lhs, rhs, context=None):
         '''Return lhs / rhs in this format.'''
         context = context or get_context()
+        op_tuple = (OP_DIVIDE, lhs, rhs)
         sign = lhs.sign ^ rhs.sign
 
         if lhs.e_biased:
@@ -1096,7 +1119,7 @@ class BinaryFormat:
                     context.set_flags(Flags.DIV_BY_ZERO)
                     return self.make_infinity(sign)
 
-                return self._divide_finite(lhs, rhs, 'D', context)
+                return self._divide_finite(lhs, rhs, op_tuple, context)
 
             # RHS is NaN or infinity
             if rhs.significand == 0:
@@ -1114,21 +1137,20 @@ class BinaryFormat:
             if rhs.significand == 0:
                 return self._invalid_op_NaN(context)
             # infinity / NaN propagates the NaN.
-            lhs, rhs = rhs, lhs
 
-        # Propagate the NaN in the LHS
-        return self._propagate_NaN(lhs, rhs, context)
+        return self._propagate_NaN(op_tuple, context)
 
-    def _divide_finite(self, lhs, rhs, operation, context):
+    def _divide_finite(self, lhs, rhs, op_tuple, context):
         '''Calculate LHS / RHS, where both are finite and RHS is non-zero.
 
         if operation is 'D' for division, returns the correctly-rounded result.  If the
         operation is 'R' for IEEE remainder, the quotient is rounded to the nearest
         integer (ties to even) and the remainder returned.
         '''
-        assert operation in ('D', 'R')
+        operation = op_tuple[0]
+        assert operation in (OP_DIVIDE, OP_REMAINDER, OP_FROM_STRING)
 
-        sign = lhs.sign ^ rhs.sign if operation == 'D' else lhs.sign
+        sign = lhs.sign if operation == OP_REMAINDER else lhs.sign ^ rhs.sign
 
         lhs_sig = lhs.significand
         if lhs_sig == 0:
@@ -1155,7 +1177,7 @@ class BinaryFormat:
         assert lhs_sig >= rhs_sig
 
         exponent_diff = lhs_exponent - rhs_exponent
-        if operation == 'D':
+        if operation != OP_REMAINDER:
             bits = self.precision
         else:
             bits = min(max(exponent_diff + 1, 0), self.precision)
@@ -1186,8 +1208,9 @@ class BinaryFormat:
         # At present both quotient (which is truncated) and remainder have sign lhs.sign.
         # The exponent when viewing quot_sig as an integer.
         quotient_exponent = exponent_diff - (bits - 1)
-        if operation == 'D':
-            return self.make_real(sign, quotient_exponent, quot_sig, context, lost_fraction)
+        if operation != OP_REMAINDER:
+            return self.make_real(sign, quotient_exponent, quot_sig, op_tuple,
+                                  context, lost_fraction)
 
         # IEEE remainder.  We need to figure out if the quotient rounds up under
         # nearest-ties-to-even, to do another deduction of rhs_sig.
@@ -1219,17 +1242,18 @@ class BinaryFormat:
             sign = lhs.sign
 
         # Return the remainder
-        return self.make_real(sign, lhs_exponent - (bits - 1), lhs_sig, context)
+        return self.make_real(sign, lhs_exponent - (bits - 1), lhs_sig, op_tuple, context)
 
     def sqrt(self, value, context=None):
         '''Return sqrt(value) in this format.  It has a positive sign for all operands >= 0,
         except that sqrt(-0) shall be -0.'''
         context = context or get_context()
+        op_tuple = (OP_SQRT, value)
 
         if value.e_biased == 0:
             if value.significand:
                 # Propagate NaNs
-                return self._propagate_NaN(value, value, context)
+                return self._propagate_NaN(op_tuple, context)
             # -Inf -> invalid operation
             if value.sign:
                 return self._invalid_op_NaN(context)
@@ -1253,7 +1277,7 @@ class BinaryFormat:
         sig <<= precision_bump
 
         # Newton-Raphson loop
-        est = self.make_real(False, exponent // 2, floor(sqrt(sig)), nearest_context)
+        est = self.make_real(False, exponent // 2, floor(sqrt(sig)), op_tuple, nearest_context)
         n = 1
         while True:
             print(n, "EST", est.as_tuple(), est)
@@ -1532,19 +1556,18 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             raise ValueError('remainder requires an operand of the same format')
 
         context = context or get_context()
+        op_tuple = (OP_REMAINDER, self, rhs)
 
         # Are we an infinity or NaN?
         if self.e_biased == 0:
-            if self.significand:
-                return self.fmt._propagate_NaN(self, rhs, context)
-            elif rhs.is_NaN():
-                return self.fmt._propagate_NaN(rhs, rhs, context)
+            if self.significand or rhs.is_NaN():
+                return self.fmt._propagate_NaN(op_tuple, context)
             else:
                 # remainder (infinity, non-NaN) is an invalid operation
                 return self.fmt._invalid_op_NaN(context)
         elif rhs.e_biased == 0:
             if rhs.significand:
-                return self.fmt._propagate_NaN(rhs, rhs, context)
+                return self.fmt._propagate_NaN(op_tuple, context)
             else:
                 # remainder(finite, infinity) is the LHS exact remainder(subnormal,
                 # infinity) is the LHS and signals underflow, which because the result is
@@ -1570,9 +1593,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         # NaNs and infinities are unchanged (but NaNs are made quiet)
         context = context or get_context()
+        op_tuple = (OP_SCALEB, self, N)
         if self.e_biased == 0:
             return self.to_quiet(context)
-        return self.fmt.make_real(self.sign, self.exponent_int() + N, self.significand, context)
+        return self.fmt.make_real(self.sign, self.exponent_int() + N, self.significand,
+                                  op_tuple, context)
 
     def _logb(self):
         '''A private helper function.'''
@@ -1611,10 +1636,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         the divide-by-zero exception.
         '''
         context = context or get_context()
+        op_tuple = (OP_LOGB, self)
 
         result = self._logb()
         if isinstance(result, int):
-            return self.fmt.make_real(result < 0, 0, abs(result), context)
+            return self.fmt.make_real(result < 0, 0, abs(result), op_tuple, context)
 
         if result == 'NaN':
             return self.to_quiet(context)
@@ -2190,7 +2216,7 @@ class LocalContext:
         set_context(context)
         return context
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, etype, value, traceback):
         set_context(self.saved_context)
 
 
