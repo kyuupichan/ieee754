@@ -11,7 +11,6 @@ from enum import IntFlag, IntEnum
 
 import attr
 
-
 __all__ = ('Context', 'Flags', 'Compare',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
@@ -20,9 +19,6 @@ __all__ = ('Context', 'Flags', 'Compare',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single',)
-
-# Constants
-log2_10 = log2(10)
 
 
 # Rounding modes
@@ -35,31 +31,12 @@ ROUND_HALF_DOWN = 'ROUND_HALF_DOWN'     # To nearest with ties towards zero
 ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
 
 
-HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
-
-HEX_SIGNIFICAND_REGEX = re.compile(
-    # sign[opt] hex-sig-prefix
-    '[-+]?0x'
-    # (hex-integer[opt].fraction or hex-integer.[opt])
-    '(([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)'
-    # p exp-sign[opt]dec-exponent
-    'p([-+]?[0-9]+)$',
-    re.ASCII | re.IGNORECASE
-)
-
-DEC_FLOAT_REGEX = re.compile(
-    # sign[opt]
-    '[-+]?('
-    # (dec-integer[opt].fraction or dec-integer.[opt])
-    '(([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)'
-    # e sign[opt]dec-exponent   [opt]
-    '(e([-+]?[0-9]+))?|'
-    # inf or infinity
-    '(inf(inity)?)|'
-    # nan-or-snan hex-payload-or-dec-payload[opt]
-    '((s?)nan((0x[0-9a-f]+)|([0-9]+))?))$',
-    re.ASCII | re.IGNORECASE
-)
+# Four-way result of the compare() operation.
+class Compare(IntEnum):
+    LESS_THAN = 0
+    EQUAL = 1
+    GREATER_THAN = 2
+    UNORDERED = 3
 
 
 # Operation status flags.
@@ -70,6 +47,9 @@ class Flags(IntFlag):
     SUBNORMAL   = 0x08
     UNDERFLOW   = 0x10
     INEXACT     = 0x20
+
+
+BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
 
 
 @attr.s(slots=True)
@@ -213,82 +193,6 @@ class TextFormat:
         return f'{sign}0x{hex_sig}p{exp_sign}{exponent:d}'
 
 
-BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
-
-
-# When precision is lost during a calculation this indicates what fraction of the LSB the
-# lost bits represented.  It essentially combines the roles of 'guard' and 'sticky' bits.
-class LostFraction(IntEnum):   # Example of truncated bits:
-    EXACTLY_ZERO = 0           # 000000
-    LESS_THAN_HALF = 1	       # 0xxxxx  x's not all zero
-    EXACTLY_HALF = 2           # 100000
-    MORE_THAN_HALF = 3         # 1xxxxx  x's not all zero
-
-
-# Four-way result of the compare() operation.
-class Compare(IntEnum):
-    LESS_THAN = 0
-    EQUAL = 1
-    GREATER_THAN = 2
-    UNORDERED = 3
-
-
-def lost_bits_from_rshift(significand, bits):
-    '''Return what the lost bits would be were the significand shifted right the given number
-    of bits (negative is a left shift).
-    '''
-    if bits <= 0:
-        return LostFraction.EXACTLY_ZERO
-    # Prevent over-large shifts consuming memory
-    bits = min(bits, significand.bit_length() + 2)
-    bit_mask = 1 << (bits - 1)
-    first_bit = bool(significand & bit_mask)
-    second_bit = bool(significand & (bit_mask - 1))
-    return LostFraction(first_bit * 2 + second_bit)
-
-
-def shift_right(significand, bits):
-    '''Return the significand shifted right a given number of bits (left if bits is negative),
-    and the fraction that is lost doing so.
-    '''
-    if bits <= 0:
-        result = significand << -bits
-    else:
-        result = significand >> bits
-
-    return result, lost_bits_from_rshift(significand, bits)
-
-
-def round_up(rounding, lost_fraction, sign, is_odd):
-    '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
-    away from zero by incrementing the significand).
-
-    sign is the sign of the number, and is_odd indicates if the LSB of the new
-    significand is set, which is needed for ties-to-even rounding.
-    '''
-    if lost_fraction == LostFraction.EXACTLY_ZERO:
-        return False
-
-    if rounding == ROUND_HALF_EVEN:
-        if lost_fraction == LostFraction.EXACTLY_HALF:
-            return is_odd
-        else:
-            return lost_fraction == LostFraction.MORE_THAN_HALF
-    elif rounding == ROUND_CEILING:
-        return not sign
-    elif rounding == ROUND_FLOOR:
-        return sign
-    elif rounding == ROUND_DOWN:
-        return False
-    elif rounding == ROUND_UP:
-        return True
-    elif rounding == ROUND_HALF_DOWN:
-        return lost_fraction == LostFraction.MORE_THAN_HALF
-    else:
-        assert rounding == ROUND_HALF_UP
-        return lost_fraction != LostFraction.LESS_THAN_HALF
-
-
 class BinaryError(ArithmeticError):
     '''All traps subclass from this.'''
 
@@ -338,7 +242,7 @@ class Context:
 
     __slots__ = ('rounding', 'flags')
 
-    def __init__(self, rounding=None, flags=None, traps=None):
+    def __init__(self, rounding=None, flags=None):
         '''rounding is one of the ROUND_ constants and controls rounding of inexact results.'''
         self.rounding = rounding or ROUND_HALF_EVEN
         self.flags = flags or 0
@@ -374,7 +278,7 @@ class Context:
         finite number or infinity depending on the rounding mode.'''
         self.set_flags(Flags.OVERFLOW | Flags.INEXACT)
 
-        if round_up(self.rounding, LostFraction.MORE_THAN_HALF, sign, False):
+        if round_up(self.rounding, LF_MORE_THAN_HALF, sign, False):
             return dest_fmt.make_infinity(sign)
         return dest_fmt.make_largest_finite(sign)
 
@@ -385,7 +289,7 @@ class Context:
         finite number or infinity depending on the rounding mode.'''
         self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
 
-        if round_up(self.rounding, LostFraction.LESS_THAN_HALF, sign, False):
+        if round_up(self.rounding, LF_LESS_THAN_HALF, sign, False):
             return dest_fmt.make_smallest_finite(sign)
         return dest_fmt.make_zero(sign)
 
@@ -432,6 +336,14 @@ class IntegerFormat:
 
     def __repr__(self):
         return f'IntegerFormat(width={self.width}, is_signed={self.is_signed})'
+
+
+# When precision is lost during a calculation these indicate what fraction of the LSB the
+# lost bits represented.  It essentially combines the roles of 'guard' and 'sticky' bits.
+LF_EXACTLY_ZERO = 0           # 000000
+LF_LESS_THAN_HALF = 1	      # 0xxxxx  x's not all zero
+LF_EXACTLY_HALF = 2           # 100000
+LF_MORE_THAN_HALF = 3         # 1xxxxx  x's not all zero
 
 
 class BinaryFormat:
@@ -582,8 +494,7 @@ class BinaryFormat:
         '''Call when an invalid operation happens.  Returns a canonical quiet NaN.'''
         return self.make_NaN(False, True, 0, context, True)
 
-    def make_real(self, sign, exponent, significand, context,
-                  lost_fraction=LostFraction.EXACTLY_ZERO):
+    def make_real(self, sign, exponent, significand, context, lost_fraction=LF_EXACTLY_ZERO):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
         the infinitely precise result
 
@@ -612,14 +523,14 @@ class BinaryFormat:
         exponent += rshift
 
         # Santity check - a lost fraction loses information if we needed to shift left
-        assert rshift >= 0 or lost_fraction == LostFraction.EXACTLY_ZERO
+        assert rshift >= 0 or lost_fraction == LF_EXACTLY_ZERO
 
         # If we shifted, combine the lost fractions; shift_lf is the more significant
         if rshift:
-            lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
+            lost_fraction = shift_lf | (lost_fraction != LF_EXACTLY_ZERO)
 
         is_tiny_before = significand < self.int_bit
-        is_inexact = lost_fraction != LostFraction.EXACTLY_ZERO
+        is_inexact = lost_fraction != LF_EXACTLY_ZERO
 
         # Round
         if round_up(context.rounding, lost_fraction, sign, bool(significand & 1)):
@@ -1257,13 +1168,13 @@ class BinaryFormat:
         assert 0 <= lhs_sig < rhs_sig or bits == 0
 
         if lhs_sig == 0 or bits == 0:
-            lost_fraction = LostFraction.EXACTLY_ZERO
+            lost_fraction = LF_EXACTLY_ZERO
         elif lhs_sig * 2 < rhs_sig:
-            lost_fraction = LostFraction.LESS_THAN_HALF
+            lost_fraction = LF_LESS_THAN_HALF
         elif lhs_sig * 2 == rhs_sig:
-            lost_fraction = LostFraction.EXACTLY_HALF
+            lost_fraction = LF_EXACTLY_HALF
         else:
-            lost_fraction = LostFraction.MORE_THAN_HALF
+            lost_fraction = LF_MORE_THAN_HALF
 
         # At present both quotient (which is truncated) and remainder have sign lhs.sign.
         # The exponent when viewing quot_sig as an integer.
@@ -1281,14 +1192,14 @@ class BinaryFormat:
 
         # If we shifted, combine the lost fractions; shift_lf is the more significant
         if rshift > 0:
-            lost_fraction = LostFraction(shift_lf | (lost_fraction != LostFraction.EXACTLY_ZERO))
+            lost_fraction = shift_lf | (lost_fraction != LF_EXACTLY_ZERO)
         elif rshift < 0:
-            lost_fraction = LostFraction(lost_fraction != LostFraction.EXACTLY_ZERO)
+            lost_fraction = lost_fraction != LF_EXACTLY_ZERO
 
-        if lost_fraction == LostFraction.EXACTLY_HALF:
+        if lost_fraction == LF_EXACTLY_HALF:
             rounds_up = bool(quot_sig & (1 << rshift))
         else:
-            rounds_up = lost_fraction == LostFraction.MORE_THAN_HALF
+            rounds_up = lost_fraction == LF_MORE_THAN_HALF
 
         # If we incremented the quotient, we must correspondingly deduct the significands
         if rounds_up:
@@ -1384,17 +1295,17 @@ class BinaryFormat:
             half_squared = value.fmt.multiply(half, half, down_context)
             compare = half_squared.compare(value, down_context)
             if compare == Compare.LESS_THAN:
-                lost_fraction = LostFraction.MORE_THAN_HALF
+                lost_fraction = LF_MORE_THAN_HALF
             elif compare == Compare.EQUAL:
                 if down_context.flags & Flags.INEXACT:
-                    lost_fraction = LostFraction.LESS_THAN_HALF
+                    lost_fraction = LF_LESS_THAN_HALF
                 else:
-                    lost_fraction = LostFraction.EXACTLY_HALF
+                    lost_fraction = LF_EXACTLY_HALF
             else:
-                lost_fraction = LostFraction.LESS_THAN_HALF
+                lost_fraction = LF_LESS_THAN_HALF
         else:
             # Anything as long as non-zero
-            lost_fraction = LostFraction.EXACTLY_HALF
+            lost_fraction = LF_EXACTLY_HALF
 
         # Now round est with the lost fraction
         is_tiny_before = est.is_subnormal()
@@ -1773,7 +1684,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         value, lost_fraction = shift_right(value, rshift)
 
-        if lost_fraction == LostFraction.EXACTLY_ZERO:
+        if lost_fraction == LF_EXACTLY_ZERO:
             signal_inexact = False
         elif round_up(rounding, lost_fraction, self.sign, bool(value & 1)):
             value += 1
@@ -2094,11 +2005,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             if R:
                 R *= 2
                 if R < S:
-                    lost_fraction = LostFraction.LESS_THAN_HALF
+                    lost_fraction = LF_LESS_THAN_HALF
                 elif R == S:
-                    lost_fraction = LostFraction.EXACTLY_HALF
+                    lost_fraction = LF_EXACTLY_HALF
                 else:
-                    lost_fraction = LostFraction.MORE_THAN_HALF
+                    lost_fraction = LF_MORE_THAN_HALF
 
                 # Handle rounding by bumping
                 if round_up(context.rounding, lost_fraction, self.sign, bool(digits[-1] & 1)):
@@ -2161,6 +2072,96 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         digits += '0' * (precision - len(digits))
 
         return exponent, digits
+
+
+#
+# Useful helper routines
+#
+
+def lost_bits_from_rshift(significand, bits):
+    '''Return what the lost bits would be were the significand shifted right the given number
+    of bits (negative is a left shift).
+    '''
+    if bits <= 0:
+        return LF_EXACTLY_ZERO
+    # Prevent over-large shifts consuming memory
+    bits = min(bits, significand.bit_length() + 2)
+    bit_mask = 1 << (bits - 1)
+    first_bit = bool(significand & bit_mask)
+    second_bit = bool(significand & (bit_mask - 1))
+    return first_bit * 2 + second_bit
+
+
+def shift_right(significand, bits):
+    '''Return the significand shifted right a given number of bits (left if bits is negative),
+    and the fraction that is lost doing so.
+    '''
+    if bits <= 0:
+        result = significand << -bits
+    else:
+        result = significand >> bits
+
+    return result, lost_bits_from_rshift(significand, bits)
+
+
+def round_up(rounding, lost_fraction, sign, is_odd):
+    '''Return True if, when an operation is inexact, the result should be rounded up (i.e.,
+    away from zero by incrementing the significand).
+
+    sign is the sign of the number, and is_odd indicates if the LSB of the new
+    significand is set, which is needed for ties-to-even rounding.
+    '''
+    if lost_fraction == LF_EXACTLY_ZERO:
+        return False
+
+    if rounding == ROUND_HALF_EVEN:
+        if lost_fraction == LF_EXACTLY_HALF:
+            return is_odd
+        else:
+            return lost_fraction == LF_MORE_THAN_HALF
+    elif rounding == ROUND_CEILING:
+        return not sign
+    elif rounding == ROUND_FLOOR:
+        return sign
+    elif rounding == ROUND_DOWN:
+        return False
+    elif rounding == ROUND_UP:
+        return True
+    elif rounding == ROUND_HALF_DOWN:
+        return lost_fraction == LF_MORE_THAN_HALF
+    else:
+        assert rounding == ROUND_HALF_UP
+        return lost_fraction != LF_LESS_THAN_HALF
+
+#
+# Internal constants
+#
+
+log2_10 = log2(10)
+
+HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
+HEX_SIGNIFICAND_REGEX = re.compile(
+    # sign[opt] hex-sig-prefix
+    '[-+]?0x'
+    # (hex-integer[opt].fraction or hex-integer.[opt])
+    '(([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)'
+    # p exp-sign[opt]dec-exponent
+    'p([-+]?[0-9]+)$',
+    re.ASCII | re.IGNORECASE
+)
+DEC_FLOAT_REGEX = re.compile(
+    # sign[opt]
+    '[-+]?('
+    # (dec-integer[opt].fraction or dec-integer.[opt])
+    '(([0-9]*)\\.([0-9]+)|([0-9]+)\\.?)'
+    # e sign[opt]dec-exponent   [opt]
+    '(e([-+]?[0-9]+))?|'
+    # inf or infinity
+    '(inf(inity)?)|'
+    # nan-or-snan hex-payload-or-dec-payload[opt]
+    '((s?)nan((0x[0-9a-f]+)|([0-9]+))?))$',
+    re.ASCII | re.IGNORECASE
+)
 
 #
 # Well-known predefined formats
