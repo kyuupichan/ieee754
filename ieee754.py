@@ -331,45 +331,27 @@ class Underflow(SubnormalInexact):
     '''The result is inexact and has an exponent less than e_min, or is zero, after rounding.'''
 
 
-flag_map = {
-    Flags.INEXACT: Inexact,
-    Flags.INVALID: InvalidOperation,
-    Flags.INVALID | Flags.INEXACT: InvalidOperationInexact,
-    Flags.DIV_BY_ZERO: DivisionByZero,
-    Flags.OVERFLOW | Flags.INEXACT: Overflow,
-    Flags.SUBNORMAL: SubnormalExact,
-    Flags.SUBNORMAL | Flags.INEXACT: SubnormalInexact,
-    Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT: Underflow,
-}
-
-
 class Context:
     '''The execution context for operations.  Carries the rounding mode, status flags and
     traps.
     '''
 
-    __slots__ = ('rounding', 'flags', 'traps')
+    __slots__ = ('rounding', 'flags')
 
     def __init__(self, rounding=None, flags=None, traps=None):
         '''rounding is one of the ROUND_ constants and controls rounding of inexact results.'''
         self.rounding = rounding or ROUND_HALF_EVEN
         self.flags = flags or 0
-        self.traps = traps or 0
 
     def clear_flags(self):
         self.flags = 0
 
-    def clear_traps(self):
-        self.traps = 0
-
     def copy(self):
         '''Return a copy of the context.'''
-        return Context(self.rounding, self.flags, self.traps)
+        return Context(self.rounding, self.flags)
 
     def set_flags(self, flags):
         self.flags |= flags
-        if self.traps & flags:
-            raise flag_map[flags]
 
     def on_normalized_finite(self, is_tiny_before, is_tiny_or_zero_after, is_inexact):
         '''Call after normalisation of a finite number to set flags appropriately.'''
@@ -412,7 +394,7 @@ class Context:
         return self.rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP}
 
     def __repr__(self):
-        return f'<Context rounding={self.rounding} flags={self.flags!r} traps={self.traps!r}>'
+        return f'<Context rounding={self.rounding} flags={self.flags!r}>'
 
 
 class IntegerFormat:
@@ -1439,18 +1421,6 @@ class BinaryFormat:
         return self.add(product, addend, context)
 
 
-IEEEhalf = BinaryFormat.from_exponent_width(11, 5)
-IEEEsingle = BinaryFormat.from_exponent_width(24, 8)
-IEEEdouble = BinaryFormat.from_exponent_width(53, 11)
-IEEEquad = BinaryFormat.from_exponent_width(113, 15)
-#IEEEoctuple = BinaryFormat.from_exponent_width(237, 18)
-# 80387 floating point takes place with a wide exponent range but rounds to single, double
-# or extended precision.  It also has an explicit integer bit.
-x87extended = BinaryFormat.from_exponent_width(64, 15)
-x87double = BinaryFormat.from_exponent_width(53, 15)
-x87single = BinaryFormat.from_exponent_width(24, 15)
-
-
 class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def  __new__(cls, fmt, sign, e_biased, significand):
@@ -2191,3 +2161,17 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         digits += '0' * (precision - len(digits))
 
         return exponent, digits
+
+#
+# Well-known predefined formats
+#
+IEEEhalf = BinaryFormat.from_exponent_width(11, 5)
+IEEEsingle = BinaryFormat.from_exponent_width(24, 8)
+IEEEdouble = BinaryFormat.from_exponent_width(53, 11)
+IEEEquad = BinaryFormat.from_exponent_width(113, 15)
+#IEEEoctuple = BinaryFormat.from_exponent_width(237, 18)
+# 80387 floating point takes place with a wide exponent range but rounds to single, double
+# or extended precision.  It also has an explicit integer bit.
+x87extended = BinaryFormat.from_exponent_width(64, 15)
+x87double = BinaryFormat.from_exponent_width(53, 15)
+x87single = BinaryFormat.from_exponent_width(24, 15)

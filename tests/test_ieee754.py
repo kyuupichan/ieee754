@@ -117,138 +117,138 @@ def to_text_format(hex_format):
     )
 
 
-class TestTraps:
+# class TestTraps:
 
-    def test_div_by_zero(self):
-        context = Context(traps=Flags.DIV_BY_ZERO)
-        lhs = IEEEsingle.make_real(False, 0, 1, context)
-        rhs = IEEEsingle.make_zero(False)
-        assert not context.flags
-        assert issubclass(DivisionByZero, ZeroDivisionError)
-        with pytest.raises(DivisionByZero):
-            IEEEsingle.divide(lhs, rhs, context)
-        assert context.flags == Flags.DIV_BY_ZERO
-        context.clear_flags()
-        assert not context.flags
-        context.clear_traps()
-        result = IEEEsingle.divide(lhs, rhs, context)
-        assert result.is_infinite()
-        assert context.flags == Flags.DIV_BY_ZERO
+#     def test_div_by_zero(self):
+#         context = Context(traps=Flags.DIV_BY_ZERO)
+#         lhs = IEEEsingle.make_real(False, 0, 1, context)
+#         rhs = IEEEsingle.make_zero(False)
+#         assert not context.flags
+#         assert issubclass(DivisionByZero, ZeroDivisionError)
+#         with pytest.raises(DivisionByZero):
+#             IEEEsingle.divide(lhs, rhs, context)
+#         assert context.flags == Flags.DIV_BY_ZERO
+#         context.clear_flags()
+#         assert not context.flags
+#         context.clear_traps()
+#         result = IEEEsingle.divide(lhs, rhs, context)
+#         assert result.is_infinite()
+#         assert context.flags == Flags.DIV_BY_ZERO
 
-    def test_inexact(self):
-        context = Context(traps=Flags.INEXACT)
-        lhs = IEEEsingle.make_real(False, 0, 1, context)
-        rhs = IEEEsingle.make_real(False, 0, 3, context)
-        with pytest.raises(Inexact):
-            IEEEsingle.divide(lhs, rhs, context)
-        assert context.flags == Flags.INEXACT
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEsingle.divide(lhs, rhs, context)
-        assert result.is_finite()
-        assert context.flags == Flags.INEXACT
+#     def test_inexact(self):
+#         context = Context(traps=Flags.INEXACT)
+#         lhs = IEEEsingle.make_real(False, 0, 1, context)
+#         rhs = IEEEsingle.make_real(False, 0, 3, context)
+#         with pytest.raises(Inexact):
+#             IEEEsingle.divide(lhs, rhs, context)
+#         assert context.flags == Flags.INEXACT
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEsingle.divide(lhs, rhs, context)
+#         assert result.is_finite()
+#         assert context.flags == Flags.INEXACT
 
-    def test_invalid_operation(self):
-        context = Context(traps=Flags.INVALID)
-        lhs = IEEEsingle.make_zero(False)
-        rhs = IEEEsingle.make_zero(False)
-        with pytest.raises(InvalidOperation):
-            IEEEsingle.divide(lhs, rhs, context)
-        assert context.flags == Flags.INVALID
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEsingle.divide(lhs, rhs, context)
-        assert result.is_NaN()
-        assert context.flags == Flags.INVALID
+#     def test_invalid_operation(self):
+#         context = Context(traps=Flags.INVALID)
+#         lhs = IEEEsingle.make_zero(False)
+#         rhs = IEEEsingle.make_zero(False)
+#         with pytest.raises(InvalidOperation):
+#             IEEEsingle.divide(lhs, rhs, context)
+#         assert context.flags == Flags.INVALID
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEsingle.divide(lhs, rhs, context)
+#         assert result.is_NaN()
+#         assert context.flags == Flags.INVALID
 
-    def test_invalid_operation_inexact(self):
-        context = Context(traps=Flags.INVALID)
-        lhs = IEEEdouble.make_NaN(False, False, 0x123456789, context, False)
-        assert not context.flags
-        assert issubclass(InvalidOperationInexact, InvalidOperation)
-        assert issubclass(InvalidOperationInexact, Inexact)
-        with pytest.raises(InvalidOperationInexact):
-            IEEEsingle.convert(lhs, context)
-        assert context.flags == Flags.INVALID | Flags.INEXACT
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEsingle.convert(lhs, context)
-        assert result.is_NaN()
-        assert context.flags == Flags.INVALID | Flags.INEXACT
+#     def test_invalid_operation_inexact(self):
+#         context = Context(traps=Flags.INVALID)
+#         lhs = IEEEdouble.make_NaN(False, False, 0x123456789, context, False)
+#         assert not context.flags
+#         assert issubclass(InvalidOperationInexact, InvalidOperation)
+#         assert issubclass(InvalidOperationInexact, Inexact)
+#         with pytest.raises(InvalidOperationInexact):
+#             IEEEsingle.convert(lhs, context)
+#         assert context.flags == Flags.INVALID | Flags.INEXACT
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEsingle.convert(lhs, context)
+#         assert result.is_NaN()
+#         assert context.flags == Flags.INVALID | Flags.INEXACT
 
-    def test_overflow(self):
-        context = Context(traps=Flags.OVERFLOW)
-        lhs = IEEEsingle.make_real(False, 0, 1, context)
-        rhs = IEEEsingle.make_real(False, -140, 1, context)
-        assert context.flags == Flags.SUBNORMAL
-        context.clear_flags()
-        assert issubclass(Overflow, Inexact)
-        with pytest.raises(Overflow):
-            IEEEsingle.divide(lhs, rhs, context)
-        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEsingle.divide(lhs, rhs, context)
-        assert result.is_infinite()
-        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+#     def test_overflow(self):
+#         context = Context(traps=Flags.OVERFLOW)
+#         lhs = IEEEsingle.make_real(False, 0, 1, context)
+#         rhs = IEEEsingle.make_real(False, -140, 1, context)
+#         assert context.flags == Flags.SUBNORMAL
+#         context.clear_flags()
+#         assert issubclass(Overflow, Inexact)
+#         with pytest.raises(Overflow):
+#             IEEEsingle.divide(lhs, rhs, context)
+#         assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEsingle.divide(lhs, rhs, context)
+#         assert result.is_infinite()
+#         assert context.flags == Flags.OVERFLOW | Flags.INEXACT
 
-    def test_subnormal_exact(self):
-        context = Context(traps=Flags.SUBNORMAL)
-        assert issubclass(SubnormalExact, Subnormal)
-        assert not issubclass(SubnormalExact, Inexact)
-        with pytest.raises(SubnormalExact):
-            IEEEsingle.make_real(False, -140, 1, context)
-        assert context.flags == Flags.SUBNORMAL
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEsingle.make_real(False, -140, 1, context)
-        assert result.is_subnormal()
-        assert context.flags == Flags.SUBNORMAL
+#     def test_subnormal_exact(self):
+#         context = Context(traps=Flags.SUBNORMAL)
+#         assert issubclass(SubnormalExact, Subnormal)
+#         assert not issubclass(SubnormalExact, Inexact)
+#         with pytest.raises(SubnormalExact):
+#             IEEEsingle.make_real(False, -140, 1, context)
+#         assert context.flags == Flags.SUBNORMAL
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEsingle.make_real(False, -140, 1, context)
+#         assert result.is_subnormal()
+#         assert context.flags == Flags.SUBNORMAL
 
-    def test_subnormal_inexact(self):
-        # This is a rare case - the result must be rounded to normal, otherwise Underflow
-        # would be raised
-        context = Context(traps=Flags.SUBNORMAL)
-        assert issubclass(SubnormalInexact, Subnormal)
-        assert issubclass(SubnormalInexact, Inexact)
-        with pytest.raises(SubnormalInexact):
-            IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
-        assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
-        assert result.is_normal()
-        assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
+#     def test_subnormal_inexact(self):
+#         # This is a rare case - the result must be rounded to normal, otherwise Underflow
+#         # would be raised
+#         context = Context(traps=Flags.SUBNORMAL)
+#         assert issubclass(SubnormalInexact, Subnormal)
+#         assert issubclass(SubnormalInexact, Inexact)
+#         with pytest.raises(SubnormalInexact):
+#             IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
+#         assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
+#         assert result.is_normal()
+#         assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
 
-    def test_underflow_to_non_zero(self):
-        context = Context(traps=Flags.UNDERFLOW)
-        assert issubclass(Underflow, SubnormalInexact)
-        with pytest.raises(Underflow):
-            IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
-        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
-        assert result.is_subnormal()
-        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+#     def test_underflow_to_non_zero(self):
+#         context = Context(traps=Flags.UNDERFLOW)
+#         assert issubclass(Underflow, SubnormalInexact)
+#         with pytest.raises(Underflow):
+#             IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
+#         assert result.is_subnormal()
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
 
-    def test_underflow_to_zero(self):
-        context = Context(traps=Flags.UNDERFLOW)
-        with pytest.raises(Underflow):
-            IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
-        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-        context.clear_flags()
-        context.clear_traps()
-        result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
-        assert result.is_zero()
-        assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+#     def test_underflow_to_zero(self):
+#         context = Context(traps=Flags.UNDERFLOW)
+#         with pytest.raises(Underflow):
+#             IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+#         context.clear_flags()
+#         context.clear_traps()
+#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
+#         assert result.is_zero()
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
 
 
 class TestContext:
 
     def test_repr(self):
-        c = Context(rounding=ROUND_UP, flags=Flags.SUBNORMAL|Flags.INEXACT, traps=0)
-        assert repr(c) == '<Context rounding=ROUND_UP flags=<Flags.INEXACT|SUBNORMAL: 40> traps=0>'
+        c = Context(rounding=ROUND_UP, flags=Flags.SUBNORMAL|Flags.INEXACT)
+        assert repr(c) == '<Context rounding=ROUND_UP flags=<Flags.INEXACT|SUBNORMAL: 40>>'
 
 
 class TestBinaryFormat:
