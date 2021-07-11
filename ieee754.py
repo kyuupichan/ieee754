@@ -210,19 +210,48 @@ class TextFormat:
         return f'{sign}0x{hex_sig}p{exp_sign}{exponent:d}'
 
 
-class BinaryError(ArithmeticError):
-    '''All traps subclass from this.'''
+#
+# Signals
+#
+
+class ArithmeticSignal(ArithmeticError):
+    '''All arithmetic exceptions signalled by this moduile subclass from this.'''
+
+    def __init__(self, op_tuple, data):
+        '''op_tuple indicates the operation naem and operands causing the signal, data
+        is exception-specific information from which a result can be derived.'''
+        self.op_tuple = op_tuple
+        self.data = data
 
 
-class DivisionByZero(BinaryError, ZeroDivisionError):
-    '''Division by zero.'''
+#
+# DivisionByZeroSignal - sub-exceptions are DivisionByZero, LogBZero
+#
 
 
-class Inexact(BinaryError):
+class DivisionByZeroSignal(ArithmeticSignal, ZeroDivisionError):
+    '''Base class of division by zero errors.  Division by zero is signalled when an operation
+    on finite operands delivers an exact infinite result.'''
+
+    def default_handler(self, context):
+        '''Raises the flag, and returns a suitably-signed infinity.'''
+        context.flags |= Flags.DIV_BY_ZERO
+        return self.data
+
+
+class DivisionByZero(DivisionByZeroSignal):
+        '''Division of a finite value by a zero.'''
+
+
+class LogBZero(DivisionByZeroSignal):
+        '''LogB on a zero.'''
+
+
+class Inexact(ArithmeticSignal):
     '''The result cannot be represented precisely.'''
 
 
-class InvalidOperation(BinaryError):
+class InvalidOperation(ArithmeticSignal):
     '''Invalid operation, e.g. 0 / 0 or any non-quiet operation on a signallying NaN.'''
 
 
@@ -236,7 +265,7 @@ class Overflow(Inexact):
     rounding mode and sign.'''
 
 
-class Subnormal(BinaryError):
+class Subnormal(ArithmeticSignal):
     '''Before rounding the result had an exponent less than e_min.'''
 
 
@@ -273,6 +302,12 @@ class Context:
 
     def set_flags(self, flags):
         self.flags |= flags
+
+    def signal(self, signal):
+        assert isinstance(signal, ArithmeticSignal)
+
+        # TODO: implement alternative handlers
+        return signal.default_handler(self)
 
     def on_normalized_finite(self, is_tiny_before, is_tiny_or_zero_after, is_inexact):
         '''Call after normalisation of a finite number to set flags appropriately.'''
@@ -1116,8 +1151,7 @@ class BinaryFormat:
                     if lhs.significand == 0:
                         return self._invalid_op_NaN(context)
                     # Finite / 0 -> Infinity
-                    context.set_flags(Flags.DIV_BY_ZERO)
-                    return self.make_infinity(sign)
+                    return context.signal(DivisionByZero(op_tuple, self.make_infinity(sign)))
 
                 return self._divide_finite(lhs, rhs, op_tuple, context)
 
@@ -1645,8 +1679,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if result == 'NaN':
             return self.to_quiet(context)
         if result == 'Zero':
-            context.set_flags(Flags.DIV_BY_ZERO)
-            return self.fmt.make_infinity(True)
+            return context.signal(LogBZero(op_tuple, self.fmt.make_infinity(True)))
         return self.fmt.make_infinity(False)
 
     ##
