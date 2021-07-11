@@ -88,7 +88,6 @@ status_codes = {
     'I': Flags.INEXACT,
     'Z': Flags.DIV_BY_ZERO,
     'X': Flags.INVALID,
-    'XI': Flags.INVALID | Flags.INEXACT,
 }
 
 sNaN_codes = {
@@ -164,7 +163,7 @@ def to_text_format(hex_format):
 
 #     def test_invalid_operation_inexact(self):
 #         context = Context(traps=Flags.INVALID)
-#         lhs = IEEEdouble.make_NaN(False, False, 0x123456789, context)
+#         lhs = IEEEdouble.make_NaN(False, True, 0x123456789)
 #         assert not context.flags
 #         assert issubclass(InvalidOperationInexact, InvalidOperation)
 #         assert issubclass(InvalidOperationInexact, Inexact)
@@ -452,24 +451,20 @@ class TestGeneralNonComputationalOps:
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
 
-    @pytest.mark.parametrize('fmt, sign, quiet, payload',
+    @pytest.mark.parametrize('fmt, sign, is_signalling, payload',
                              product(all_IEEE_fmts,
                                      (False, True),
                                      (False, True),
                                      (0, 1, 24),
                              ))
-    def test_make_NaN(self, fmt, sign, quiet, payload):
-        context = std_context()
-        value = fmt.make_NaN(sign, quiet, payload, context)
-        if payload == 0 and not quiet:
-            assert context.flags == Flags.INEXACT
+    def test_make_NaN(self, fmt, sign, is_signalling, payload):
+        value = fmt.make_NaN(sign, is_signalling, payload)
+        if payload == 0 and is_signalling:
             payload = 1
-        else:
-            assert context.flags == 0
-        if quiet:
-            assert value.number_class() == 'NaN'
-        else:
+        if is_signalling:
             assert value.number_class() == 'sNaN'
+        else:
+            assert value.number_class() == 'NaN'
         if sign:
             assert value.is_negative()
         else:
@@ -479,40 +474,18 @@ class TestGeneralNonComputationalOps:
         assert not value.is_subnormal()
         assert not value.is_infinite()
         assert value.is_NaN()
-        assert value.is_signalling() is not quiet
+        assert value.is_signalling() is is_signalling
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
         assert value.as_tuple()[-1] == payload
 
-    @pytest.mark.parametrize('fmt, sign',
-                             product(all_IEEE_fmts,
-                                     (False, True),
-                             ))
-    def test_make_NaN_quiet_payload(self, fmt, sign):
-        context = std_context()
-        fmt.make_NaN(sign, True, 0, context)
-        fmt.make_NaN(sign, True, fmt.quiet_bit - 1, context)
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, True, -1, context)
+            fmt.make_NaN(sign, is_signalling, -1)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, True, 1.2, context)
+            fmt.make_NaN(sign, is_signalling, 1.2)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, True, 1.2, context)
-
-    @pytest.mark.parametrize('fmt, sign',
-                             product(all_IEEE_fmts,
-                                     (False, True),
-                             ))
-    def test_make_NaN_signalling_payload(self, fmt, sign):
-        context = std_context()
-        fmt.make_NaN(sign, False, fmt.quiet_bit - 1, context)
-        with pytest.raises(ValueError):
-            fmt.make_NaN(sign, False, -1, context)
-        with pytest.raises(TypeError):
-            fmt.make_NaN(sign, False, 1.2, context)
-        with pytest.raises(TypeError):
-            fmt.make_NaN(sign, False, 1.2, context)
+            fmt.make_NaN(sign, is_signalling, 1.2)
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts, (False, True),
@@ -884,11 +857,14 @@ class TestUnaryOps:
         value = from_string(fmt, in_str)
         status = status_codes[status]
         text_format = TextFormat(exp_digits=-2, force_exp_sign=True, rstrip_zeroes=True)
+        # Abuse meaning of rounding field for NaNs in this test only
+        if value.is_NaN() and context.rounding != ROUND_HALF_EVEN:
+            text_format.sNaN = ''
         result = value.to_decimal_string(precision, text_format, context)
         assert result == answer
         assert context.flags == status
 
-        if precision <= 0:
+        if precision <= 0 and value.is_finite():
             # Confirm the round-trip: reading in the decimal value gives the same as the
             # hex value
             context.clear_flags()

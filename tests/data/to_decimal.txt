@@ -6,6 +6,39 @@
 
 # Test format: Rounding FloatFormat Precision String Status String
 
+############
+##
+## Infinities
+##
+############
+
+E D 0 Inf K Inf
+E D 0 -Inf K -Inf
+
+############
+##
+## NaNs
+##
+############
+
+# Note for NaN input on this test only the rounding flag is abused: 'E' means preserve signalling,
+# anything else does not
+
+E D 0 NaN K NaN0x0
+E D 0 NaN0x20 K NaN0x20
+E D 0 -SNaN0x50 K -sNaN0x50
+
+C D 0 NaN K NaN0x0
+C D 0 -NaN0x20 K -NaN0x20
+C D 0 SNaN X NaN0x1
+C D 0 -SNaN0x30 X -NaN0x30
+
+############
+##
+## Finite
+##
+############
+
 E D 0 0x1.6a09e667f3bcdp+0 I 1.4142135623730951
 E D 0 3.1415926535897932384626 I 3.141592653589793
 E D 0 1.23456 I 1.23456

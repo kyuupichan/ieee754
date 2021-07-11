@@ -25,7 +25,7 @@ E D NaN1 S Inf S Nan5 Q K NaN1
 E S 0 D Nan23 Q Nan Q K NaN23
 E S Inf D -Inf Q Nan456 H K NaN456
 
-E D NaN0x4000000 H NaN2 H Nan3 H I NaN
+E D NaN0x4000000 H NaN2 H Nan3 H K NaN
 
 # Signalling NaNs.  Quieten if it is the result NaN and raise invalid op regardless.
 

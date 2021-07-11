@@ -15,7 +15,7 @@ import attr
 __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
            'Flags', 'Compare',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
-           'DivisionByZero', 'Inexact', 'InvalidOperation', 'InvalidOperationInexact',
+           'ArithmeticSignal', 'InvalidSignal', 'DivisionByZeroSignal', 'InexactSignal',
            'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
@@ -51,6 +51,7 @@ OP_CONVERT = 'convert'
 OP_CONVERT_TO_INTEGER = 'convert_to_integer'
 OP_FROM_STRING = 'from_string'
 OP_TO_STRING = 'to_string'
+OP_TO_DECIMAL_STRING = 'to_decimal_string'
 OP_FROM_INT = 'from_int'
 
 
@@ -115,20 +116,31 @@ class TextFormat:
         '''Returns the leading sign string to output for value.'''
         return '-' if value.sign else '+' if self.force_leading_sign else ''
 
-    def format_non_finite(self, value):
-        '''Returns the output text for infinities and NaNs without a sign.'''
+    def format_non_finite(self, value, op_tuple, context):
+        '''Returns the output text for infinities and NaNs.
+
+        Signals SignallingNaNOperand if a signalling NaN is output as a quiet NaN.'''
+        lost_sNaN = False
         # Infinity
         if value.is_infinite():
             special = self.inf
         else:
             # NaNs
-            special = self.sNaN if value.is_signalling() else self.qNaN
+            special = self.qNaN
+            if value.is_signalling():
+                if self.sNaN:
+                    special = self.sNaN
+                else:
+                    lost_sNaN = True
             if self.nan_payload == 'D':
                 special += str(value.NaN_payload())
             elif self.nan_payload == 'X':
                 special += hex(value.NaN_payload())
 
-        return self.leading_sign(value) + special
+        result = self.leading_sign(value) + special
+        if lost_sNaN:
+            result = context.signal(SignallingNaNOperand(op_tuple, result))
+        return result
 
     def format_decimal(self, sign, exponent, digits, precision=None):
         '''sign is True if the number has a negative sign.  sig_digits is a string of significant
@@ -186,9 +198,9 @@ class TextFormat:
 
         return result
 
-    def format_hex(self, value):
+    def format_hex(self, value, op_tuple, context):
         if not value.is_finite():
-            return self.format_non_finite(value)
+            return self.format_non_finite(value, op_tuple, context)
 
         # The value has been converted and rounded to our format.  We output the
         # unbiased exponent, but have to shift the significand left up to 3 bits so
@@ -247,7 +259,7 @@ class InvalidSignal(ArithmeticSignal):
         # If self.data is a format a canonical quiet NaN of that format is returned
         result = self.data
         if isinstance(result, BinaryFormat):
-            result = result.make_NaN(False, True, 0, context)
+            result = result.make_NaN(False, False, 0)
         return result
 
 
@@ -308,26 +320,30 @@ class DivisionByZeroSignal(ArithmeticSignal, ZeroDivisionError):
 
 
 class DivisionByZero(DivisionByZeroSignal):
-        '''Division of a finite value by a zero.'''
+    '''Division of a finite value by a zero.'''
 
 
 class LogBZero(DivisionByZeroSignal):
-        '''LogB on a zero.'''
+    '''LogB on a zero.'''
 
 
-class Inexact(ArithmeticSignal):
-    '''The result cannot be represented precisely.'''
+#
+# InexactSignal.  Not subclassed.
+#
 
 
-class InvalidOperation(ArithmeticSignal):
-    '''Invalid operation, e.g. 0 / 0 or any non-quiet operation on a signallying NaN.'''
+class InexactSignal(ArithmeticSignal):
+    '''Signalled when the infinitely precise result cannot be represented.'''
 
 
-class InvalidOperationInexact(InvalidOperation, Inexact):
-    '''An operation on a signalling NaN results in a quiet NaN with a different payload.'''
+    def default_handler(self, context):
+        '''An operation delivering a numerical result that signals no other exception shall
+        signal INEXACT if its rounded result differs from the infinitely precise result.'''
+        context.flags |= Flags.INEXACT
+        return self.data
 
 
-class Overflow(Inexact):
+class Overflow(InexactSignal):
     '''If after rounding the result would have an exponent exceeding e_max.  The result is
     either infinity or the signed finite value of greatest magnitude, depending on the
     rounding mode and sign.'''
@@ -341,7 +357,7 @@ class SubnormalExact(Subnormal):
     '''The result is exact and has an exponent less than e_min.'''
 
 
-class SubnormalInexact(Inexact, Subnormal):
+class SubnormalInexact(InexactSignal, Subnormal):
     '''Before rounding the result was inexact and had an exponent less than e_min.'''
 
 
@@ -580,24 +596,20 @@ class BinaryFormat:
         '''Returns the finite number of maximal magnitude with the given sign.'''
         return Binary(self, sign, 1, 1)
 
-    def make_NaN(self, sign, is_quiet, payload, context=None):
-        '''Return a NaN with the given sign and payload; the NaN is quiet iff is_quiet.
+    def make_NaN(self, sign, is_signalling, payload):
+        '''Return a NaN with the given sign and payload and signalling status.
 
-        If payload bits are lost, or payload is 0 and is_quiet is False, then INEXACT is
-        flagged.
-        '''
-        context = context or get_context()
+        Payload changes, either through loss of most significand bits, or because the payload
+        is invalid for a signalling NaN, are silent.'''
         if payload < 0:
             raise ValueError(f'NaN payload cannot be negative: {payload}')
-        mask = self.quiet_bit - 1
-        adj_payload = payload & mask
-        if is_quiet:
-            adj_payload |= self.quiet_bit
+        # If necessary, drop most significant bits
+        payload &= self.quiet_bit - 1
+        if is_signalling:
+            payload = max(payload, 1)
         else:
-            adj_payload = max(adj_payload, 1)
-        flags = Flags.INEXACT if adj_payload & mask != payload else 0
-        context.set_flags(flags)
-        return Binary(self, sign, 0, adj_payload)
+            payload |= self.quiet_bit
+        return Binary(self, sign, 0, payload)
 
     def _propagate_NaN(self, op_tuple, context):
         '''Call to get the result of an operation with at least one NaN.  The NaN is converted to
@@ -612,7 +624,7 @@ class BinaryFormat:
                 nan = nan or item
                 is_invalid = is_invalid or item.is_signalling()
 
-        result = self.make_NaN(nan.sign, True, nan.NaN_payload(), context)
+        result = self.make_NaN(nan.sign, False, nan.NaN_payload())
         if is_invalid:
             result = context.signal(SignallingNaNOperand(op_tuple, result))
         return result
@@ -725,13 +737,18 @@ class BinaryFormat:
         return Binary(self, sign ^ flip_sign, e_biased, significand)
 
     def convert(self, value, context=None):
-        '''Return the value converted to this format and rounding if necessary.
+        '''Return the value converted to this format, rounding if necessary.
 
-        If value is a signalling NaN it is converted to a quiet NaN and invalid operation
-        is flagged.
-        '''
-        context = context or get_context()
+        If value is a signalling NaN, signal SignallingNaNOperand and return a quiet NaN.'''
         op_tuple = (OP_CONVERT, value)
+        return self._convert(value, op_tuple, context, False)
+
+    def _convert(self, value, op_tuple, context, preserve_sNaN):
+        '''Return the value converted to this format, rounding if necessary.
+
+        If value is a signalling NaN and preserve_sNaN is false, signal
+        SignallingNaNOperand and return a quiet NaN.'''
+        context = context or get_context()
 
         if value.e_biased:
             # Avoid expensive normalisation to same format; copy and check for subnormals
@@ -749,7 +766,13 @@ class BinaryFormat:
 
         if value.significand:
             # NaNs
-            return self._propagate_NaN(op_tuple, context)
+            if preserve_sNaN:
+                return self.make_NaN(value.sign, value.is_signalling(), value.NaN_payload())
+
+            result = self.make_NaN(value.sign, False, value.NaN_payload())
+            if value.is_signalling():
+                result = context.signal(SignallingNaNOperand(op_tuple, result))
+            return result
 
         # Infinities
         return self.make_infinity(value.sign)
@@ -905,14 +928,14 @@ class BinaryFormat:
         # signalling NaN.  The payload is in groups[11], and duplicated in groups[12] if
         # hex or groups[13] if decimal
         assert groups[9] is not None
-        is_quiet = not groups[10]
+        is_signalling = groups[10] != ''
         if groups[12] is not None:
             payload = int(groups[12], 16)
         elif groups[13] is not None:
             payload = int(groups[13])
         else:
-            payload = 1 - is_quiet
-        return self.make_NaN(sign, is_quiet, payload, context)
+            payload = int(is_signalling)
+        return self.make_NaN(sign, is_signalling, payload)
 
     def _decimal_to_binary(self, sign, exponent, sig_str, op_tuple, context):
         '''Return a correctly-rounded binary value of
@@ -950,6 +973,8 @@ class BinaryFormat:
         # nor use subnormal numbers.
         parts_count = (self.precision + 10) // 64 + 1
         e_width = (max(self.e_max, abs(self.e_min)) * 2 + 2).bit_length() + 1
+
+        signal_inexact = False
 
         while True:
             # The loops are expensive; optimistically the above starts with a low
@@ -1035,12 +1060,11 @@ class BinaryFormat:
 
                 # Guaranteed inexact?
                 if err < exact_distance:
-                    convert_context.flags |= Flags.INEXACT
+                    signal_inexact = True
                     break
 
                 # Guaranteed exact?
                 if err == 0:
-                    convert_context.flags &= ~Flags.INEXACT
                     break
 
                 # We can't be sure as to exactness - loop again with more precision
@@ -1048,7 +1072,12 @@ class BinaryFormat:
             # Increase precision and try again
             parts_count *= 2
 
-        context.set_flags(convert_context.flags)
+        # FIXME: overflow, underflow etc.
+        context.flags |= (convert_context.flags & (Flags.OVERFLOW | Flags.UNDERFLOW |
+                                                   Flags.SUBNORMAL))
+        if signal_inexact:
+            result = context.signal(InexactSignal(op_tuple, result))
+
         return result
 
     ##
@@ -1062,39 +1091,15 @@ class BinaryFormat:
         TextFormat docstring for output control.  All signals are raised as appropriate,
         and zeroes are output with an exponent of 0.
         '''
-        text_format = text_format or TextFormat()
         context = context or get_context()
         op_tuple = (OP_TO_STRING, value)
-        signal_invalid = False
 
-        # convert() converts NaNs to quiet; avoid that if we preserve them
-        if value.is_NaN():
-            # Rather ugly code to handle the myriad of cases
-            src_payload = value.NaN_payload()
-            src_signalling = value.is_signalling()
+        # Do a convert() operation but preserve sNaNs.  This step signals inexact if appropriate.
+        value = self._convert(value, op_tuple, context, True)
 
-            if text_format.nan_payload == 'N':
-                payload = 0
-            else:
-                payload = src_payload & (self.quiet_bit - 1)
-
-            if src_signalling and text_format.sNaN:
-                payload = max(payload, 1)
-                flags = 0 if payload == src_payload else Flags.INEXACT
-            else:
-                flags = 0 if payload == src_payload else Flags.INEXACT
-                payload |= self.quiet_bit
-                signal_invalid = src_signalling
-
-            context.set_flags(flags)
-            value = Binary(self, value.sign, 0, payload)
-        else:
-            value = self.convert(value, context)
-
-        result = text_format.format_hex(value)
-        if signal_invalid:
-            result = context.signal(InvalidToString(op_tuple, result))
-        return result
+        # Now output the value.  This step signals if sNaNs are lost.
+        text_format = text_format or TextFormat()
+        return text_format.format_hex(value, op_tuple, context)
 
     def from_int(self, x, context=None):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
@@ -1788,7 +1793,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         format, whichever is closest to the ideal result.
 
         If signal_inexact is True then if the result is not numerically equal to the
-        original value, INEXACT is signalled, otherwise it is not.
+        original value, inexact is signalled, otherwise it is not.
         '''
         if not isinstance(integer_fmt, (type(None), IntegerFormat)):
             raise TypeError('integer_fmt must be an integer format or None')
@@ -1827,34 +1832,31 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             if integer_fmt is None:
                 return self
             value <<= -rshift
+            signal_inexact = False
+        else:
+            value, lost_fraction = shift_right(value, rshift)
+
+            if lost_fraction == LF_EXACTLY_ZERO:
+                signal_inexact = False
+            elif round_up(rounding, lost_fraction, self.sign, bool(value & 1)):
+                value += 1
+
+            # must only do so after confirming the result was not clamped (consider a
+            # negative subnormal rounding down to -1 with an unsigned format).
+            if integer_fmt is None:
+                if value:
+                    lshift = self.fmt.precision - value.bit_length()
+                    e_biased = self.e_biased + rshift - lshift
+                    value = Binary(self.fmt, self.sign, e_biased, value << lshift)
+                else:
+                    value = self.fmt.make_zero(self.sign)
+
+        if integer_fmt:
             value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
             if was_clamped:
                 return context.signal(InvalidConvertToInteger(op_tuple, value))
-            return value
-
-        value, lost_fraction = shift_right(value, rshift)
-
-        if lost_fraction == LF_EXACTLY_ZERO:
-            signal_inexact = False
-        elif round_up(rounding, lost_fraction, self.sign, bool(value & 1)):
-            value += 1
-
-        # must only do so after confirming the result was not clamped (consider a negative
-        # subnormal rounding down to -1 with an unsigned format).
-        if integer_fmt is None:
-            if signal_inexact:
-                context.set_flags(Flags.INEXACT)
-            if value:
-                lshift = self.fmt.precision - value.bit_length()
-                e_biased = self.e_biased + rshift - lshift
-                return Binary(self.fmt, self.sign, e_biased, value << lshift)
-            return self.fmt.make_zero(self.sign)
-
-        value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
-        if was_clamped:
-            return context.signal(InvalidConvertToInteger(op_tuple, value))
-        elif signal_inexact:
-            context.set_flags(Flags.INEXACT)
+        if signal_inexact:
+            return context.signal(InexactSignal(op_tuple, value))
         return value
 
     def round_to_integral(self, rounding, context=None):
@@ -2095,22 +2097,27 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         control.  All signals are raised as appropriate, and zeroes are output with an
         exponent of 0.
         '''
+        op_tuple = (OP_TO_DECIMAL_STRING, self, precision)
+        context = context or get_context()
+
         if text_format is None:
             text_format = TextFormat(exp_digits=-2)
 
         if self.is_finite():
-            context = context or get_context()
-            exponent, digits = self._to_decimal_parts(precision, context)
+            exponent, digits, is_inexact = self._to_decimal_parts(precision, context.rounding)
             if precision == 0:
                 precision = self.fmt.decimal_precision - 1
             else:
                 precision = len(digits)
-            return text_format.format_decimal(self.sign, exponent, digits, precision)
+            result = text_format.format_decimal(self.sign, exponent, digits, precision)
+            if is_inexact:
+                result = context.signal(InexactSignal(op_tuple, result))
+            return result
         else:
-            return text_format.format_non_finite(self)
+            return text_format.format_non_finite(self, op_tuple, context)
 
-    def _to_decimal_parts(self, precision, context):
-        '''Returns a pair (exponent, digits) for finite numbers.
+    def _to_decimal_parts(self, precision, rounding):
+        '''Returns a tuple (exponent, digits, is_inexact) for finite numbers.
 
         A precision of 0 returns the floating point number printed in the shortest posible
         number of digits such that, when reading back with round-to-nearest it shall give
@@ -2121,7 +2128,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         A precision of -1 outputs as many digits as necessary to give the precise value.
         '''
         if self.is_zero():
-            return 0, '0'
+            return 0, '0', False
 
         if not self.is_finite():
             raise RuntimeError('value must be finite')
@@ -2166,7 +2173,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                     lost_fraction = LF_MORE_THAN_HALF
 
                 # Handle rounding by bumping
-                if round_up(context.rounding, lost_fraction, self.sign, bool(digits[-1] & 1)):
+                if round_up(rounding, lost_fraction, self.sign, bool(digits[-1] & 1)):
                     pos = len(digits)
                     while True:
                         pos -= 1
@@ -2219,13 +2226,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 U += (U & 1)
             digits.append(U + 48)
 
-        if R:
-            context.set_flags(Flags.INEXACT)
-
         digits = digits.decode()
         digits += '0' * (precision - len(digits))
 
-        return exponent, digits
+        return exponent, digits, R != 0
 
 
 #

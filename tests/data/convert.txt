@@ -7,9 +7,11 @@
 
 # Test format: SourceFormat Context String DestFormat Status String
 
-#
-# Zeroes
-#
+############
+##
+## Zeroes
+##
+############
 
 S E 0 D K 0
 D F +0 S K 0
@@ -17,43 +19,48 @@ Q C -0 H K -0
 H u +0 H K 0
 S D -0 Q K -0
 
-#
-# Infinities
-#
+############
+##
+## Infinities
+##
+############
 
 S E inf D K +inf
 D C +InF S K inf
 H F -INF Q K -inf
 Q D -inf H K -inf
 
-
-#
-# Quiet NaNs
-#
+############
+##
+## Quiet NaNs
+##
+############
 
 H E Nan D K NaN
 D D -Nan H K -NaN
    # Widening
 H u Nan0x156 Q K Nan0x156
    # Narrowing double has 51 bits for payload, S just 22
-D F Nan0x1234567f90123 S I nan0x390123
+D F Nan0x1234567f90123 S K nan0x390123
 
-
-#
-# Signalling NaNs
-#
+############
+##
+## Signalling NaNs
+##
+############
 
 H E SNan D X NaN1
 Q u SNan H X Nan1
    # Widening
 S u SNan0x156 D X Nan0x156
    # Narrowing quad has 111 bits for payload, H just 9
-Q D SNan0x7123456789012345678901234567 H XI nan0x167
+Q D SNan0x7123456789012345678901234567 H X nan0x167
 
-
-#
-# Narrowing conversions: Normal -> Normal or SubNormal
-#
+############
+##
+## Narrowing conversions: Normal -> Normal or SubNormal
+##
+############
 
 Q E 1 H K 1
 S E 0x1.ff4p-14 H K 0x1.ff4p-14       # Normal number in H with H precision bits
@@ -63,16 +70,20 @@ S E -0x1p-15 H S -0x1p-15             # Subnormal in H
 S E -0x1p-24 H S -0x1p-24             # Minimal subnormal in H
 S E -0x1.11p-24 H U -0x1p-24          # Minimal inexact subnormal in H
 
-#
-# Narrowing conversions: Subnormal -> Zero
-#
+############
+##
+## Narrowing conversions: Subnormal -> Zero
+##
+############
 
 D E -0x1p-25 H U -0                  # Underflows to zero
 Q E -0x1p-25 H U -0                  # Underflows to zero
 
-#
-# Widening conversions: Normal -> Normal
-#
+############
+##
+## Widening conversions: Normal -> Normal
+##
+############
 
 H E 0x1.ff4p-14 Q K 0x1.ff4p-14
 H E 0x1.ff4p-14 S K 0x1.ff4p-14

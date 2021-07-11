@@ -91,18 +91,18 @@ S D NAN123 K + Q 123
 S C -NAN0x123 K - Q 0x123
    # 22 payload bits are kept, 23rd is lost
 S F -NAN2345678 K - Q 2345678
-S u NAN0x5bcdef I + Q 0x1bcdef
+S u NAN0x5bcdef K + Q 0x1bcdef
 
    # Test HDQ formats
    # 9 payload bits are kept, 10th is lost
 H E NAN0x123 K + Q 0x123
-H D NAN0x223 I + Q 0x23
+H D NAN0x223 K + Q 0x23
    # 51 payload bits are kept, 52nd is lost
 D C NAN0x723456789abcd K + Q 0x723456789abcd
-D F -NAN0xf23456789abcd I - Q 0x723456789abcd
+D F -NAN0xf23456789abcd K - Q 0x723456789abcd
    # 111 payload bits are kept, 112th is lost
 Q E nan0x7234567890123456789012345678 K + Q 0x7234567890123456789012345678
-Q E nan0xb234567890123456789012345678 I + Q 0x3234567890123456789012345678
+Q E nan0xb234567890123456789012345678 K + Q 0x3234567890123456789012345678
 
 ############
 ##
@@ -112,13 +112,13 @@ Q E nan0xb234567890123456789012345678 I + Q 0x3234567890123456789012345678
 
 S E snan K + S 1
 S E -SnAN K - S 1
-S E snan0 I + S 1
+S E snan0 K + S 1
 S E SNAN123 K + S 123
 S E -sNAN0x123 K - S 0x123
    # 22 payload bits
 S E -SNAN0x2bcdef K - S 0x2bcdef
    # 23 payload bits loses top bit
-S E snAN0x5bcdef I + S 0x1bcdef
+S E snAN0x5bcdef K + S 0x1bcdef
 
 ############
 ##
