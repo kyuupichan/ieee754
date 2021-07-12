@@ -8,6 +8,7 @@ import copy
 import re
 import threading
 from collections import namedtuple
+from typing import NamedTuple
 from enum import IntFlag, IntEnum
 from math import floor, log2, sqrt
 
@@ -470,89 +471,114 @@ LF_EXACTLY_HALF = 2           # 100000
 LF_MORE_THAN_HALF = 3         # 1xxxxx  x's not all zero
 
 
-class BinaryFormat:
-    '''An IEEE-754 binary floating point format.  Does not require e_min = 1 - e_max.'''
+class BinaryFormat(NamedTuple):
+    '''An IEEE-754 binary floating point arithmetic format.  Only instantiate indirectly
+    through the from_ contructors.
 
-    __slots__ = ('precision', 'e_max', 'e_min', 'e_bias',
-                 'int_bit', 'quiet_bit', 'max_significand', 'fmt_width',
-                 'decimal_precision', 'logb_inf', 'logb_zero', 'logb_NaN')
+    precision is the number of bits in the significand including an explicit integer bit.
 
-    def __init__(self, precision, e_max, e_min):
-        '''precision is the number of bits in the significand including an explicit integer bit.
+    e_max is largest e such that 2^e is representable; the largest representable
+    number is then 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.
 
-        e_max is largest e such that 2^e is representable; the largest representable
-        number is then 2^e_max * (2 - 2^(1 - precision)) when the significand is all ones.
+    e_min is the smallest e such that 2^e is not a subnormal number.  The smallest
+    subnormal number is then 2^(e_min - (precision - 1)).
 
-        e_min is the smallest e such that 2^e is not a subnormal number.  The smallest
-        subnormal number is then 2^(e_min - (precision - 1)).
+    It is not required that e_min = 1 - e_max.
 
-        Internal Representation
-        -----------------------
+    A binary format is permitted to be an interchange format if all the following are true:
 
-        Our internal representation stores the exponent as a non-negative number.  This
-        requires adding a bias, which like in IEEE-754 is 1 - e_min.  Then the actual
-        binary exponent of e_min is stored internally as 1.
+        a) e_min = 1 - e_max
 
-        Subnormal numbers and zeroes are stored with an exponent of 1 (whereas IEEE-754
-        uses an exponent of zero).  They can be distinguished from normal numbers with an
-        exponent of e_min because the integer bit is not set in the significand.  A
-        significand of zero represents a zero floating point number.
+        b) e_max + 1 is a power of 2.  This means that IEEE-754 interchange format
+           exponents use all values in an exponent field of with e_width bits.
 
-        Our internal representation uses an exponent of 0 to represent infinities and NaNs
-        (note IEEE interchange formats use e_max + 1).  The integer bit is always cleared
-        and a payload of zero represents infinity.  The quiet NaN bit is the bit below the
-        integer bit.
+        c) The number of bits (1 + e_width + precision), i.e. including the sign bit, is a
+           multiple of 16, so that the format can be written as an even number of bytes.
+           Alternatively if (2 + e_width + precision) is a multiple of 16, then the format
+           is presumed to have an explicit integer bit (as per Intel x87 extended
+           precision numbers).
+    '''
 
-        The advantage of this representation is that the following holds for all finite
-        numbers wthere significand is understood as having a single leading integer bit:
+    # These three attributes determine the rest, which are pre-calculated for efficiency
+    precision: int
+    e_max: int
+    e_min: int
 
-                  value = (-1)^sign * significand * 2^(exponent-bias).
+    # All a function of the 3 values above
+    e_bias: int
+    int_bit: int
+    quiet_bit: int
+    max_significand: int
+    fmt_width: int
+    decimal_precision: int
+    logb_inf: int
+    logb_zero: int
+    logb_NaN: int
 
-        and NaNs and infinites are easily tested for by comparing the exponent with zero.
-
-        A binary format is permitted to be an interchange format if all the following are
-        true:
-
-           a) e_min = 1 - e_max
-
-           b) e_max + 1 is a power of 2.  This means that IEEE-754 interchange format
-              exponents use all values in an exponent field of with e_width bits.
-
-           c) The number of bits (1 + e_width + precision), i.e. including the sign bit,
-              is a multiple of 16, so that the format can be written as an even number of
-              bytes.  Alternatively if (2 + e_width + precision) is a multiple of 16, then
-              the format is presumed to have an explicit integer bit (as per Intel x87
-              extended precision numbers).
-        '''
-        self.precision = precision
-        self.e_max = e_max
-        self.e_min = e_min
-
-        # Store these as handy pre-calculated values
-        self.e_bias = 1 - e_min
-        self.int_bit = 1 << (precision - 1)
-        self.quiet_bit = 1 << (precision - 2)
-        self.max_significand = (1 << precision) - 1
+    @classmethod
+    def from_triple(cls, precision, e_max, e_min):
+        '''Make a BinaryFormat with pre-calculated values.   All constructors ultimately
+        call this one.'''
+        if precision < 3:
+            raise ValueError('precision must be at least 3 bits')
+        if e_max < 2:
+            raise ValueError('e_max must be at least 2')
+        if e_min > -1:
+            raise ValueError('e_min must be negative')
+        e_bias = 1 - e_min
+        int_bit = 1 << (precision - 1)
+        quiet_bit = 1 << (precision - 2)
+        max_significand = (1 << precision) - 1
 
         # This least number of significant digits to convert to and from decimal correctly
-        self.decimal_precision = 2 + floor(precision / log2_10)
+        decimal_precision = 2 + floor(precision / log2_10)
 
         # What integer value logb(inf) returns.  IEEE-754 requires this and the values for
         # logb(0) and logb(NaN) be values "outside the range ±2 * (emax + p - 1)".
-        self.logb_inf = 2 * (max(e_max, abs(e_min)) + precision - 1) + 1
-        self.logb_zero = -self.logb_inf
-        self.logb_NaN = self.logb_zero - 1
+        logb_inf = 2 * (max(e_max, abs(e_min)) + precision - 1) + 1
+        logb_zero = -logb_inf
+        logb_NaN = logb_zero - 1
 
         # Are we an interchange format?  If not, fmt_width is zero, otherwise it is the
         # format width in bits (the sign bit, the exponent and the significand including
         # the integer bit).  Only interchange formats can be packed to and unpacked from
         # binary bytes.
-        self.fmt_width = 0
+        fmt_width = 0
         if e_min == 1 - e_max and (e_max + 1) & e_max == 0:
             e_width = e_max.bit_length() + 1
-            fmt_width = 1 + e_width + precision   # With integer bit
-            if 0 <= fmt_width % 16 <= 1:
-                self.fmt_width = fmt_width
+            test_fmt_width = 1 + e_width + precision   # With integer bit
+            if 0 <= test_fmt_width % 16 <= 1:
+                fmt_width = test_fmt_width
+        return cls(precision, e_max, e_min, e_bias, int_bit, quiet_bit, max_significand,
+                   fmt_width, decimal_precision, logb_inf, logb_zero, logb_NaN)
+
+    @classmethod
+    def from_precision_e_width(cls, precision, e_width):
+        '''Construct from the specified precision and exponent width.'''
+        e_max = (1 << (e_width - 1)) - 1
+        return cls.from_triple(precision, e_max, 1 - e_max)
+
+    @classmethod
+    def from_precision_extended(cls, precision):
+        '''Construct an extended precison format from the specified precision.'''
+        if precision >= 128:
+            e_width = round(4 * log2(precision)) - 11
+        else:
+            e_width = round(4 * log2(precision) + 0.5) - 9
+        return cls.from_precision_e_width(precision, e_width)
+
+    @classmethod
+    def from_IEEE(cls, width):
+        '''The IEEE-754 required format for the given width.'''
+        if width == 16:
+            precision = 11
+        elif width == 32:
+            precision = 24
+        elif width == 64 or (width >= 128 and width % 32 == 0):
+            precision = width - round(4 * log2(width)) + 13
+        else:
+            raise ValueError('IEEE-754 does not define a standard format for width {width}')
+        return BinaryFormat.from_precision_e_width(precision, width - precision)
 
     def __repr__(self):
         return f'BinaryFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
@@ -562,11 +588,6 @@ class BinaryFormat:
         return (isinstance(other, BinaryFormat) and
                 (self.precision, self.e_max, self.e_min)
                 == (other.precision, other.e_max, other.e_min))
-
-    @classmethod
-    def from_exponent_width(cls, precision, e_width):
-        e_max = (1 << (e_width - 1)) - 1
-        return cls(precision, e_max, 1 - e_max)
 
     def make_zero(self, sign):
         '''Returns a zero of the given sign.'''
@@ -991,7 +1012,7 @@ class BinaryFormat:
             # The loops are expensive; optimistically the above starts with a low
             # precision and iteratively increases it until we can guarantee the answer is
             # correctly rounded.  Perform this loop in this format.
-            calc_fmt = BinaryFormat.from_exponent_width(parts_count * 64, e_width)
+            calc_fmt = BinaryFormat.from_precision_e_width(parts_count * 64, e_width)
             bits_to_round = calc_fmt.precision - self.precision
 
             # With this many digits, an increment of one is strictly less than one ULP in
@@ -1437,7 +1458,7 @@ class BinaryFormat:
         # EST and EST.next_up() now bound the precise result.  Decide if we need to round
         # it up.  This is only difficult with non-directed roundings.
         if context.round_to_nearest():
-            temp_fmt = BinaryFormat(self.precision + 1, self.e_max, self.e_min)
+            temp_fmt = BinaryFormat.from_triple(self.precision + 1, self.e_max, self.e_min)
             nearest_context.clear_flags()
             half = temp_fmt.add(est, est.next_up(nearest_context), nearest_context)
             half = half.scaleb(-1, nearest_context)
@@ -1492,10 +1513,10 @@ class BinaryFormat:
 
         # Perform the multiplication in a format where it is exact and there are no
         # subnormals.  Then the only invalid operation can be signalled.
-        product_fmt = BinaryFormat(lhs.fmt.precision + rhs.fmt.precision,
-                                   lhs.fmt.e_max + rhs.fmt.e_max + 1,
-                                   lhs.fmt.e_min - (lhs.fmt.precision - 1)
-                                   + rhs.fmt.e_min - (rhs.fmt.precision - 1))
+        product_fmt = BinaryFormat.from_triple(lhs.fmt.precision + rhs.fmt.precision,
+                                               lhs.fmt.e_max + rhs.fmt.e_max + 1,
+                                               lhs.fmt.e_min - (lhs.fmt.precision - 1)
+                                               + rhs.fmt.e_min - (rhs.fmt.precision - 1))
         # FIXME: when tests are complete, use context not product_context
         product_context = Context()
         product = product_fmt.multiply(lhs, rhs, product_context)
@@ -1505,6 +1526,30 @@ class BinaryFormat:
 
 
 class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
+    '''Internal Representation
+       -----------------------
+
+    Our internal representation stores the exponent as a non-negative number.  This
+    requires adding a bias, which like in IEEE-754 is 1 - e_min.  Then the actual binary
+    exponent of e_min is stored internally as 1.
+
+    Subnormal numbers and zeroes are stored with an exponent of 1 (whereas IEEE-754 uses
+    an exponent of zero).  They can be distinguished from normal numbers with an exponent
+    of e_min because the integer bit is not set in the significand.  A significand of zero
+    represents a zero floating point number.
+
+    Our internal representation uses an exponent of 0 to represent infinities and NaNs
+    (note IEEE interchange formats use e_max + 1).  The integer bit is always cleared and
+    a payload of zero represents infinity.  The quiet NaN bit is the bit below the integer
+    bit.
+
+    The advantage of this representation is that the following holds for all finite
+    numbers wthere significand is understood as having a single leading integer bit:
+
+            value = (-1)^sign * significand * 2^(exponent-bias).
+
+    and NaNs and infinites are easily tested for by comparing the exponent with zero.
+    '''
 
     def  __new__(cls, fmt, sign, e_biased, significand):
         '''Validate and create a floating point number with the given format, sign, biased
@@ -2397,13 +2442,14 @@ DEC_FLOAT_REGEX = re.compile(
 #
 # Well-known predefined formats
 #
-IEEEhalf = BinaryFormat.from_exponent_width(11, 5)
-IEEEsingle = BinaryFormat.from_exponent_width(24, 8)
-IEEEdouble = BinaryFormat.from_exponent_width(53, 11)
-IEEEquad = BinaryFormat.from_exponent_width(113, 15)
-#IEEEoctuple = BinaryFormat.from_exponent_width(237, 18)
+
+IEEEhalf = BinaryFormat.from_IEEE(16)
+IEEEsingle = BinaryFormat.from_IEEE(32)
+IEEEdouble = BinaryFormat.from_IEEE(64)
+IEEEquad = BinaryFormat.from_IEEE(128)
+
 # 80387 floating point takes place with a wide exponent range but rounds to single, double
 # or extended precision.  It also has an explicit integer bit.
-x87extended = BinaryFormat.from_exponent_width(64, 15)
-x87double = BinaryFormat.from_exponent_width(53, 15)
-x87single = BinaryFormat.from_exponent_width(24, 15)
+x87extended = BinaryFormat.from_precision_e_width(64, 15)
+x87double = BinaryFormat.from_precision_e_width(53, 15)
+x87single = BinaryFormat.from_precision_e_width(24, 15)

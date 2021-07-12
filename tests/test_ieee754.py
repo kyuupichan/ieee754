@@ -362,15 +362,42 @@ class TestBinaryFormat:
         assert fmt.e_max == e_max
         assert fmt.e_min == 1 - fmt.e_max
 
+    @pytest.mark.parametrize('width, precision', (
+        (160, 144),
+        (192, 175),
+        (224, 206),
+        (256, 237),
+    ))
+    def test_IEEE(self, width, precision):
+        assert BinaryFormat.from_IEEE(width).precision == precision
+
+    @pytest.mark.parametrize('precision, e_max', (
+        (32, 1023),
+        (64, 16383),
+        (128, 65535),
+        (237, 1048575),
+    ))
+    def test_from_precision_extended(self, precision, e_max):
+        assert BinaryFormat.from_precision_extended(precision).e_max == e_max
+
+    @pytest.mark.parametrize('width', (-1, 0, 40, 80, 96))
+    def test_IEEE_bad(self, width):
+        with pytest.raises(ValueError):
+            BinaryFormat.from_IEEE(width)
+
+    def test_immutable(self):
+        with pytest.raises(AttributeError):
+            IEEEhalf.precision = 5
+
     def test_repr(self):
         assert repr(IEEEdouble) == 'BinaryFormat(precision=53, e_max=1023, e_min=-1022)'
 
     def test_eq(self):
-        assert BinaryFormat(8, 99, -99) == BinaryFormat(8, 99, -99)
-        assert BinaryFormat(8, 99, -99) != BinaryFormat(8, 99, -100)
-        assert BinaryFormat(8, 99, -99) != BinaryFormat(8, 100, -99)
-        assert BinaryFormat(8, 99, -99) != BinaryFormat(9, 99, -99)
-        assert BinaryFormat(8, 99, -99) != 1
+        assert BinaryFormat.from_triple(8, 99, -99) == BinaryFormat.from_triple(8, 99, -99)
+        assert BinaryFormat.from_triple(8, 99, -99) != BinaryFormat.from_triple(8, 99, -100)
+        assert BinaryFormat.from_triple(8, 99, -99) != BinaryFormat.from_triple(8, 100, -99)
+        assert BinaryFormat.from_triple(8, 99, -99) != BinaryFormat.from_triple(9, 99, -99)
+        assert BinaryFormat.from_triple(8, 99, -99) != 1
 
 
 class TestBinary:
@@ -379,6 +406,11 @@ class TestBinary:
         d = IEEEdouble.from_string('1.25')
         assert repr(d) == '0x1.4p0'
         assert str(d) == '0x1.4p0'
+
+    def test_immutable(self):
+        d = IEEEdouble.from_string('1.25')
+        with pytest.raises(AttributeError):
+            d.sign = True
 
 
 class TestIntegerFormat:
