@@ -1396,9 +1396,10 @@ class BinaryFormat(NamedTuple):
             # -Inf -> invalid operation
             if value.sign:
                 return context.signal(InvalidSqrt(op_tuple, self))
+            return self.make_infinity(False)
         if not value.significand:
-            # +0 -> +0, -0 -> -0, +Inf -> +Inf
-            return value
+            # +0 -> +0, -0 -> -0
+            return self.make_zero(value.sign)
         if value.sign:
             return context.signal(InvalidSqrt(op_tuple, self))
 
