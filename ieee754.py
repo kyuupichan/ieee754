@@ -16,7 +16,8 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'Flags', 'Compare',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'ArithmeticSignal', 'InvalidSignal', 'DivisionByZeroSignal', 'InexactSignal',
-           'Overflow', 'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
+           'OverflowSignal',
+           'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
@@ -308,7 +309,6 @@ class InvalidLogBIntegral(InvalidSignal):
 # DivisionByZeroSignal - sub-exceptions are DivisionByZero, LogBZero
 #
 
-
 class DivisionByZeroSignal(ArithmeticSignal, ZeroDivisionError):
     '''Base class of division by zero errors.  Division by zero is signalled when an operation
     on finite operands delivers an exact infinite result.'''
@@ -331,7 +331,6 @@ class LogBZero(DivisionByZeroSignal):
 # InexactSignal.  Not subclassed.
 #
 
-
 class InexactSignal(ArithmeticSignal):
     '''Signalled when the infinitely precise result cannot be represented.'''
 
@@ -343,10 +342,22 @@ class InexactSignal(ArithmeticSignal):
         return self.data
 
 
-class Overflow(InexactSignal):
-    '''If after rounding the result would have an exponent exceeding e_max.  The result is
-    either infinity or the signed finite value of greatest magnitude, depending on the
-    rounding mode and sign.'''
+#
+# OverflowSignal.  Not subclassed.
+#
+
+class OverflowSignal(ArithmeticSignal):
+    '''Signalled when, after rounding, the result would have an exponent exceeding e_max.'''
+
+    def default_handler(self, context):
+        '''Deafult exception handling flags overflow, and delivers either infinity or the finite
+        value of greatest magnitude, of the correct sign, depending on the rounding mode.
+        It then signals inexact.
+        '''
+        context.flags |= Flags.OVERFLOW
+        dest_fmt, sign = self.data
+        result = dest_fmt.make_overflow_value(context.rounding, sign)
+        return context.signal(InexactSignal(self.op_tuple, result))
 
 
 class Subnormal(ArithmeticSignal):
@@ -405,18 +416,6 @@ class Context:
             self.set_flags(Flags.SUBNORMAL | Flags.INEXACT)
         elif is_inexact:
             self.set_flags(Flags.INEXACT)
-
-    def overflow_value(self, dest_fmt, sign):
-        '''Call when an overflow occurs on a number of the given format and sign, because
-        the rounded result would have too large an exponent.
-
-        Flags overflow and returns the result, which is signed and either the largest
-        finite number or infinity depending on the rounding mode.'''
-        self.set_flags(Flags.OVERFLOW | Flags.INEXACT)
-
-        if round_up(self.rounding, LF_MORE_THAN_HALF, sign, False):
-            return dest_fmt.make_infinity(sign)
-        return dest_fmt.make_largest_finite(sign)
 
     def underflow_value(self, dest_fmt, sign):
         '''Call when underflowing to zero.
@@ -611,6 +610,14 @@ class BinaryFormat:
             payload |= self.quiet_bit
         return Binary(self, sign, 0, payload)
 
+    def make_overflow_value(self, rounding, sign):
+        '''Returns the value to deliver when an overflow occurs, because the exponent would be too
+        large, delivering a result to this format with the given sign.  rounding is the rounding
+        mode to apply.'''
+        if round_up(rounding, LF_MORE_THAN_HALF, sign, False):
+            return self.make_infinity(sign)
+        return self.make_largest_finite(sign)
+
     def _propagate_NaN(self, op_tuple, context):
         '''Call to get the result of an operation with at least one NaN.  The NaN is converted to
         a quiet one for this format, and invalid_op is flagged if any operand is a
@@ -629,7 +636,7 @@ class BinaryFormat:
             result = context.signal(SignallingNaNOperand(op_tuple, result))
         return result
 
-    def make_real(self, sign, exponent, significand, _op_tuple, context=None,
+    def make_real(self, sign, exponent, significand, op_tuple, context=None,
                   lost_fraction=LF_EXACTLY_ZERO):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
         the infinitely precise result
@@ -678,10 +685,9 @@ class BinaryFormat:
                 significand >>= 1
                 exponent += 1
 
-        # If the new exponent would be too big, then we overflow.  The result is either
-        # infinity or the format's largest finite value depending on the rounding mode.
+        # If the new exponent would be too big, then signal overflow.
         if exponent > self.e_max:
-            return context.overflow_value(self, sign)
+            return context.signal(OverflowSignal(op_tuple, (self, sign)))
 
         is_tiny_after = significand < self.int_bit
 
@@ -961,7 +967,7 @@ class BinaryFormat:
         # Test for obviously over-large exponents
         frac_exp = exponent + len(sig_str)
         if frac_exp - 1 >= (self.e_max + 1) / log2_10:
-            return context.overflow_value(self, sign)
+            return context.signal(OverflowSignal(op_tuple, (self, sign)))
 
         # Test for obviously over-small exponents
         if frac_exp < (self.e_min - self.precision) / log2_10:
