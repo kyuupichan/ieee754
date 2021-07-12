@@ -27,11 +27,10 @@ def read_lines(filename):
     return result
 
 def std_context():
-    return Context(ROUND_HALF_EVEN)
+    return Context(rounding=ROUND_HALF_EVEN)
 
-def context_string_to_context(context):
-    rounding = rounding_codes[context]
-    return Context(rounding)
+def rounding_string_to_context(rounding):
+    return Context(rounding=rounding_codes[rounding])
 
 def read_significand(significand):
     if significand[:2] in ('0x', '0X'):
@@ -43,9 +42,9 @@ def from_string(fmt, string):
     context = std_context()
     result = fmt.from_string(string, context)
     if HEX_SIGNIFICAND_PREFIX.match(string):
-        assert context.flags & ~Flags.SUBNORMAL == 0
+        assert context.flags == 0
     else:
-        assert context.flags & ~(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT) == 0
+        assert context.flags & ~(Flags.UNDERFLOW | Flags.INEXACT) == 0
     return result
 
 
@@ -82,9 +81,9 @@ rounding_codes = {
 status_codes = {
     'K': 0,
     'VI': Flags.OVERFLOW | Flags.INEXACT,
-    'S': Flags.SUBNORMAL,
-    'SI': Flags.SUBNORMAL | Flags.INEXACT,
-    'U': Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT,
+    'S': 0,
+    'SI': Flags.INEXACT,
+    'U': Flags.UNDERFLOW | Flags.INEXACT,
     'I': Flags.INEXACT,
     'Z': Flags.DIV_BY_ZERO,
     'X': Flags.INVALID,
@@ -283,7 +282,7 @@ class TestContext:
 
     def test_set_context(self):
         context1 = get_context()
-        context = Context(ROUND_CEILING, Flags.INVALID)
+        context = Context(rounding=ROUND_CEILING, flags=Flags.INVALID)
         assert not self.contexts_equal(context, context1)
 
         set_context(context)
@@ -310,12 +309,13 @@ class TestContext:
 
     def test_local_context(self):
         context = get_context()
-        new_context = Context(ROUND_DOWN, Flags.DIV_BY_ZERO)
+        new_context = Context(rounding=ROUND_DOWN, flags=Flags.DIV_BY_ZERO)
         with local_context(new_context) as ctx:
             assert get_context() is ctx
             assert ctx not in (context, new_context)
             assert self.contexts_equal(ctx, new_context)
-            assert self.contexts_equal(new_context, Context(ROUND_DOWN, Flags.DIV_BY_ZERO))
+            assert self.contexts_equal(new_context, Context(rounding=ROUND_DOWN,
+                                                            flags=Flags.DIV_BY_ZERO))
 
         assert get_context() is context
 
@@ -325,7 +325,7 @@ class TestContext:
         orig_context = get_context()
         try:
             # Want to check that the saved context is taken not on construction but on entry
-            my_context = Context(ROUND_DOWN, Flags.INVALID)
+            my_context = Context(rounding=ROUND_DOWN, flags=Flags.INVALID)
             manager = local_context(my_context)
             my_context.flags |= Flags.DIV_BY_ZERO
             set_context(my_context)
@@ -339,8 +339,10 @@ class TestContext:
             set_context(orig_context)
 
     def test_repr(self):
-        c = Context(rounding=ROUND_UP, flags=Flags.SUBNORMAL|Flags.INEXACT)
-        assert repr(c) == '<Context rounding=ROUND_UP flags=<Flags.INEXACT|SUBNORMAL: 40>>'
+        c = Context(rounding=ROUND_UP, flags=Flags.INEXACT, tininess_after=True)
+        assert repr(c) == (
+            '<Context rounding=ROUND_UP flags=<Flags.INEXACT: 16> tininess_after=True>'
+        )
 
 
 class TestBinaryFormat:
@@ -503,10 +505,11 @@ class TestGeneralNonComputationalOps:
                 1,
                 fmt.e_max
         ):
-            context = Context(ROUND_HALF_EVEN)
+            context = Context(rounding=ROUND_HALF_EVEN)
             value = fmt.make_real(sign, exponent, significand, op_tuple, context)
             if exponent < fmt.e_min:
-                assert context.flags == Flags.SUBNORMAL
+                assert context.flags == 0
+                # FIXME: test underflow was signalled
                 assert not value.is_normal()
                 assert value.is_subnormal()
                 if sign:
@@ -555,7 +558,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding):
         # Test that a value that loses two bits of precision underflows correctly
-        context = Context(rounding)
+        context = Context(rounding=rounding)
         op_tuple = ('test', None)
         value = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits,
                               op_tuple, context)
@@ -564,7 +567,8 @@ class TestGeneralNonComputationalOps:
                               or (rounding == ROUND_CEILING and sign)
                               or (rounding == ROUND_FLOOR and not sign)
                               or (rounding == ROUND_DOWN))
-        assert context.flags == Flags.INEXACT | Flags.UNDERFLOW | Flags.SUBNORMAL
+        # FIXME: test underflow was raised
+        assert context.flags == Flags.INEXACT | Flags.UNDERFLOW
         if underflows_to_zero:
             assert value.is_zero()
         else:
@@ -580,7 +584,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_overflow(self, fmt, sign, rounding):
         op_tuple = ('test', None)
-        context = Context(rounding)
+        context = Context(rounding=rounding)
         # First test the exponent that doesn't overflow but that one more would
         exponent = fmt.e_max
         value = fmt.make_real(sign, exponent, 1, op_tuple, context)
@@ -612,7 +616,7 @@ class TestGeneralNonComputationalOps:
     def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding):
         op_tuple = ('test', None)
         # Test cases where rounding away causes significand to overflow
-        context = Context(rounding)
+        context = Context(rounding=rounding)
         # Minimimum good, maximum good, overflows to infinity
         exponent = [fmt.e_min - 2, fmt.e_max - 3, fmt.e_max - 2][e_selector]
         # two extra bits in the significand
@@ -651,7 +655,7 @@ class TestGeneralNonComputationalOps:
     def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding):
         op_tuple = ('test', None)
         # Test cases where rounding away causes a subnormal to normalize
-        context = Context(rounding)
+        context = Context(rounding=rounding)
         # an extra bit in the significand with two LSBs varying
         significand = two_bits + ((fmt.max_significand >> 1) << 2)
         value = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand,
@@ -663,16 +667,17 @@ class TestGeneralNonComputationalOps:
                         or (rounding == ROUND_HALF_UP and two_bits in (2, 3))
                         or (rounding == ROUND_CEILING and not sign)
                         or (rounding == ROUND_FLOOR and sign)))
+        # FIXME: test underflow was raised
         if rounds_away:
-            assert context.flags == Flags.INEXACT | Flags.SUBNORMAL
+            assert context.flags == Flags.INEXACT
             assert value.is_normal()
             assert value.significand == fmt.int_bit
             assert value.e_biased == 1
         else:
             if two_bits == 0:
-                assert context.flags == Flags.SUBNORMAL
+                assert context.flags == 0
             else:
-                assert context.flags == Flags.INEXACT | Flags.UNDERFLOW | Flags.SUBNORMAL
+                assert context.flags == Flags.INEXACT | Flags.UNDERFLOW
             assert value.is_subnormal()
             assert value.significand == fmt.int_bit - 1
             assert value.e_biased == 1
@@ -701,6 +706,7 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
+        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) == 1:
             hex_str, = parts
@@ -709,7 +715,7 @@ class TestUnaryOps:
         elif len(parts) in (5, 7):
             fmt, context, test_str, status = parts[:4]
             fmt = format_codes[fmt]
-            context = context_string_to_context(context)
+            context = rounding_string_to_context(context)
             result = fmt.from_string(test_str, context)
             status = status_codes[status]
 
@@ -717,7 +723,7 @@ class TestUnaryOps:
                 answer = parts[-1]
                 input_context = std_context()
                 answer = fmt.from_string(answer, input_context)
-                assert input_context.flags & ~Flags.SUBNORMAL == 0
+                assert input_context.flags == 0
                 answer_tuple = answer.as_tuple()
             else:
                 sign, exponent, significand = parts[-3:]
@@ -751,7 +757,7 @@ class TestUnaryOps:
 
         if kind == 'round':
             if exact:
-                context = Context(rounding_codes[rounding])
+                context = rounding_string_to_context(rounding)
                 result = value.round_to_integral_exact(context)
                 assert result.as_tuple() == answer.as_tuple()
                 assert context.flags == status
@@ -789,19 +795,18 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('convert.txt'))
     def test_convert(self, line):
+        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 6:
             assert False, f'bad line: {line}'
         src_fmt, context, src_value, dst_fmt, status, answer = parts
         src_fmt = format_codes[src_fmt]
-        context = context_string_to_context(context)
-        input_context = std_context()
-        src_value = src_fmt.from_string(src_value, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
+        context = rounding_string_to_context(context)
+        src_value = from_string(src_fmt, src_value)
+
         dst_fmt = format_codes[dst_fmt]
         status = status_codes[status]
-        answer = dst_fmt.from_string(answer, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
+        answer = from_string(dst_fmt, answer)
 
         result = dst_fmt.convert(src_value, context)
         assert result.as_tuple() == answer.as_tuple()
@@ -815,7 +820,7 @@ class TestUnaryOps:
         dst_fmt, context, src_value, status, answer = parts
 
         dst_fmt = format_codes[dst_fmt]
-        context = context_string_to_context(context)
+        context = rounding_string_to_context(context)
         value = int(src_value)
         assert str(value) == src_value
         status = status_codes[status]
@@ -828,16 +833,14 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('to_hex.txt'))
     def test_to_hex(self, line):
+        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 7:
             assert False, f'bad line: {line}'
         text_format, context, src_fmt, in_str, dst_fmt, status, answer = parts
         text_format = to_text_format(text_format)
-        context = context_string_to_context(context)
-        src_fmt = format_codes[src_fmt]
-        input_context = std_context()
-        in_value = src_fmt.from_string(in_str, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
+        context = rounding_string_to_context(context)
+        in_value = from_string(format_codes[src_fmt], in_str)
         dst_fmt = format_codes[dst_fmt]
         status = status_codes[status]
 
@@ -852,7 +855,7 @@ class TestUnaryOps:
             assert False, f'bad line: {line}'
         context, fmt, precision, in_str, status, answer = parts
         fmt = format_codes[fmt]
-        context = context_string_to_context(context)
+        context = rounding_string_to_context(context)
         precision = int(precision)
         value = from_string(fmt, in_str)
         status = status_codes[status]
@@ -885,17 +888,15 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('scaleb.txt'))
     def test_scaleb(self, line):
+        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 6:
             assert False, f'bad line: {line}'
         fmt, context, in_str, N_str, status, answer = parts
         fmt = format_codes[fmt]
-        context = context_string_to_context(context)
-        in_context = std_context()
-        in_value = fmt.from_string(in_str, in_context)
-        assert in_context.flags & ~Flags.SUBNORMAL == 0
-        answer = fmt.from_string(answer, in_context)
-        assert in_context.flags & ~Flags.SUBNORMAL == 0
+        context = rounding_string_to_context(context)
+        in_value = from_string(fmt, in_str)
+        answer = from_string(fmt, answer)
         N = int(N_str)
         assert str(N) == N_str
         status = status_codes[status]
@@ -919,11 +920,8 @@ class TestUnaryOps:
             assert False, f'bad line: {line}'
         fmt, in_str, status, answer = parts
         fmt = format_codes[fmt]
-        in_context = std_context()
-        in_value = fmt.from_string(in_str, in_context)
-        assert in_context.flags & ~Flags.SUBNORMAL == 0
-        answer = fmt.from_string(answer, in_context)
-        assert in_context.flags & ~Flags.SUBNORMAL == 0
+        in_value = from_string(fmt, in_str)
+        answer = from_string(fmt, answer)
         status = status_codes[status]
 
         context = std_context()
@@ -953,17 +951,15 @@ class TestUnaryOps:
     @pytest.mark.parametrize('line', read_lines('next_up.txt'))
     def test_next(self, line):
         # Tests next_up and next_down
+        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 4:
             assert False, f'bad line: {line}'
         context = std_context()
         fmt, in_str, status, answer = parts
         fmt = format_codes[fmt]
-        in_value = fmt.from_string(in_str, context)
-        assert context.flags & ~Flags.SUBNORMAL == 0
-        answer = fmt.from_string(answer, context)
-        assert context.flags & ~Flags.SUBNORMAL == 0
-        context.clear_flags()
+        in_value = from_string(fmt, in_str)
+        answer = from_string(fmt, answer)
         status = status_codes[status]
 
         result = in_value.next_up(context)
@@ -987,7 +983,7 @@ class TestUnaryOps:
         context, fmt, value, dst_fmt, status, answer = parts
         fmt = format_codes[fmt]
         dst_fmt = format_codes[dst_fmt]
-        context = context_string_to_context(context)
+        context = rounding_string_to_context(context)
         value = from_string(fmt, value)
         status = status_codes[status]
         answer = from_string(dst_fmt, answer)
@@ -1077,23 +1073,14 @@ def binary_operation(line, operation):
     if len(parts) != 8:
         assert False, f'bad line: {line}'
     context, lhs_fmt, lhs, rhs_fmt, rhs, dst_fmt, status, answer = parts
-    context = context_string_to_context(context)
-
-    lhs_fmt = format_codes[lhs_fmt]
-    input_context = std_context()
-    lhs = lhs_fmt.from_string(lhs, input_context)
-    assert input_context.flags & ~Flags.SUBNORMAL == 0
-
-    rhs_fmt = format_codes[rhs_fmt]
-    rhs = rhs_fmt.from_string(rhs, input_context)
-    assert input_context.flags & ~Flags.SUBNORMAL == 0
-
+    context = rounding_string_to_context(context)
     dst_fmt = format_codes[dst_fmt]
-    status = status_codes[status]
-    answer = dst_fmt.from_string(answer, input_context)
-    assert input_context.flags & ~Flags.SUBNORMAL == 0
 
-    context.clear_flags()
+    lhs = from_string(format_codes[lhs_fmt], lhs)
+    rhs = from_string(format_codes[rhs_fmt], rhs)
+    answer = from_string(dst_fmt, answer)
+    status = status_codes[status]
+
     operation = getattr(dst_fmt, operation)
     result = operation(lhs, rhs, context)
     assert result.as_tuple() == answer.as_tuple()
@@ -1119,6 +1106,7 @@ class TestBinaryOps:
 
     @pytest.mark.parametrize('line', read_lines('add.txt'))
     def test_add(self, line):
+        # FIXME: subnormal tests
         binary_operation(line, 'add')
 
     @pytest.mark.parametrize('line', read_lines('subtract.txt'))
@@ -1218,29 +1206,19 @@ class TestFMA:
 
     @pytest.mark.parametrize('line', read_lines('fma.txt'))
     def test_fma(self, line):
+        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 10:
             assert False, f'bad line: {line}'
         context, lhs_fmt, lhs, rhs_fmt, rhs, add_fmt, addend, dst_fmt, status, answer = parts
-        context = context_string_to_context(context)
-        input_context = std_context()
-
-        lhs_fmt = format_codes[lhs_fmt]
-        lhs = lhs_fmt.from_string(lhs, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
-
-        rhs_fmt = format_codes[rhs_fmt]
-        rhs = rhs_fmt.from_string(rhs, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
-
-        add_fmt = format_codes[add_fmt]
-        addend = add_fmt.from_string(addend, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
-
+        context = rounding_string_to_context(context)
         dst_fmt = format_codes[dst_fmt]
+
+        lhs = from_string(format_codes[lhs_fmt], lhs)
+        rhs = from_string(format_codes[rhs_fmt], rhs)
+        addend = from_string(format_codes[add_fmt], addend)
+        answer = from_string(dst_fmt, answer)
         status = status_codes[status]
-        answer = dst_fmt.from_string(answer, input_context)
-        assert input_context.flags & ~Flags.SUBNORMAL == 0
 
         result = dst_fmt.fma(lhs, rhs, addend, context)
         assert result.as_tuple() == answer.as_tuple()

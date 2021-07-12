@@ -4,6 +4,7 @@
 # (c) Neil Booth 2007-2021.  All rights reserved.
 #
 
+import copy
 import re
 import threading
 from collections import namedtuple
@@ -16,8 +17,7 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'Flags', 'Compare',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'ArithmeticSignal', 'InvalidSignal', 'DivisionByZeroSignal', 'InexactSignal',
-           'OverflowSignal',
-           'Subnormal', 'SubnormalExact', 'SubnormalInexact', 'Underflow',
+           'OverflowSignal', 'UnderflowSignal',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
@@ -69,9 +69,8 @@ class Flags(IntFlag):
     INVALID     = 0x01
     DIV_BY_ZERO = 0x02
     OVERFLOW    = 0x04
-    SUBNORMAL   = 0x08
-    UNDERFLOW   = 0x10
-    INEXACT     = 0x20
+    UNDERFLOW   = 0x08
+    INEXACT     = 0x10
 
 
 BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
@@ -364,40 +363,44 @@ class OverflowSignal(ArithmeticSignal):
         return context.signal(InexactSignal(self.op_tuple, result))
 
 
-class Subnormal(ArithmeticSignal):
-    '''Before rounding the result had an exponent less than e_min.'''
+#
+# UnderflowSignal.  Not subclassed.
+#
 
+class UnderflowSignal(ArithmeticSignal):
+    '''Signalled when a tiny non-zero result is detected.  Tininess means the result computed
+    as though with unbounded exponent range woud lie strictly between ±2^e_min.  Tininess
+    can be detected before or after rounding.'''
 
-class SubnormalExact(Subnormal):
-    '''The result is exact and has an exponent less than e_min.'''
-
-
-class SubnormalInexact(InexactSignal, Subnormal):
-    '''Before rounding the result was inexact and had an exponent less than e_min.'''
-
-
-class Underflow(SubnormalInexact):
-    '''The result is inexact and has an exponent less than e_min, or is zero, after rounding.'''
+    def default_handler(self, context):
+        '''Under default handling, if the rounded result is inexact, the underflow flag is raised
+        and inexact is signalled, otherwise neither happens.
+        '''
+        result, is_inexact = self.data
+        if not is_inexact:
+            return result
+        context.flags |= Flags.UNDERFLOW
+        return context.signal(InexactSignal(self.op_tuple, result))
 
 
 class Context:
-    '''The execution context for operations.  Carries the rounding mode, status flags and
-    traps.
-    '''
+    '''The execution context for operations.  Carries the rounding mode, status flags,
+    whether tininess is detected before or after rounding, and traps.'''
 
-    __slots__ = ('rounding', 'flags')
+    __slots__ = ('rounding', 'flags', 'tininess_after')
 
-    def __init__(self, rounding=None, flags=None):
+    def __init__(self, *, rounding=None, flags=None, tininess_after=True):
         '''rounding is one of the ROUND_ constants and controls rounding of inexact results.'''
         self.rounding = rounding or ROUND_HALF_EVEN
         self.flags = flags or 0
+        self.tininess_after = tininess_after
 
     def clear_flags(self):
         self.flags = 0
 
     def copy(self):
         '''Return a copy of the context.'''
-        return Context(self.rounding, self.flags)
+        return copy.copy(self)
 
     def set_flags(self, flags):
         self.flags |= flags
@@ -408,36 +411,18 @@ class Context:
         # TODO: implement alternative handlers
         return signal.default_handler(self)
 
-    def on_normalized_finite(self, is_tiny_before, is_tiny_or_zero_after, is_inexact):
-        '''Call after normalisation of a finite number to set flags appropriately.'''
-        if is_tiny_or_zero_after:
-            if is_inexact:
-                self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
-            else:
-                self.set_flags(Flags.SUBNORMAL)
-        elif is_tiny_before:
-            assert is_inexact
-            self.set_flags(Flags.SUBNORMAL | Flags.INEXACT)
-        elif is_inexact:
-            self.set_flags(Flags.INEXACT)
-
-    def underflow_value(self, dest_fmt, sign):
-        '''Call when underflowing to zero.
-
-        Flags overflow and returns the result, which is signed and either the largest
-        finite number or infinity depending on the rounding mode.'''
-        self.set_flags(Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT)
-
-        if round_up(self.rounding, LF_LESS_THAN_HALF, sign, False):
-            return dest_fmt.make_smallest_finite(sign)
-        return dest_fmt.make_zero(sign)
+    def underflow_to_zero(self, dest_fmt, op_tuple, sign):
+        '''Return the value to deliver when a calculation underflows to zero.'''
+        result = dest_fmt.make_underflow_to_zero_value(self.rounding, sign)
+        return self.signal(UnderflowSignal(op_tuple, (result, True)))
 
     def round_to_nearest(self):
         '''Return True if the rounding mode rounds to nearest (ignoring ties).'''
         return self.rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP}
 
     def __repr__(self):
-        return f'<Context rounding={self.rounding} flags={self.flags!r}>'
+        return (f'<Context rounding={self.rounding} flags={self.flags!r} '
+                f'tininess_after={self.tininess_after}>')
 
 
 class IntegerFormat:
@@ -622,6 +607,14 @@ class BinaryFormat:
             return self.make_infinity(sign)
         return self.make_largest_finite(sign)
 
+    def make_underflow_to_zero_value(self, rounding, sign):
+        '''Returns the value to deliver when a calculation can be determined, typically early, to
+        underflow to zero with the given sign.  rounding is the rounding mode to apply.'''
+        if round_up(rounding, LF_LESS_THAN_HALF, sign, False):
+            return self.make_smallest_finite(sign)
+        else:
+            return self.make_zero(sign)
+
     def _propagate_NaN(self, op_tuple, context):
         '''Return the result of an operation with at least one NaN.
 
@@ -679,8 +672,7 @@ class BinaryFormat:
         if rshift:
             lost_fraction = shift_lf | (lost_fraction != LF_EXACTLY_ZERO)
 
-        is_tiny_before = significand < self.int_bit
-        is_inexact = lost_fraction != LF_EXACTLY_ZERO
+        is_tiny = significand < self.int_bit
 
         # Round
         if round_up(context.rounding, lost_fraction, sign, bool(significand & 1)):
@@ -695,11 +687,17 @@ class BinaryFormat:
         if exponent > self.e_max:
             return context.signal(OverflowSignal(op_tuple, (self, sign)))
 
-        is_tiny_after = significand < self.int_bit
+        if context.tininess_after:
+            is_tiny = significand < self.int_bit
 
-        context.on_normalized_finite(is_tiny_before, is_tiny_after, is_inexact)
-
-        return Binary(self, sign, exponent + self.e_bias, significand)
+        is_inexact = lost_fraction != LF_EXACTLY_ZERO
+        print(significand, self.int_bit, is_tiny, is_inexact)
+        result = Binary(self, sign, exponent + self.e_bias, significand)
+        if is_tiny:
+            result = context.signal(UnderflowSignal(op_tuple, (result, is_inexact)))
+        elif is_inexact:
+            result = context.signal(InexactSignal(op_tuple, result))
+        return result
 
     def _next_up(self, value, context, flip_sign):
         '''Return the smallest floating point value (unless operating on a positive infinity or
@@ -713,6 +711,7 @@ class BinaryFormat:
         sign = value.sign ^ flip_sign
         e_biased = value.e_biased
         significand = value.significand
+        op_tuple = (OP_NEXT_DOWN if flip_sign else OP_NEXT_UP, value)
 
         if e_biased:
             # Increment the significand of positive numbers, decrement the significand of
@@ -733,8 +732,6 @@ class BinaryFormat:
                     if e_biased - self.e_bias > self.e_max:
                         e_biased = 0
                         significand = 0
-            if 0 < significand < self.int_bit:
-                context.set_flags(Flags.SUBNORMAL)
         else:
             # Negative infinity becomes largest negative number; positive infinity unchanged
             if significand == 0:
@@ -743,10 +740,12 @@ class BinaryFormat:
                     e_biased = self.e_max + self.e_bias
             # Signalling NaNs are converted to quiet.
             elif significand < self.quiet_bit:
-                op_tuple = (OP_NEXT_DOWN if flip_sign else OP_NEXT_UP, value)
                 return self._propagate_NaN(op_tuple, context)
 
-        return Binary(self, sign ^ flip_sign, e_biased, significand)
+        result = Binary(self, sign ^ flip_sign, e_biased, significand)
+        if result.is_subnormal():
+            result = context.signal(UnderflowSignal(op_tuple, (result, False)))
+        return result
 
     def convert(self, value, context=None):
         '''Return the value converted to this format, rounding if necessary.
@@ -766,7 +765,7 @@ class BinaryFormat:
             # Avoid expensive normalisation to same format; copy and check for subnormals
             if value.fmt is self:
                 if value.is_subnormal():
-                    context.set_flags(Flags.SUBNORMAL)
+                    value = context.signal(UnderflowSignal(op_tuple, (value, False)))
                 return value
 
             if value.significand:
@@ -977,7 +976,7 @@ class BinaryFormat:
 
         # Test for obviously over-small exponents
         if frac_exp < (self.e_min - self.precision) / log2_10:
-            return context.underflow_value(self, sign)
+            return context.underflow_to_zero(self, op_tuple, sign)
 
         # Start with a precision a multiple of 64 bits with some room over the format
         # precision, and always an exponent range 1 bit larger - we eliminate obviously
@@ -1013,7 +1012,7 @@ class BinaryFormat:
             else:
                 sig_err = 0
 
-            calc_context = Context(ROUND_HALF_EVEN)
+            calc_context = Context(rounding=ROUND_HALF_EVEN)
             sig = calc_fmt.make_real(sign, 0, significand, calc_context)
             if calc_context.flags & Flags.INEXACT:
                 sig_err += 1
@@ -1040,7 +1039,7 @@ class BinaryFormat:
                 if pow5_err or scaling_err:
                     pow5_err = 2
 
-            assert calc_context.flags & (Flags.SUBNORMAL | Flags.OVERFLOW) == 0
+            assert calc_context.flags & Flags.OVERFLOW == 0
 
             # The error from the true value, in half-ulps, on multiplying two floating
             # point numbers, which differ from the value they approximate by at most HUE1
@@ -1085,8 +1084,7 @@ class BinaryFormat:
             parts_count *= 2
 
         # FIXME: overflow, underflow etc.
-        context.flags |= (convert_context.flags & (Flags.OVERFLOW | Flags.UNDERFLOW |
-                                                   Flags.SUBNORMAL))
+        context.flags |= (convert_context.flags & (Flags.OVERFLOW | Flags.UNDERFLOW))
         if signal_inexact:
             result = context.signal(InexactSignal(op_tuple, result))
 
@@ -1419,13 +1417,13 @@ class BinaryFormat:
             est = est.scaleb(-1, nearest_context)
             n += 1
 
-        down_context = Context(ROUND_DOWN)
+        down_context = Context(rounding=ROUND_DOWN)
         # Ensure that the precise answer lies in [est, est.next_up()).
         if div.significand == est.significand:
             # Do we have an exact square root?
             if not (nearest_context.flags & Flags.INEXACT):
                 if est.is_subnormal():
-                    context.set_flags(Flags.SUBNORMAL)
+                    est = context.signal(UnderflowSignal(op_tuple, (est, False)))
                 return est
 
             est_squared = value.fmt.multiply(est, est, down_context)
@@ -1460,12 +1458,20 @@ class BinaryFormat:
             # Anything as long as non-zero
             lost_fraction = LF_EXACTLY_HALF
 
-        # Now round est with the lost fraction
-        is_tiny_before = est.is_subnormal()
-        if round_up(context.rounding, lost_fraction, False, bool(est.significand & 1)):
-            est = est.next_up(nearest_context)
-        context.on_normalized_finite(is_tiny_before, est.is_subnormal(), True)
-        return est
+        # Now round with the lost fraction.  FIXME: next_up context and signals.
+        result = est
+        is_tiny = result.is_subnormal()
+        if round_up(context.rounding, lost_fraction, False, bool(result.significand & 1)):
+            result = result.next_up(nearest_context)
+
+        if context.tininess_after:
+            is_tiny = result.is_subnormal()
+
+        if is_tiny:
+            result = context.signal(UnderflowSignal(op_tuple, (result, True)))
+        else:
+            result = context.signal(InexactSignal(op_tuple, result))
+        return result
 
     def fma(self, lhs, rhs, addend, context=None):
         '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
@@ -1700,12 +1706,12 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             if rhs.significand:
                 return self.fmt._propagate_NaN(op_tuple, context)
             else:
-                # remainder(finite, infinity) is the LHS exact remainder(subnormal,
-                # infinity) is the LHS and signals underflow, which because the result is
-                # exact, sets a subnormal flag.
+                result = self
+                # remainder(finite, infinity) is the LHS and exact.  remainder(subnormal,
+                # infinity) is the LHS and signals underflow
                 if self.is_subnormal():
-                    context.set_flags(Flags.SUBNORMAL)
-                return self
+                    result = context.signal(UnderflowSignal(op_tuple, (result, False)))
+                return result
         elif rhs.significand == 0:
             # remainder (finite, zero) is an invalid operation
             return context.signal(InvalidRemainder(op_tuple, self.fmt))
@@ -2318,7 +2324,7 @@ def round_up(rounding, lost_fraction, sign, is_odd):
 # Exported functions
 #
 
-DefaultContext = Context(rounding=ROUND_HALF_EVEN, flags=0)
+DefaultContext = Context()
 tls = threading.local()
 
 
