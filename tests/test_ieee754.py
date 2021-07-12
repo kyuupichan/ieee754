@@ -26,11 +26,14 @@ def read_lines(filename):
                 result.append(line)
     return result
 
+
 def std_context():
     return Context(rounding=ROUND_HALF_EVEN)
 
+
 def rounding_string_to_context(rounding):
     return Context(rounding=rounding_codes[rounding])
+
 
 def read_significand(significand):
     if significand[:2] in ('0x', '0X'):
@@ -46,6 +49,14 @@ def from_string(fmt, string):
     else:
         assert context.flags & ~(Flags.UNDERFLOW | Flags.INEXACT) == 0
     return result
+
+
+def floats_equal(lhs, rhs):
+    assert lhs.fmt == rhs.fmt
+    if lhs.as_tuple() != rhs.as_tuple():
+        print(lhs.to_string(), rhs.to_string())
+        return False
+    return True
 
 
 boolean_codes = {
@@ -791,12 +802,12 @@ class TestUnaryOps:
             if exact:
                 context = rounding_string_to_context(rounding)
                 result = value.round_to_integral_exact(context)
-                assert result.as_tuple() == answer.as_tuple()
+                assert floats_equal(result, answer)
                 assert context.flags == status
             else:
                 context = Context()
                 result = value.round_to_integral(rounding_codes[rounding], context)
-                assert result.as_tuple() == answer.as_tuple()
+                assert floats_equal(result, answer)
                 assert context.flags == status & ~Flags.INEXACT
         else:
             integer_format = IntegerFormat(*kind)
@@ -841,7 +852,7 @@ class TestUnaryOps:
         answer = from_string(dst_fmt, answer)
 
         result = dst_fmt.convert(src_value, context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('from_int.txt'))
@@ -860,7 +871,7 @@ class TestUnaryOps:
         assert context.flags == 0
 
         result = dst_fmt.from_int(value, context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('to_hex.txt'))
@@ -904,7 +915,7 @@ class TestUnaryOps:
             # hex value
             context.clear_flags()
             dec_value = fmt.from_string(answer, context)
-            assert dec_value.as_tuple() == value.as_tuple()
+            assert floats_equal(dec_value, value)
             assert context.flags == status
 
             # Confirm Python prints the same.
@@ -934,7 +945,7 @@ class TestUnaryOps:
         status = status_codes[status]
 
         result = in_value.scaleb(N, context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
@@ -958,7 +969,7 @@ class TestUnaryOps:
 
         context = std_context()
         result = in_value.logb(context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
         # Now test logb_integral
@@ -995,7 +1006,7 @@ class TestUnaryOps:
         status = status_codes[status]
 
         result = in_value.next_up(context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
         # Now for next_down
@@ -1003,7 +1014,7 @@ class TestUnaryOps:
         in_value = in_value.copy_negate()
         answer = answer.copy_negate()
         result = in_value.next_down(context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('sqrt.txt'))
@@ -1021,7 +1032,7 @@ class TestUnaryOps:
         answer = from_string(dst_fmt, answer)
 
         result = dst_fmt.sqrt(value, context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status
 
     @pytest.mark.parametrize('endianness', ('big', 'little'))
@@ -1059,7 +1070,7 @@ class TestUnaryOps:
         answer = x87extended.from_string('0x1.85p-16400')
         for hex_str in ('0000000030a000000000', '0000800030a000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert value.as_tuple() == answer.as_tuple()
+            assert floats_equal(value, answer)
 
     def test_pack_bad(self):
         with pytest.raises(RuntimeError):
@@ -1095,9 +1106,9 @@ class TestUnaryOps:
         le_packing = value.pack('little')
         assert bytes(reversed(result)) == le_packing
         # Test big-endian unpacking
-        assert value.as_tuple() == value.fmt.unpack_value(result, 'big').as_tuple()
+        assert floats_equal(value,  value.fmt.unpack_value(result, 'big'))
         # Test little-endian unpacking
-        assert value.as_tuple() == value.fmt.unpack_value(le_packing, 'little').as_tuple()
+        assert floats_equal(value,  value.fmt.unpack_value(le_packing, 'little'))
 
 
 def binary_operation(line, operation):
@@ -1115,7 +1126,7 @@ def binary_operation(line, operation):
 
     operation = getattr(dst_fmt, operation)
     result = operation(lhs, rhs, context)
-    assert result.as_tuple() == answer.as_tuple()
+    assert floats_equal(result, answer)
     assert context.flags == status
 
 
@@ -1253,5 +1264,5 @@ class TestFMA:
         status = status_codes[status]
 
         result = dst_fmt.fma(lhs, rhs, addend, context)
-        assert result.as_tuple() == answer.as_tuple()
+        assert floats_equal(result, answer)
         assert context.flags == status

@@ -712,7 +712,7 @@ class BinaryFormat(NamedTuple):
             is_tiny = significand < self.int_bit
 
         is_inexact = lost_fraction != LF_EXACTLY_ZERO
-        print(significand, self.int_bit, is_tiny, is_inexact)
+
         result = Binary(self, sign, exponent + self.e_bias, significand)
         if is_tiny:
             result = context.signal(UnderflowSignal(op_tuple, (result, is_inexact)))
