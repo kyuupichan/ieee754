@@ -52,11 +52,7 @@ def from_string(fmt, string):
 
 
 def floats_equal(lhs, rhs):
-    assert lhs.fmt == rhs.fmt
-    if lhs.as_tuple() != rhs.as_tuple():
-        print(lhs.to_string(), rhs.to_string())
-        return False
-    return True
+    return lhs.fmt == rhs.fmt and lhs.as_tuple() == rhs.as_tuple()
 
 
 boolean_codes = {
@@ -1164,23 +1160,23 @@ class TestBinaryOps:
     def test_divide(self, line):
         binary_operation(line, 'divide')
 
-    # @pytest.mark.parametrize('line', read_lines('remainder.txt'))
-    # def test_remainder(self, line):
-    #     parts = line.split()
-    #     if len(parts) != 5:
-    #         assert False, f'bad line: {line}'
-    #     fmt, lhs, rhs, status, answer = parts
+    @pytest.mark.parametrize('line', read_lines('remainder.txt'))
+    def test_remainder(self, line):
+        parts = line.split()
+        if len(parts) != 5:
+            assert False, f'bad line: {line}'
+        fmt, lhs, rhs, status, answer = parts
 
-    #     fmt = format_codes[fmt]
-    #     lhs = from_string(fmt, lhs)
-    #     rhs = from_string(fmt, rhs)
-    #     status = status_codes[status]
-    #     answer = from_string(fmt, answer)
+        fmt = format_codes[fmt]
+        lhs = from_string(fmt, lhs)
+        rhs = from_string(fmt, rhs)
+        status = status_codes[status]
+        answer = from_string(fmt, answer)
 
-    #     context = std_context()
-    #     result = lhs.remainder(rhs, context)
-    #     assert result.as_tuple() == answer.as_tuple()
-    #     assert context.flags == status
+        context = std_context()
+        result = lhs.remainder(rhs, context)
+        assert floats_equal(result, answer)
+        assert context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('compare.txt'))
     def test_compare(self, line):
