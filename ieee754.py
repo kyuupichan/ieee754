@@ -281,6 +281,10 @@ class InvalidDivide(InvalidSignal):
     '''Signalled when dividing two zeros or two infinities.'''
 
 
+class InvalidFMA(InvalidSignal):
+    '''Signalled when an FMA operation multiplies a zero and an infinity.'''
+
+
 class InvalidRemainder(InvalidSignal):
     '''Signalled by remainder(x, y) when x is infinite, or y is zero, and neither is a NaN.'''
 
@@ -619,20 +623,22 @@ class BinaryFormat:
         return self.make_largest_finite(sign)
 
     def _propagate_NaN(self, op_tuple, context):
-        '''Call to get the result of an operation with at least one NaN.  The NaN is converted to
-        a quiet one for this format, and invalid_op is flagged if any operand is a
-        signalling NaN.
+        '''Return the result of an operation with at least one NaN.
+
+        This implementation returns the leftmost NaN whose payload can fit in the
+        destination format (or the leftmost one if none can), as a quiet NaN.  Signal
+        SignallingNaNOperand if any NaNs are signalling.
         '''
-        nan = None
-        is_invalid = False
+        NaNs = [item for item in op_tuple if isinstance(item, Binary) and item.is_NaN()]
 
-        for item in op_tuple:
-            if isinstance(item, Binary) and item.is_NaN():
-                nan = nan or item
-                is_invalid = is_invalid or item.is_signalling()
+        for NaN in NaNs:
+            if NaN.NaN_payload() < self.quiet_bit:
+                break
+        else:
+            NaN = NaNs[0]
 
-        result = self.make_NaN(nan.sign, False, nan.NaN_payload())
-        if is_invalid:
+        result = self.make_NaN(NaN.sign, False, NaN.NaN_payload())
+        if any(NaN.is_signalling() for NaN in NaNs):
             result = context.signal(SignallingNaNOperand(op_tuple, result))
         return result
 
@@ -1463,8 +1469,21 @@ class BinaryFormat:
 
     def fma(self, lhs, rhs, addend, context=None):
         '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
-        rounded to this format.
-        '''
+        rounded to this format.'''
+        op_tuple = (OP_FMA, lhs, rhs, addend)
+        context = context or get_context()
+
+        # FMA must signal no more than once for the entire operation; this precludes a
+        # naive multiply followed by add.  It seems simplest to handle cases where
+        # multiplication might signal an invalid operation early.  There are two: any
+        # (signalling) NaN, and if the first two operands are some combination of zero and
+        # infinity.
+        if any(value.is_NaN() for value in (lhs, rhs, addend)):
+            return self._propagate_NaN(op_tuple, context)
+
+        if (lhs.is_zero() and rhs.is_infinite()) or (rhs.is_zero() and lhs.is_infinite()):
+            return context.signal(InvalidFMA(op_tuple, self))
+
         # Perform the multiplication in a format where it is exact and there are no
         # subnormals.  Then the only invalid operation can be signalled.
         product_fmt = BinaryFormat(lhs.fmt.precision + rhs.fmt.precision,
@@ -1474,10 +1493,8 @@ class BinaryFormat:
         # FIXME: when tests are complete, use context not product_context
         product_context = Context()
         product = product_fmt.multiply(lhs, rhs, product_context)
-        assert product_context.flags & ~Flags.INVALID == 0
+        assert not product_context.flags
 
-        context = context or get_context()
-        context.set_flags(product_context.flags)
         return self.add(product, addend, context)
 
 

@@ -25,7 +25,13 @@ E D NaN1 S Inf S Nan5 Q K NaN1
 E S 0 D Nan23 Q Nan Q K NaN23
 E S Inf D -Inf Q Nan456 H K NaN456
 
-E D NaN0x4000000 H NaN2 H Nan3 H K NaN
+#
+# Fully test returning leftmost fitting NaN
+#
+E D NaN0x4000000 H NaN2 H Nan3 H K NaN2
+E D SNaN0x4000000 D NaN0x200000 H Nan4 H X NaN4
+   # None fit
+E D NaN0x4000001 D NaN0x4000002 D NaN0x200003 H K NaN1
 
 # Signalling NaNs.  Quieten if it is the result NaN and raise invalid op regardless.
 
@@ -33,11 +39,12 @@ E D SNaN5 Q NaN4 Q SNaN3 Q X NaN5
 E D 0 D SNaN4 Q NaN3 Q X NaN4
 E D 0 D 0 D SNaN Q X NaN1
 
-# Corner case - if addend is a QNaN and the multiply is an invalid op, still raise
-# an invalid op.  IEEE 754 leaves this implementation-defined
+# Corner case - if addend is a QNaN and the multiply is an invalid op, we do not raise an
+# invalid op because we propagate the NaN first.  IEEE 754 leaves this
+# implementation-defined.
 
-E D 0 D Inf D NaN4 D X NaN
-E D -Inf D 0 D NaN4 D X NaN
+E D 0 D Inf D NaN4 D K NaN4
+E D -Inf D 0 D NaN4 D K NaN4
 
 ###############
 #

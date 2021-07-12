@@ -31,15 +31,15 @@ u H -NaN1 H NaN2 H K -NaN1
 C D NaN0xdead D -NaN0xbeef D K NaN0xdead
 F D -NaN1 D -NaN2 D K -NaN1
 
-# Quiet and Signalling.  Return the left hand quiet NaN
+# Quiet and Signalling.  Return the leftmost NaN that fits
 E D SNaN5 Q NaN4 Q X NaN5
 u H -NaN1 H SNaN2 H X -NaN1
 C Q SNaN0xdead S -SNaN0xbeef S X NaN0xdead
 F Q -NaN0xdead Q -SNaN0xbeef H X -NaN0x00ad
 
-# Both Signalling.  Return the left hand quiet NaN
+# Both Signalling.  Return the leftmost NaN that fits
 E S SNaN0x25 Q SNaN0xdead H X NaN0x25
-u D -SNaN0xdead D SNaN2 H X -NaN0x00ad
+u D -SNaN0xdead D SNaN2 H X NaN2
 C Q SNaN1 S -SNaN2 S X NaN1
 F Q -SNaN3 Q -SNaN4 H X -NaN3
 
