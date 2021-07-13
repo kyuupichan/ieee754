@@ -42,6 +42,7 @@ OP_MULTIPLY = 'multiply'
 OP_DIVIDE = 'divide'
 OP_FMA = 'fma'
 OP_REMAINDER = 'remainder'
+OP_FMOD = 'fmod'
 OP_SQRT = 'sqrt'
 OP_SCALEB = 'scaleb'
 OP_LOGB = 'logb'
@@ -1683,21 +1684,32 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def remainder(self, rhs, context=None):
         '''Set to the remainder when divided by rhs.
 
-        If rhs != 0, the remainder is defined for finite operands as r = lhs - rhs * n,
-        where n is the integer nearest the exact number lhs / rhs with round-to-even
-        semantics.  The result is always exact, and if r is zero its sign shall be that of
-        lhs.
+        If rhs != 0, the remainder is defined for finite operands as r = x - y * n, where
+        n is the integer nearest the exact number x / y with round-to-even semantics.  The
+        result is always exact, and if r is zero its sign shall be that of lhs.
 
         If rhs is zero or lhs is infinite, an invalid operation is returned if neither
         operand is a NaN.
-
         If rhs is infinite then the result is lhs if it is finite.
         '''
+        return self._remainder(OP_REMAINDER, rhs, context)
+
+    def fmod(self, rhs, context=None):
+        '''C99's fmod operation.  Return the value x− ny, for some integer n such that, if y is
+        nonzero, the result has the same sign as x and magnitude less than the magnitude
+        of y.
+
+        Like remainder the result is always exact.  Mimic IEEE-754 remainder for specials.
+        '''
+        return self._remainder(OP_FMOD, rhs, context)
+
+    def _remainder(self, operation, rhs, context):
+        '''Common implementation of remainder and fmod.'''
         if self.fmt != rhs.fmt:
-            raise ValueError('remainder requires an operand of the same format')
+            raise ValueError(f'{operation} requires operands of the same format')
 
         context = context or get_context()
-        op_tuple = (OP_REMAINDER, self, rhs)
+        op_tuple = (operation, self, rhs)
 
         # Are we an infinity or NaN?
         if self.e_biased == 0:
@@ -1720,16 +1732,18 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             # remainder (finite, zero) is an invalid operation
             return context.signal(InvalidRemainder(op_tuple, self.fmt))
 
-        sign = self.sign
         lhs_sig = self.significand
-        if lhs_sig == 0:
-            return self.fmt.make_zero(sign)
-
+        if not lhs_sig:
+            # Both operations return a zero of the same sign.  As this is a homogeneous
+            # operation formats match so just return self.
+            return self
         rhs_sig = rhs.significand
+
+        # Like divide, shift significands until rhs_sig <= lhs_sig < rhs_sig * 2 keeping
+        # track of implied exponents.
         lhs_exponent = self.exponent_int()
         rhs_exponent = rhs.exponent_int()
 
-        # Shift the lhs significand left until it is greater than the significand of the RHS
         lshift = rhs_sig.bit_length() - lhs_sig.bit_length()
         if lshift >= 0:
             lhs_sig <<= lshift
@@ -1742,70 +1756,46 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             lhs_sig <<= 1
             lhs_exponent -= 1
 
-        assert lhs_sig >= rhs_sig
+        # Now the quotient is lhs_sig / rhs_sig, which has integer bit of 1 and exponent
+        # lhs_exponent - rhs_exponent.  However we only want to do the bit-by-bit division
+        # operation until we've found the integer result, when we must stop to keep the
+        # remainder.
+        bits = (lhs_exponent - rhs_exponent) + 1
+        if bits <= 0:
+            if bits == 0 and operation == OP_REMAINDER:
+                return self.fmt.subtract(self, rhs, context)
+            else:
+                return self
 
-        exponent_diff = lhs_exponent - rhs_exponent
-        bits = min(max(exponent_diff + 1, 0), self.fmt.precision)
-
-        # Long division.  Note by construction the quotient significand will have a
-        # leading 1, i.e., it will contain precisely precision significant bits,
-        # representing a value in [1, 2).
-        quot_sig = 0
-        for _n in range(bits):
-            if _n:
-                lhs_sig <<= 1
-            quot_sig <<= 1
-            if lhs_sig >= rhs_sig:
+        # We do not need to keep the quotient; only its least significant bit.  This is to
+        # know if it's even under the remainder operation's round-half-even semantics.
+        while True:
+            is_odd = lhs_sig >= rhs_sig
+            if is_odd:
                 lhs_sig -= rhs_sig
-                quot_sig |= 1
+            bits -= 1
+            if not (bits and lhs_sig):
+                break
+            lhs_sig <<= 1
 
-        assert 0 <= lhs_sig < rhs_sig or bits == 0
+        # For fmod, we are now done.  For remainder we may need to round up.
+        sign = self.sign
+        if operation == OP_REMAINDER:
+            # Exactly half rounds-to-even
+            if lhs_sig * 2 == rhs_sig:
+                rounds_up = is_odd
+            else:
+                rounds_up = lhs_sig * 2 > rhs_sig
 
-        if lhs_sig == 0 or bits == 0:
-            lost_fraction = LF_EXACTLY_ZERO
-        elif lhs_sig * 2 < rhs_sig:
-            lost_fraction = LF_LESS_THAN_HALF
-        elif lhs_sig * 2 == rhs_sig:
-            lost_fraction = LF_EXACTLY_HALF
-        else:
-            lost_fraction = LF_MORE_THAN_HALF
+            if rounds_up:
+                # Simulate an extra subtraction loop; this also flips the sign
+                lhs_sig = rhs_sig - lhs_sig
+                sign = not sign
 
-        # At present both quotient (which is truncated) and remainder have sign lhs.sign.
-        # The exponent when viewing quot_sig as an integer.
-        quotient_exponent = exponent_diff - (bits - 1)
+            # IEEE-754 decrees a remainder of zero shall have the sign of the LHS.  A
+            # remainder of zero cannot have rounded up, so this is already the case.
 
-        # We need to figure out if the quotient rounds up under nearest-ties-to-even, to
-        # do another deduction of rhs_sig.
-
-        # As an integer it would drop the significand's least significant
-        # -quotient_exponent bits.
-        rshift = -quotient_exponent
-        shift_lf = lost_bits_from_rshift(quot_sig, rshift)
-
-        # If we shifted, combine the lost fractions; shift_lf is the more significant
-        if rshift > 0:
-            lost_fraction = shift_lf | (lost_fraction != LF_EXACTLY_ZERO)
-        elif rshift < 0:
-            lost_fraction = lost_fraction != LF_EXACTLY_ZERO
-
-        if lost_fraction == LF_EXACTLY_HALF:
-            rounds_up = bool(quot_sig & (1 << rshift))
-        else:
-            rounds_up = lost_fraction == LF_MORE_THAN_HALF
-
-        # If we incremented the quotient, we must correspondingly deduct the significands
-        if rounds_up:
-            lhs_sig -= rhs_sig
-            sign = not sign
-            lhs_sig = -lhs_sig
-
-        # IEEE-754 decrees a remainder of zero shall have the sign of the LHS
-        if lhs_sig == 0:
-            sign = self.sign
-
-        # Return the remainder
-        return self.fmt.make_real(sign, lhs_exponent - (bits - 1), lhs_sig, op_tuple, context)
-
+        return self.fmt.make_real(sign, rhs_exponent, lhs_sig, op_tuple, context)
 
     ##
     ## logBFormat operations (logBFormat is an integer format)

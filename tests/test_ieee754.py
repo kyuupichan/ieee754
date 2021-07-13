@@ -1178,6 +1178,24 @@ class TestBinaryOps:
         assert floats_equal(result, answer)
         assert context.flags == status
 
+    @pytest.mark.parametrize('line', read_lines('fmod.txt'))
+    def test_fmod(self, line):
+        parts = line.split()
+        if len(parts) != 5:
+            assert False, f'bad line: {line}'
+        fmt, lhs, rhs, status, answer = parts
+
+        fmt = format_codes[fmt]
+        lhs = from_string(fmt, lhs)
+        rhs = from_string(fmt, rhs)
+        status = status_codes[status]
+        answer = from_string(fmt, answer)
+
+        context = std_context()
+        result = lhs.fmod(rhs, context)
+        assert floats_equal(result, answer)
+        assert context.flags == status
+
     @pytest.mark.parametrize('line', read_lines('compare.txt'))
     def test_compare(self, line):
         parts = line.split()
