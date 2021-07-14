@@ -1,0 +1,163 @@
+# Floatformat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+# Answer: L E G U
+
+# Test format: Format LHS RHS Answer
+
+
+###############
+#
+# NaN MIN_MAG Any
+# Any MIN_MAG NaN
+#
+###############
+
+D -NaN1 -Inf K -NaN1
+H -SNaN -Inf X -NaN1
+S -NaN -1 K -NaN
+S -SNaN 1 X -NaN1
+H -NaN10 Inf K -NaN10
+H -SNaN Inf X -NaN1
+H 1 NaN2 K NaN2
+H -1 NaN3 K NaN3
+S Inf SNaN X NaN1
+S -Inf NaN2 K NaN2
+H NaN3 -NaN2 K NaN3
+H -SNaN -NaN4 X -NaN1
+S NaN SNaN3 X NaN
+
+###############
+#
+# +Inf MIN_MAG Non-NaN
+#
+###############
+
+D Inf 0 K 0
+H Inf -0 K -0
+Q Inf 0x1.25p25 K 0x1.25p25
+Q Inf Inf K Inf
+S Inf -Inf K -Inf
+
+###############
+#
+# Non-NaN MIN_MAG +Inf
+#
+###############
+
+S 0 Inf K 0
+D -0 Inf K -0
+S 1 Inf K 1
+D -1 Inf K -1
+Q Inf Inf K Inf
+S -Inf Inf K -Inf
+
+###############
+#
+# -Inf MIN_MAG Non-NaN
+#
+###############
+
+D -Inf 0 K 0
+H -Inf -0 K -0
+Q -Inf 1 K 1
+S -Inf -1 K -1
+Q -Inf Inf K -Inf
+S -Inf -Inf K -Inf
+
+###############
+#
+# Non-NaN MIN_MAG -Inf
+#
+###############
+
+S 0 -Inf K 0
+D -0 -Inf K -0
+S 1 -Inf K 1
+D -1 -Inf K -1
+Q Inf -Inf K -Inf
+S -Inf -Inf K -Inf
+
+###############
+#
+# +Zero MIN_MAG Finite
+#
+###############
+
+S 0 0 K 0
+D 0 -0 K -0
+S 0 1 K 0
+D 0 -2e23 K 0
+D 0 0x1p-1000 K 0
+D 0 -0x1p-500 K 0
+
+###############
+#
+# Finite MIN_MAG +Zero
+#
+###############
+
+D 0 0 K 0
+H -0 0 K -0
+Q 1 0 K 0
+S -2e23 0 K 0
+D 0x1p-1000 0 K 0
+Q -1 0 K 0
+
+###############
+#
+# -Zero MIN_MAG Finite
+#
+###############
+
+S -0 0 K -0
+D -0 -0 K -0
+S -0 1 K -0
+D -0 -2e23 K -0
+Q -0 -1 K -0
+
+###############
+#
+# Finite MIN_MAG -Zero
+#
+###############
+
+D 0 -0 K -0
+H -0 -0 K -0
+Q 1 -0 K -0
+S -2e23 -0 K -0
+D 0x1p-1000 -0 K -0
+Q -1 -0 K -0
+
+###############
+#
+# Finite MIN_MAG Finite different signs non-zero
+#
+###############
+
+D 1 -2e23 K 1
+S 1e6 -2 K -2
+Q 2 -3 K 2
+H 3 -2 K -2
+H 2 -2 K -2
+H -2 2 K -2
+
+D -1 2e23 K -1
+S -1e6 2 K 2
+Q -2 3 K -2
+
+###############
+#
+# Other finite
+#
+###############
+
+S 2 3 K 2
+S 2 2 K 2
+S 3 2 K 2
+S -3 -2 K -2
+S -2 -3 K -2
+S -2 -2 K -2

@@ -56,10 +56,27 @@ OP_FROM_STRING = 'from_string'
 OP_TO_STRING = 'to_string'
 OP_TO_DECIMAL_STRING = 'to_decimal_string'
 OP_FROM_INT = 'from_int'
-OP_MAXIMUM = 'maximum'
-OP_MAXIMUM_NUMBER = 'maximum_number'
-OP_MINIMUM = 'minimum'
-OP_MINIMUM_NUMBER = 'minimum_number'
+OP_MAX = 'max'
+OP_MAX_NUMBER = 'max_num'
+OP_MIN = 'min'
+OP_MIN_NUM = 'min_num'
+OP_MAX_MAG_NUM = 'max_mag_num'
+OP_MAX_MAG = 'max_mag'
+OP_MIN_MAG_NUM = 'min_mag_num'
+OP_MIN_MAG = 'min_mag'
+
+
+class MinMaxFlags(IntFlag):
+    MIN = 0x00
+    MAX = 0x01
+    MAG = 0x02
+    NUM = 0x04
+
+    def op_name(self):
+        max_min = 'max' if self & MinMaxFlags.MAX else 'min'
+        mag = '_mag' if self & MinMaxFlags.MAG else ''
+        num = '_num' if self & MinMaxFlags.NUM else ''
+        return f'{max_min}{mag}{num}'
 
 
 # Four-way result of the compare() operation.
@@ -2199,19 +2216,29 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
         return self.copy_abs().compare_total(rhs.copy_abs())
 
-    def _max_min(self, operation, rhs, context):
+    def _max_min(self, flags, rhs, context):
         '''Implementation of IEEE-754 2019's maximum and maximum_number operations.'''
         if self.fmt != rhs.fmt:
-            raise ValueError(f'{operation} requires both operands have the same format')
-        is_max = operation in {OP_MAXIMUM, OP_MAXIMUM_NUMBER}
-        comp = self._compare_quiet(rhs, True)
+            raise ValueError(f'{flags.op_name()} requires both operands have the same format')
+
+        if flags & MinMaxFlags.MAG:
+            comp = self.copy_abs()._compare_quiet(rhs.copy_abs(), True)
+            # If magnitudes are equal, compare without magnitudes
+            if comp == Compare.EQUAL:
+                comp = self._compare_quiet(rhs, True)
+        else:
+            comp = self._compare_quiet(rhs, True)
+
         if comp in {Compare.GREATER_THAN, Compare.EQUAL}:
-            return self if is_max else rhs
+            return self if flags & MinMaxFlags.MAX else rhs
         if comp == Compare.LESS_THAN:
-            return rhs if is_max else self
-        op_tuple = (operation, self, rhs)
-        if operation in {OP_MAXIMUM, OP_MINIMUM}:
+            return rhs if flags & MinMaxFlags.MAX else self
+
+        # Propagate NaNs if it not a NUM operation
+        op_tuple = (flags.op_name(), self, rhs)
+        if not flags & MinMaxFlags.NUM:
             return self.fmt._propagate_NaN(op_tuple, context)
+
         # The result is the number; if both are NaNs return the leftmost.  Signals invalid
         # if either is signalling.
         if rhs.is_NaN():
@@ -2224,21 +2251,37 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             result = context.signal(SignallingNaNOperand(op_tuple, result))
         return result
 
-    def maximum(self, rhs, context):
+    def max(self, rhs, context):
         '''Implementation of IEEE-754 2019's maximum operation.'''
-        return self._max_min(OP_MAXIMUM, rhs, context)
+        return self._max_min(MinMaxFlags.MAX, rhs, context)
 
-    def maximum_number(self, rhs, context):
+    def max_num(self, rhs, context):
         '''Implementation of IEEE-754 2019's maximum_number operation.'''
-        return self._max_min(OP_MAXIMUM_NUMBER, rhs, context)
+        return self._max_min(MinMaxFlags.MAX | MinMaxFlags.NUM, rhs, context)
 
-    def minimum(self, rhs, context):
+    def max_mag(self, rhs, context):
+        '''Implementation of IEEE-754 2019's maximum_magnitude operation.'''
+        return self._max_min(MinMaxFlags.MAX | MinMaxFlags.MAG, rhs, context)
+
+    def max_mag_num(self, rhs, context):
+        '''Implementation of IEEE-754 2019's maximum_magnitude_number operation.'''
+        return self._max_min(MinMaxFlags.MAX | MinMaxFlags.MAG | MinMaxFlags.NUM, rhs, context)
+
+    def min(self, rhs, context):
         '''Implementation of IEEE-754 2019's minimum operation.'''
-        return self._max_min(OP_MINIMUM, rhs, context)
+        return self._max_min(MinMaxFlags.MIN, rhs, context)
 
-    def minimum_number(self, rhs, context):
+    def min_num(self, rhs, context):
         '''Implementation of IEEE-754 2019's minimum_number operation.'''
-        return self._max_min(OP_MINIMUM_NUMBER, rhs, context)
+        return self._max_min(MinMaxFlags.MIN | MinMaxFlags.NUM, rhs, context)
+
+    def min_mag(self, rhs, context):
+        '''Implementation of IEEE-754 2019's minimum_magnitude operation.'''
+        return self._max_min(MinMaxFlags.MIN | MinMaxFlags.MAG, rhs, context)
+
+    def min_mag_num(self, rhs, context):
+        '''Implementation of IEEE-754 2019's minimum_magnitude_number operation.'''
+        return self._max_min(MinMaxFlags.MIN | MinMaxFlags.MAG | MinMaxFlags.NUM, rhs, context)
 
     def __repr__(self):
         return self.to_string()

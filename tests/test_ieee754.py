@@ -1178,21 +1178,37 @@ class TestBinaryOps:
     def test_divide(self, line):
         binary_operation(line, 'divide')
 
-    @pytest.mark.parametrize('line', read_lines('maximum.txt'))
-    def test_maximum(self, line):
-        min_max_op(line, 'maximum')
+    @pytest.mark.parametrize('line', read_lines('max.txt'))
+    def test_max(self, line):
+        min_max_op(line, 'max')
 
-    @pytest.mark.parametrize('line', read_lines('maximum_number.txt'))
-    def test_maximum_number(self, line):
-        min_max_op(line, 'maximum_number')
+    @pytest.mark.parametrize('line', read_lines('max_num.txt'))
+    def test_max_num(self, line):
+        min_max_op(line, 'max_num')
 
-    @pytest.mark.parametrize('line', read_lines('minimum.txt'))
-    def test_minimum(self, line):
-        min_max_op(line, 'minimum')
+    @pytest.mark.parametrize('line', read_lines('max_mag.txt'))
+    def test_max_mag(self, line):
+        min_max_op(line, 'max_mag')
 
-    @pytest.mark.parametrize('line', read_lines('minimum_number.txt'))
-    def test_minimum_number(self, line):
-        min_max_op(line, 'minimum_number')
+    @pytest.mark.parametrize('line', read_lines('max_mag_num.txt'))
+    def test_max_mag_num(self, line):
+        min_max_op(line, 'max_mag_num')
+
+    @pytest.mark.parametrize('line', read_lines('min.txt'))
+    def test_min(self, line):
+        min_max_op(line, 'min')
+
+    @pytest.mark.parametrize('line', read_lines('min_num.txt'))
+    def test_min_num(self, line):
+        min_max_op(line, 'min_num')
+
+    @pytest.mark.parametrize('line', read_lines('min_mag.txt'))
+    def test_min_mag(self, line):
+        min_max_op(line, 'min_mag')
+
+    @pytest.mark.parametrize('line', read_lines('min_mag_num.txt'))
+    def test_min_mag_num(self, line):
+        min_max_op(line, 'min_mag_num')
 
     @pytest.mark.parametrize('line', read_lines('remainder.txt'))
     def test_remainder(self, line):
