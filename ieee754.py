@@ -513,8 +513,6 @@ class BinaryFormat(NamedTuple):
     fmt_width: int
     decimal_precision: int
     logb_inf: int
-    logb_zero: int
-    logb_NaN: int
 
     @classmethod
     def from_triple(cls, precision, e_max, e_min):
@@ -537,8 +535,6 @@ class BinaryFormat(NamedTuple):
         # What integer value logb(inf) returns.  IEEE-754 requires this and the values for
         # logb(0) and logb(NaN) be values "outside the range ±2 * (emax + p - 1)".
         logb_inf = 2 * (max(e_max, abs(e_min)) + precision - 1) + 1
-        logb_zero = -logb_inf
-        logb_NaN = logb_zero - 1
 
         # Are we an interchange format?  If not, fmt_width is zero, otherwise it is the
         # format width in bits (the sign bit, the exponent and the significand including
@@ -551,7 +547,7 @@ class BinaryFormat(NamedTuple):
             if 0 <= test_fmt_width % 16 <= 1:
                 fmt_width = test_fmt_width
         return cls(precision, e_max, e_min, e_bias, int_bit, quiet_bit, max_significand,
-                   fmt_width, decimal_precision, logb_inf, logb_zero, logb_NaN)
+                   fmt_width, decimal_precision, logb_inf)
 
     @classmethod
     def from_precision_e_width(cls, precision, e_width):
@@ -580,6 +576,14 @@ class BinaryFormat(NamedTuple):
         else:
             raise ValueError('IEEE-754 does not define a standard format for width {width}')
         return BinaryFormat.from_precision_e_width(precision, width - precision)
+
+    @property
+    def logb_zero(self):
+        return -self.logb_inf
+
+    @property
+    def logb_NaN(self):
+        return -self.logb_inf - 1
 
     def __repr__(self):
         return f'BinaryFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
