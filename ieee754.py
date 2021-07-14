@@ -1668,7 +1668,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def is_canonical(self):
         '''We only have canonical values.'''
-        # FIXME: how to extend this to packed formats
         return True
 
     # Not in IEEE-754
@@ -1757,9 +1756,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self._set_payload(True)
 
     ##
-    ## General homogeneous computational operations.
-    ##
-    ## Format is preserved and the result is in-place.
+    ## General homogeneous computational operations.  Operands and result have the same
+    ## format.
     ##
 
     def remainder(self, rhs, context=None):
@@ -2015,8 +2013,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         value = self.significand
         rshift = -self.exponent_int()
 
-        # We're already a (large) integer if count is <= 0
         if rshift <= 0:
+            # We're already a (large) integer if rshift is <= 0
             if integer_fmt is None:
                 return self
             value <<= -rshift
