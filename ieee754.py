@@ -619,6 +619,10 @@ class BinaryFormat(NamedTuple):
         '''Returns a zero of the given sign.'''
         return Binary(self, sign, 1, 0)
 
+    def make_one(self, sign):
+        '''Returns a one of the given sign.'''
+        return Binary(self, sign, self.e_bias, self.int_bit)
+
     def make_infinity(self, sign):
         '''Returns an infinity of the given sign.'''
         return Binary(self, sign, 0, 0)
@@ -1699,6 +1703,51 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if self.sign:
             return Binary(self.fmt, False, self.e_biased, self.significand)
         return self
+
+    def payload(self):
+        '''Return the payload of a NaN as a non-negative floating point integer, or -1
+        if not a NaN.'''
+        try:
+            payload = self.NaN_payload()
+        except RuntimeError:
+            return self.fmt.make_one(True)
+        bits = payload.bit_length()
+        payload <<= self.fmt.precision - bits
+        return Binary(self.fmt, False, self.fmt.e_bias + (bits - 1), payload)
+
+    def _set_payload(self, is_signalling):
+        '''Common implementation for set_payload and set_payload_signalling.'''
+        def payload_from_int():
+            # Sign must be positive and value finite
+            if self.sign or self.e_biased == 0:
+                return -1
+            # Handle zero; it has a special e_biased value
+            if self.significand == 0:
+                return 0
+            # Need to check if e_biased is in-range, and if so, if the integer is
+            # in-range.
+            sig_bits = 1 + self.e_biased - self.fmt.e_bias
+            shift = self.fmt.precision - sig_bits
+            if 0 <= shift < self.fmt.precision:
+                payload = self.significand >> shift
+                if self.significand == payload << shift:
+                    return payload
+            return -1
+
+        payload = payload_from_int()
+        if is_signalling <= payload < self.fmt.quiet_bit:
+            return self.fmt.make_NaN(False, is_signalling, payload)
+        return self.fmt.make_zero(False)
+
+    def set_payload(self):
+        '''Return a NaN with our value as payload, if it is a non-negative floating point
+        integer and in-range.  Otherwise return +0.'''
+        return self._set_payload(False)
+
+    def set_payload_signalling(self):
+        '''Return a signalling NaN with our value as payload, if it is a non-negative floating
+        point integer and in-range.  Otherwise return +0.'''
+        return self._set_payload(True)
 
     ##
     ## General homogeneous computational operations.

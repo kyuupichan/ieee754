@@ -1,0 +1,32 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+
+# Test format: Format Value Answer
+
+###############
+#
+# NaNs
+#
+###############
+
+H NaN 0
+S SNaN 1
+D -NaN 0
+Q -SNaN 1
+H Nan0x159 0x159p0
+D -SNaN0x123456789 0x123456789p0
+D NaN0x7ffffffffffff 0x7ffffffffffffp0
+D NaN0x8000000000000 0
+Q SNaN0x12345678901234567890 0x12345678901234567890p0
+
+###############
+#
+# Non-NaN
+#
+###############
+
+D Inf -1
+S -Inf -1
+H 0 -1
+H -0 -1
+D 1 -1
+Q -1 -1

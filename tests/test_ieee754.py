@@ -990,7 +990,6 @@ class TestUnaryOps:
     @pytest.mark.parametrize('line', read_lines('next_up.txt'))
     def test_next(self, line):
         # Tests next_up and next_down
-        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 4:
             assert False, f'bad line: {line}'
@@ -1012,6 +1011,53 @@ class TestUnaryOps:
         result = in_value.next_down(context)
         assert floats_equal(result, answer)
         assert context.flags == status
+
+    @pytest.mark.parametrize('line', read_lines('payload.txt'))
+    def test_payload(self, line):
+        parts = line.split()
+        if len(parts) != 3:
+            assert False, f'bad line: {line}'
+        fmt, value, answer = parts
+        fmt = format_codes[fmt]
+        value = from_string(fmt, value)
+        answer = from_string(fmt, answer)
+
+        get_context().flags = 0
+        result = value.payload()
+        assert result.fmt is fmt
+        assert floats_equal(result, answer)
+        assert get_context().flags == 0
+
+    @pytest.mark.parametrize('line', read_lines('set_payload.txt'))
+    def test_set_payload(self, line):
+        parts = line.split()
+        if len(parts) != 3:
+            assert False, f'bad line: {line}'
+        fmt, value, answer = parts
+        fmt = format_codes[fmt]
+        value = from_string(fmt, value)
+        answer = from_string(fmt, answer)
+
+        get_context().flags = 0
+        result = value.set_payload()
+        assert result.fmt is fmt
+        assert floats_equal(result, answer)
+        assert get_context().flags == 0
+
+    @pytest.mark.parametrize('line', read_lines('set_payload_signalling.txt'))
+    def test_set_payload_signalling(self, line):
+        parts = line.split()
+        if len(parts) != 3:
+            assert False, f'bad line: {line}'
+        fmt, value, answer = parts
+        fmt = format_codes[fmt]
+        value = from_string(fmt, value)
+        answer = from_string(fmt, answer)
+
+        result = value.set_payload_signalling()
+        assert result.fmt is fmt
+        assert floats_equal(result, answer)
+        assert get_context().flags == 0
 
     @pytest.mark.parametrize('line', read_lines('sqrt.txt'))
     def test_sqrt(self, line):
