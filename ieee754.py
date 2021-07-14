@@ -8,9 +8,10 @@ import copy
 import re
 import threading
 from collections import namedtuple
-from typing import NamedTuple
 from enum import IntFlag, IntEnum
 from math import floor, log2, sqrt
+from typing import NamedTuple
+from struct import Struct
 
 import attr
 
@@ -97,6 +98,7 @@ class Flags(IntFlag):
 
 
 BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
+pack_double = Struct('<d').pack
 
 
 @attr.s(slots=True)
@@ -1608,6 +1610,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             exponent = self.exponent_int()
 
         return BinaryTuple(self.sign, exponent, significand)
+
+    @classmethod
+    def from_float(cls, value):
+        '''Return an IEEEdouble converted from a Python float value.'''
+        return IEEEdouble.unpack_value(pack_double(value))
 
     def pack(self, endianness='little'):
         '''Packs this value to bytes of the given endianness.'''

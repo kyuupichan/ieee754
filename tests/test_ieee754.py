@@ -419,6 +419,16 @@ class TestBinary:
         with pytest.raises(AttributeError):
             d.sign = True
 
+    @pytest.mark.parametrize('text', ('0.0', '-0.0', 'Inf', '-Inf', 'NaN',
+                                      '1.0', '-1.0', '123.456', '-2.65721e-310'))
+    def test_from_float(self, text):
+        py_value = float(text)
+        answer = IEEEdouble.from_string(text)
+        result = Binary.from_float(py_value)
+        get_context().flags = 0
+        assert floats_equal(result, answer)
+        assert get_context().flags == 0
+
 
 class TestIntegerFormat:
 
