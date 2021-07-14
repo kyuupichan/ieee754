@@ -2007,11 +2007,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## Signalling computational operations
     ##
 
-    def _compare(self, rhs, context, signalling):
+    def _compare_quiet(self, rhs, order_zeroes):
         '''Return LHS vs RHS as one of the four comparison constants.
 
-        If signalling is True, comparisons of NaNs signal InvalidComparison if either is a
-        NaN.  Otherwise SignallingNaNOperand may be signalled.
+        If order_zeroes is True then -0 compares less than +0.
         '''
         if self.e_biased == 0:
             # LHS is a NaN?
@@ -2038,6 +2037,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             # Finite vs NaN - Fall through
         elif self.significand == rhs.significand == 0:
             # Zero vs Zero
+            if order_zeroes and self.sign != rhs.sign:
+                return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
             return Compare.EQUAL
         else:
             # Finite vs Finite, at least one non-zero.  If signs differ it's easy.  Also
@@ -2074,13 +2075,23 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 return Compare.LESS_THAN
 
         # Comparisons involving at least one NaN.
-        if signalling or self.is_signalling() or rhs.is_signalling():
+        return Compare.UNORDERED
+
+    def _compare(self, rhs, context, signalling):
+        '''Return LHS vs RHS as one of the four comparison constants.
+
+        If signalling is True, comparisons of NaNs signal InvalidComparison if either is a
+        NaN.  Otherwise SignallingNaNOperand may be signalled.
+        '''
+        result = self._compare_quiet(rhs, False)
+        # Comparisons involving at least one NaN.
+        if result == Compare.UNORDERED and (signalling or self.is_signalling()
+                                            or rhs.is_signalling()):
             context = context or get_context()
             op_tuple = (OP_COMPARE, self, rhs)
             cls = InvalidComparison if signalling else SignallingNaNOperand
-            return context.signal(cls(op_tuple, Compare.UNORDERED))
-
-        return Compare.UNORDERED
+            result = context.signal(cls(op_tuple, result))
+        return result
 
     def compare(self, rhs, context=None):
         '''Return LHS vs RHS as one of the four comparison constants.  A signalling NaN signals
@@ -2162,27 +2173,23 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''The total order relation on a format.  A loose equivalent of <=.'''
         if self.fmt != rhs.fmt:
             raise ValueError('total order requires both operands have the same format')
-        comp = self._compare(rhs, None, False)
-        if comp == Compare.LESS_THAN:
-            return True
-        if comp == Compare.GREATER_THAN:
-            return False
-        if comp == Compare.EQUAL:
-            return self.sign == rhs.sign or self.sign
-        # At least one is a NaN
-        if rhs.is_NaN():
-            if self.is_NaN():
-                if self.sign != rhs.sign:
-                    return self.sign
-                if self.is_signalling() != rhs.is_signalling():
-                    return self.is_signalling() ^ self.sign
-                if self.NaN_payload() < rhs.NaN_payload():
-                    return not self.sign
-                if self.NaN_payload() > rhs.NaN_payload():
-                    return self.sign
-                return True
-            return not rhs.sign
-        return self.sign
+        comp = self._compare_quiet(rhs, True)
+        if comp == Compare.UNORDERED:
+            # At least one is a NaN
+            if rhs.is_NaN():
+                if self.is_NaN():
+                    if self.sign != rhs.sign:
+                        return self.sign
+                    if self.is_signalling() != rhs.is_signalling():
+                        return self.is_signalling() ^ self.sign
+                    if self.NaN_payload() < rhs.NaN_payload():
+                        return not self.sign
+                    if self.NaN_payload() > rhs.NaN_payload():
+                        return self.sign
+                    return True
+                return not rhs.sign
+            return self.sign
+        return comp != Compare.GREATER_THAN
 
     def compare_total_mag(self, rhs):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
