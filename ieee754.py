@@ -258,13 +258,23 @@ class TextFormat:
 #
 
 class ArithmeticSignal(ArithmeticError):
-    '''All arithmetic exceptions signalled by this moduile subclass from this.'''
+    '''All arithmetic exceptions signalled by this moduile subclass from this.
 
-    def __init__(self, op_tuple, data):
-        '''op_tuple indicates the operation naem and operands causing the signal, data
-        is exception-specific information from which a result can be derived.'''
-        self.op_tuple = op_tuple
-        self.data = data
+    Each signal expects two arguments, as if declared as so:
+
+         def __init__(self, op_tuple, data):
+
+    op_tuple indicates the operation naem and operands causing the signal, data is
+    exception-specific information from which a result can be derived.
+    '''
+
+    @property
+    def op_tuple(self):
+        return self.args[0]
+
+    @property
+    def data(self):
+        return self.args[1]
 
 
 #
