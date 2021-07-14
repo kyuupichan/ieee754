@@ -56,6 +56,10 @@ OP_FROM_STRING = 'from_string'
 OP_TO_STRING = 'to_string'
 OP_TO_DECIMAL_STRING = 'to_decimal_string'
 OP_FROM_INT = 'from_int'
+OP_MAXIMUM = 'maximum'
+OP_MAXIMUM_NUMBER = 'maximum_number'
+OP_MINIMUM = 'minimum'
+OP_MINIMUM_NUMBER = 'minimum_number'
 
 
 # Four-way result of the compare() operation.
@@ -2194,6 +2198,47 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def compare_total_mag(self, rhs):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
         return self.copy_abs().compare_total(rhs.copy_abs())
+
+    def _max_min(self, operation, rhs, context):
+        '''Implementation of IEEE-754 2019's maximum and maximum_number operations.'''
+        if self.fmt != rhs.fmt:
+            raise ValueError(f'{operation} requires both operands have the same format')
+        is_max = operation in {OP_MAXIMUM, OP_MAXIMUM_NUMBER}
+        comp = self._compare_quiet(rhs, True)
+        if comp in {Compare.GREATER_THAN, Compare.EQUAL}:
+            return self if is_max else rhs
+        if comp == Compare.LESS_THAN:
+            return rhs if is_max else self
+        op_tuple = (operation, self, rhs)
+        if operation in {OP_MAXIMUM, OP_MINIMUM}:
+            return self.fmt._propagate_NaN(op_tuple, context)
+        # The result is the number; if both are NaNs return the leftmost.  Signals invalid
+        # if either is signalling.
+        if rhs.is_NaN():
+            result = self
+        else:
+            result = rhs
+        if self.is_signalling() or rhs.is_signalling():
+            if result.is_signalling():
+                result = result.fmt.make_NaN(result.sign, False, result.NaN_payload())
+            result = context.signal(SignallingNaNOperand(op_tuple, result))
+        return result
+
+    def maximum(self, rhs, context):
+        '''Implementation of IEEE-754 2019's maximum operation.'''
+        return self._max_min(OP_MAXIMUM, rhs, context)
+
+    def maximum_number(self, rhs, context):
+        '''Implementation of IEEE-754 2019's maximum_number operation.'''
+        return self._max_min(OP_MAXIMUM_NUMBER, rhs, context)
+
+    def minimum(self, rhs, context):
+        '''Implementation of IEEE-754 2019's minimum operation.'''
+        return self._max_min(OP_MINIMUM, rhs, context)
+
+    def minimum_number(self, rhs, context):
+        '''Implementation of IEEE-754 2019's minimum_number operation.'''
+        return self._max_min(OP_MINIMUM_NUMBER, rhs, context)
 
     def __repr__(self):
         return self.to_string()

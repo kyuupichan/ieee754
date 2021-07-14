@@ -1107,6 +1107,24 @@ class TestUnaryOps:
         assert floats_equal(value,  value.fmt.unpack_value(le_packing, 'little'))
 
 
+def min_max_op(line, operation):
+    parts = line.split()
+    if len(parts) != 5:
+        assert False, f'bad line: {line}'
+    fmt, lhs, rhs, status, answer = parts
+    fmt = format_codes[fmt]
+    lhs = from_string(fmt, lhs)
+    rhs = from_string(fmt, rhs)
+    answer = from_string(fmt, answer)
+    status = status_codes[status]
+
+    operation = getattr(lhs, operation)
+    context = std_context()
+    result = operation(rhs, context)
+    assert floats_equal(result, answer)
+    assert context.flags == status
+
+
 def binary_operation(line, operation):
     parts = line.split()
     if len(parts) != 8:
@@ -1159,6 +1177,22 @@ class TestBinaryOps:
     @pytest.mark.parametrize('line', read_lines('divide.txt'))
     def test_divide(self, line):
         binary_operation(line, 'divide')
+
+    @pytest.mark.parametrize('line', read_lines('maximum.txt'))
+    def test_maximum(self, line):
+        min_max_op(line, 'maximum')
+
+    @pytest.mark.parametrize('line', read_lines('maximum_number.txt'))
+    def test_maximum_number(self, line):
+        min_max_op(line, 'maximum_number')
+
+    @pytest.mark.parametrize('line', read_lines('minimum.txt'))
+    def test_minimum(self, line):
+        min_max_op(line, 'minimum')
+
+    @pytest.mark.parametrize('line', read_lines('minimum_number.txt'))
+    def test_minimum_number(self, line):
+        min_max_op(line, 'minimum_number')
 
     @pytest.mark.parametrize('line', read_lines('remainder.txt'))
     def test_remainder(self, line):

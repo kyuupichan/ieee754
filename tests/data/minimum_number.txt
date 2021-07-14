@@ -1,0 +1,161 @@
+# Floatformat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+# Answer: L E G U
+
+# Test format: Format LHS RHS Answer
+
+
+###############
+#
+# NaN MIN_NUM Any
+# Any MIN_NUM NaN
+#
+###############
+
+D -NaN1 -Inf K -Inf
+H -SNaN -Inf X -Inf
+S -NaN -1 K -1
+S -SNaN 1 X 1
+H -NaN10 Inf K Inf
+H -SNaN Inf X Inf
+H 1 NaN2 K 1
+H -1 NaN3 K -1
+S Inf SNaN X Inf
+S -Inf NaN2 K -Inf
+H NaN3 -NaN2 K NaN3
+H -SNaN -NaN4 X -NaN1
+S NaN SNaN3 X NaN
+
+###############
+#
+# +Inf MIN_NUM Non-NaN
+#
+###############
+
+D Inf 0 K 0
+H Inf -0 K -0
+Q Inf 0x1.25p25 K 0x1.25p25
+Q Inf Inf K Inf
+S Inf -Inf K -Inf
+
+###############
+#
+# Non-NaN MIN_NUM +Inf
+#
+###############
+
+S 0 Inf K 0
+D -0 Inf K -0
+S 1 Inf K 1
+D -1 Inf K -1
+Q Inf Inf K Inf
+S -Inf Inf K -Inf
+
+###############
+#
+# -Inf MIN_NUM Non-NaN
+#
+###############
+
+D -Inf 0 K -Inf
+H -Inf -0 K -Inf
+Q -Inf 1 K -Inf
+S -Inf -1 K -Inf
+Q -Inf Inf K -Inf
+S -Inf -Inf K -Inf
+
+###############
+#
+# Non-NaN MIN_NUM -Inf
+#
+###############
+
+S 0 -Inf K -Inf
+D -0 -Inf K -Inf
+S 1 -Inf K -Inf
+D -1 -Inf K -Inf
+Q Inf -Inf K -Inf
+S -Inf -Inf K -Inf
+
+###############
+#
+# +Zero MIN_NUM Finite
+#
+###############
+
+S 0 0 K 0
+D 0 -0 K -0
+S 0 1 K 0
+D 0 -2e23 K -2e23
+D 0 0x1p-1000 K 0
+D 0 -0x1p-500 K -0x1p-500
+
+###############
+#
+# Finite MIN_NUM +Zero
+#
+###############
+
+D 0 0 K 0
+H -0 0 K -0
+Q 1 0 K 0
+S -2e23 0 K -2e23
+D 0x1p-1000 0 K 0
+Q -1 0 K -1
+
+###############
+#
+# -Zero MIN_NUM Finite
+#
+###############
+
+S -0 0 K -0
+D -0 -0 K -0
+S -0 1 K -0
+D -0 -2e23 K -2e23
+Q -0 -1 K -1
+
+###############
+#
+# Finite MIN_NUM -Zero
+#
+###############
+
+D 0 -0 K -0
+H -0 -0 K -0
+Q 1 -0 K -0
+S -2e23 -0 K -2e23
+D 0x1p-1000 -0 K -0
+Q -1 -0 K -1
+
+###############
+#
+# Finite MIN_NUM Finite different signs non-zero
+#
+###############
+
+D 1 -2e23 K -2e23
+S 1e6 -2 K -2
+Q 2 -3 K -3
+H 3 -2 K -2
+
+D -1 2e23 K -1
+S -1e6 2 K -1e6
+Q -2 3 K -2
+
+###############
+#
+# Other finite
+#
+###############
+
+S 2 3 K 2
+S 2 2 K 2
+S 3 2 K 2
+S -3 -2 K -3
+S -2 -3 K -3
+S -2 -2 K -2
