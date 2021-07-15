@@ -1,6 +1,8 @@
 import os
+import random
 import re
 import threading
+from functools import partial
 from itertools import product
 
 import pytest
@@ -12,47 +14,6 @@ from ieee754 import HEX_SIGNIFICAND_PREFIX
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
 all_roundings = (ROUND_CEILING, ROUND_FLOOR, ROUND_DOWN, ROUND_UP,
                  ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_HALF_DOWN)
-
-
-def read_lines(filename):
-    result = []
-    with open(os.path.join('tests/data', filename)) as f:
-        for line in f:
-            hash_pos = line.find('#')
-            if hash_pos != -1:
-                line = line[:hash_pos]
-            line = line.strip()
-            if line:
-                result.append(line)
-    return result
-
-
-def std_context():
-    return Context(rounding=ROUND_HALF_EVEN)
-
-
-def rounding_string_to_context(rounding):
-    return Context(rounding=rounding_codes[rounding])
-
-
-def read_significand(significand):
-    if significand[:2] in ('0x', '0X'):
-        return int(significand, 16)
-    return int(significand)
-
-
-def from_string(fmt, string):
-    context = std_context()
-    result = fmt.from_string(string, context)
-    if HEX_SIGNIFICAND_PREFIX.match(string):
-        assert context.flags == 0
-    else:
-        assert context.flags & ~(Flags.UNDERFLOW | Flags.INEXACT) == 0
-    return result
-
-
-def floats_equal(lhs, rhs):
-    return lhs.fmt == rhs.fmt and lhs.as_tuple() == rhs.as_tuple()
 
 
 boolean_codes = {
@@ -113,6 +74,54 @@ nan_payload_codes = {
 }
 
 
+def read_lines(filename):
+    result = []
+    with open(os.path.join('tests/data', filename)) as f:
+        for line in f:
+            hash_pos = line.find('#')
+            if hash_pos != -1:
+                line = line[:hash_pos]
+            line = line.strip()
+            if line:
+                result.append(line)
+    return result
+
+
+def std_context():
+    return Context(rounding=ROUND_HALF_EVEN)
+
+
+def rounding_string_to_context(rounding):
+    return Context(rounding=rounding_codes[rounding])
+
+
+def read_significand(significand):
+    if significand[:2] in ('0x', '0X'):
+        return int(significand, 16)
+    return int(significand)
+
+
+def from_string(fmt, string):
+    context = std_context()
+    result = fmt.from_string(string, context)
+    if HEX_SIGNIFICAND_PREFIX.match(string):
+        assert context.flags == 0
+    else:
+        assert context.flags & ~(Flags.UNDERFLOW | Flags.INEXACT) == 0
+    return result
+
+
+def floats_equal(lhs, rhs):
+    return lhs.fmt == rhs.fmt and lhs.as_tuple() == rhs.as_tuple()
+
+
+def values_equal(result, answer):
+    if isinstance(answer, Binary):
+        return floats_equal(result, answer)
+    else:
+        return result == answer
+
+
 def to_text_format(hex_format):
     return TextFormat(
         force_leading_sign=boolean_codes[hex_format[0]],
@@ -122,132 +131,36 @@ def to_text_format(hex_format):
         nan_payload=nan_payload_codes[hex_format[4]],
     )
 
+def substitute_plus_zero(exception, context):
+    result = exception.default_result
+    if isinstance(result, str):
+        return '+0.0'
+    elif isinstance(result, int):
+        return 0
+    else:
+        return result.fmt.make_zero(False)
 
-# class TestTraps:
 
-#     def test_div_by_zero(self):
-#         context = Context(traps=Flags.DIV_BY_ZERO)
-#         lhs = IEEEsingle.make_real(False, 0, 1, context)
-#         rhs = IEEEsingle.make_zero(False)
-#         assert not context.flags
-#         assert issubclass(DivisionByZero, ZeroDivisionError)
-#         with pytest.raises(DivisionByZero):
-#             IEEEsingle.divide(lhs, rhs, context)
-#         assert context.flags == Flags.DIV_BY_ZERO
-#         context.clear_flags()
-#         assert not context.flags
-#         context.clear_traps()
-#         result = IEEEsingle.divide(lhs, rhs, context)
-#         assert result.is_infinite()
-#         assert context.flags == Flags.DIV_BY_ZERO
+def substitute_plus_one(exception, context):
+    result = exception.default_result
+    if isinstance(result, str):
+        return '+1.0'
+    elif isinstance(result, int):
+        return 1
+    else:
+        return result.fmt.make_one(False)
 
-#     def test_inexact(self):
-#         context = Context(traps=Flags.INEXACT)
-#         lhs = IEEEsingle.make_real(False, 0, 1, context)
-#         rhs = IEEEsingle.make_real(False, 0, 3, context)
-#         with pytest.raises(Inexact):
-#             IEEEsingle.divide(lhs, rhs, context)
-#         assert context.flags == Flags.INEXACT
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEsingle.divide(lhs, rhs, context)
-#         assert result.is_finite()
-#         assert context.flags == Flags.INEXACT
 
-#     def test_invalid_operation(self):
-#         context = Context(traps=Flags.INVALID)
-#         lhs = IEEEsingle.make_zero(False)
-#         rhs = IEEEsingle.make_zero(False)
-#         with pytest.raises(InvalidOperation):
-#             IEEEsingle.divide(lhs, rhs, context)
-#         assert context.flags == Flags.INVALID
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEsingle.divide(lhs, rhs, context)
-#         assert result.is_NaN()
-#         assert context.flags == Flags.INVALID
-
-#     def test_invalid_operation_inexact(self):
-#         context = Context(traps=Flags.INVALID)
-#         lhs = IEEEdouble.make_NaN(False, True, 0x123456789)
-#         assert not context.flags
-#         assert issubclass(InvalidOperationInexact, InvalidOperation)
-#         assert issubclass(InvalidOperationInexact, Inexact)
-#         with pytest.raises(InvalidOperationInexact):
-#             IEEEsingle.convert(lhs, context)
-#         assert context.flags == Flags.INVALID | Flags.INEXACT
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEsingle.convert(lhs, context)
-#         assert result.is_NaN()
-#         assert context.flags == Flags.INVALID | Flags.INEXACT
-
-#     def test_overflow(self):
-#         context = Context(traps=Flags.OVERFLOW)
-#         lhs = IEEEsingle.make_real(False, 0, 1, context)
-#         rhs = IEEEsingle.make_real(False, -140, 1, context)
-#         assert context.flags == Flags.SUBNORMAL
-#         context.clear_flags()
-#         assert issubclass(Overflow, Inexact)
-#         with pytest.raises(Overflow):
-#             IEEEsingle.divide(lhs, rhs, context)
-#         assert context.flags == Flags.OVERFLOW | Flags.INEXACT
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEsingle.divide(lhs, rhs, context)
-#         assert result.is_infinite()
-#         assert context.flags == Flags.OVERFLOW | Flags.INEXACT
-
-#     def test_subnormal_exact(self):
-#         context = Context(traps=Flags.SUBNORMAL)
-#         assert issubclass(SubnormalExact, Subnormal)
-#         assert not issubclass(SubnormalExact, Inexact)
-#         with pytest.raises(SubnormalExact):
-#             IEEEsingle.make_real(False, -140, 1, context)
-#         assert context.flags == Flags.SUBNORMAL
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEsingle.make_real(False, -140, 1, context)
-#         assert result.is_subnormal()
-#         assert context.flags == Flags.SUBNORMAL
-
-#     def test_subnormal_inexact(self):
-#         # This is a rare case - the result must be rounded to normal, otherwise Underflow
-#         # would be raised
-#         context = Context(traps=Flags.SUBNORMAL)
-#         assert issubclass(SubnormalInexact, Subnormal)
-#         assert issubclass(SubnormalInexact, Inexact)
-#         with pytest.raises(SubnormalInexact):
-#             IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
-#         assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1023', context)
-#         assert result.is_normal()
-#         assert context.flags == Flags.SUBNORMAL | Flags.INEXACT
-
-#     def test_underflow_to_non_zero(self):
-#         context = Context(traps=Flags.UNDERFLOW)
-#         assert issubclass(Underflow, SubnormalInexact)
-#         with pytest.raises(Underflow):
-#             IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
-#         assert result.is_subnormal()
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-
-#     def test_underflow_to_zero(self):
-#         context = Context(traps=Flags.UNDERFLOW)
-#         with pytest.raises(Underflow):
-#             IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-#         context.clear_flags()
-#         context.clear_traps()
-#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
-#         assert result.is_zero()
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+# Test functions with an explicit context and a None context
+@pytest.fixture(params=[Context(), None])
+def context(request):
+    context = request.param
+    if context is None:
+        with local_context():
+            yield None
+    else:
+        with local_context(context) as context:
+            yield context
 
 
 class TestContext:
@@ -350,6 +263,730 @@ class TestContext:
         assert repr(c) == (
             '<Context rounding=ROUND_UP flags=<Flags.INEXACT: 16> tininess_after=True>'
         )
+
+    def test_set_handler_single(self):
+        context = Context()
+        context.set_handler(DivisionByZero, HandlerKind.NO_FLAG)
+        assert context.handler(DivisionByZero) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(DivideByZero) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(LogBZero) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(IEEEError) == (HandlerKind.DEFAULT, None)
+
+    def test_set_handler_list(self):
+        context = Context()
+        context.set_handler([DivideByZero, Inexact], HandlerKind.NO_FLAG)
+        assert context.handler(DivideByZero) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(Inexact) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(DivisionByZero) == (HandlerKind.DEFAULT, None)
+        assert context.handler(LogBZero) == (HandlerKind.DEFAULT, None)
+        assert context.handler(IEEEError) == (HandlerKind.DEFAULT, None)
+
+    def test_set_handler_tuple(self):
+        context = Context()
+        context.set_handler((DivideByZero, Inexact), HandlerKind.NO_FLAG)
+        context.set_handler(DivisionByZero, HandlerKind.MAYBE_FLAG)
+        assert context.handler(DivideByZero) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(Inexact) == (HandlerKind.NO_FLAG, None)
+        assert context.handler(DivisionByZero) == (HandlerKind.MAYBE_FLAG, None)
+        assert context.handler(LogBZero) == (HandlerKind.MAYBE_FLAG, None)
+        assert context.handler(IEEEError) == (HandlerKind.DEFAULT, None)
+
+    @pytest.mark.parametrize('exc', (ZeroDivisionError, (LogBZero, NotImplementedError)))
+    def test_set_handler_bad(self, exc):
+        context = Context()
+        with pytest.raises(TypeError) as e:
+            context.set_handler(exc, HandlerKind.DEFAULT)
+        assert 'of IEEEError' in str(e.value)
+
+    @pytest.mark.parametrize('kind', (2, None))
+    def test_set_handler_bad_kind(self, kind):
+        context = Context()
+        with pytest.raises(TypeError) as e:
+            context.set_handler(DivideByZero, 2)
+        assert 'HandlerKind instance' in str(e.value)
+
+    @pytest.mark.parametrize('kind', (
+        HandlerKind.NO_FLAG, HandlerKind.DEFAULT, HandlerKind.MAYBE_FLAG,
+        HandlerKind.RECORD_EXCEPTION, HandlerKind.ABRUPT_UNDERFLOW, HandlerKind.RAISE))
+    def test_set_handler_unwanted_handler(self, kind):
+        context = Context()
+        with pytest.raises(ValueError) as e:
+            context.set_handler(Underflow, kind, from_string)
+        assert 'handler given' in str(e.value)
+
+    @pytest.mark.parametrize('kind', (HandlerKind.SUBSTITUTE_VALUE,
+                                      HandlerKind.SUBSTITUTE_VALUE_XOR))
+    def test_set_handler_missing_handler(self, kind):
+        context = Context()
+        with pytest.raises(ValueError) as e:
+            context.set_handler(DivideByZero, kind)
+        assert 'handler not given' in str(e.value)
+
+    @pytest.mark.parametrize('exc', (Underflow, UnderflowExact, UnderflowInexact))
+    def test_set_handler_abrupt_underflow(self, exc):
+        context = Context()
+        context.set_handler(exc, HandlerKind.ABRUPT_UNDERFLOW)
+
+    @pytest.mark.parametrize('exc', (Overflow, Inexact, DivisionByZero, Invalid))
+    def test_set_handler_abrupt_underflow_bad(self, exc):
+        context = Context()
+        with pytest.raises(TypeError) as e:
+            context.set_handler(exc, HandlerKind.ABRUPT_UNDERFLOW)
+        assert 'of Underflow' in str(e.value)
+
+
+signs = [True, False]
+zeroes = [fmt.make_zero(sign) for sign in signs for fmt in all_IEEE_fmts]
+
+
+def divide_by_zero_testcase(dst_fmt, handler_class, zero):
+    lhs = random.choice(all_IEEE_fmts).make_one(random.choice(signs))
+    op_tuple = (OP_DIVIDE, lhs, zero)
+    result = dst_fmt.make_infinity(lhs.sign ^ zero.sign)
+    return result, DivideByZero, handler_class, op_tuple, partial(dst_fmt.divide, lhs, zero)
+
+
+def logb_zero_testcase(dst_fmt, handler_class, sign):
+    zero = dst_fmt.make_zero(sign)
+    op_tuple = (OP_LOGB, zero)
+    result = dst_fmt.make_infinity(True)
+    return result, LogBZero, handler_class, op_tuple, zero.logb
+
+
+div_by_zero_testcases = tuple(divide_by_zero_testcase(fmt, handler_class, zero)
+                              for fmt in all_IEEE_fmts
+                              for handler_class in (DivideByZero, DivisionByZero, IEEEError)
+                              for zero in zeroes)
+div_by_zero_testcases += tuple(logb_zero_testcase(fmt, handler_class, sign)
+                               for fmt in all_IEEE_fmts
+                               for handler_class in (LogBZero, DivisionByZero, IEEEError)
+                               for sign in signs)
+
+
+class TestDivisionByZero:
+
+    def test_general(self):
+        assert issubclass(DivisionByZero, IEEEError)
+        assert issubclass(DivisionByZero, ZeroDivisionError)
+
+    @pytest.mark.parametrize('testcase, kind', product(
+        div_by_zero_testcases,
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+    ))
+    def test_basic_kinds(self, testcase, kind, context):
+        answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, kind)
+
+        result = div_by_zero_func(context)
+
+        assert floats_equal(result, answer)
+        assert context.flags == 0 if kind == HandlerKind.NO_FLAG else Flags.DIV_BY_ZERO
+        if kind == HandlerKind.RECORD_EXCEPTION:
+            assert len(context.exceptions) == 1
+            exception = context.exceptions[0]
+            assert isinstance(exception, exc_class)
+            assert exception.op_tuple == op_tuple
+        else:
+            assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', div_by_zero_testcases)
+    def test_substitute_value(self, testcase, context):
+        answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_zero)
+
+        result = div_by_zero_func(context)
+
+        assert floats_equal(result, answer.fmt.make_zero(False))
+        assert context.flags == Flags.DIV_BY_ZERO
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', div_by_zero_testcases)
+    def test_substitute_value_xor(self, testcase, context):
+        answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_zero)
+
+        result = div_by_zero_func(context)
+
+        if op_tuple[0] == OP_DIVIDE:
+            assert floats_equal(result, answer.fmt.make_zero(answer.sign))
+        else:
+            assert floats_equal(result, answer)
+        assert context.flags == Flags.DIV_BY_ZERO
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('exc_class', (DivideByZero, DivisionByZero, IEEEError))
+    def test_abrupt_underflow(self, exc_class, context):
+        context = get_context() if context is None else context
+        with pytest.raises(TypeError) as e:
+            context.set_handler(exc_class, HandlerKind.ABRUPT_UNDERFLOW)
+
+        assert 'must be subclasses of Underflow' in str(e.value)
+
+    @pytest.mark.parametrize('testcase', div_by_zero_testcases)
+    def test_raise(self, testcase, context):
+        answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.RAISE)
+
+        with pytest.raises(exc_class) as e:
+            div_by_zero_func(context)
+
+        e = e.value
+        assert e.op_tuple == op_tuple
+        assert floats_equal(e.default_result, answer)
+        assert context.flags == Flags.DIV_BY_ZERO
+        assert not context.exceptions
+
+
+payloads = [1, 20, 300]
+no_sNaN_text_format = TextFormat(sNaN='')
+nibble_fmt = IntegerFormat(4, False)
+
+
+def random_sNaN(fmt):
+    return fmt.make_NaN(random.choice(signs), True, random.choice(payloads))
+
+
+def invalid_to_decimal_string(dst_fmt, index):
+    value = random_sNaN(dst_fmt)
+    sign = '-' if value.sign else ''
+    result = f'{sign}NaN0x{value.NaN_payload():x}'
+    op_tuple = (OP_TO_DECIMAL_STRING, value, -1)
+    handler_class = (InvalidToString, Invalid, IEEEError)[index]
+    return (result, InvalidToString, handler_class, op_tuple,
+            partial(value.to_decimal_string, -1, no_sNaN_text_format))
+
+
+def invalid_to_string(dst_fmt, index):
+    value = random_sNaN(dst_fmt)
+    sign = '-' if value.sign else ''
+    result = f'{sign}NaN0x{value.NaN_payload():x}'
+    op_tuple = (OP_TO_STRING, value)
+    handler_class = (InvalidToString, Invalid, IEEEError)[index]
+    return (result, InvalidToString, handler_class, op_tuple,
+            partial(value.to_string, no_sNaN_text_format))
+
+
+def invalid_convert(dst_fmt, index):
+    value = random_sNaN(random.choice(all_IEEE_fmts))
+    result = dst_fmt.make_NaN(value.sign, False, value.NaN_payload())
+    op_tuple = (OP_CONVERT, value)
+    handler_class = (SignallingNaNOperand, Invalid, IEEEError)[index]
+    return result, SignallingNaNOperand, handler_class, op_tuple, partial(dst_fmt.convert, value)
+
+
+def invalid_add(dst_fmt, index):
+    lhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).make_infinity(not lhs.sign)
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_ADD, lhs, rhs)
+    handler_class = (InvalidAdd, Invalid, IEEEError)[index]
+    return result, InvalidAdd, handler_class, op_tuple, partial(dst_fmt.add, lhs, rhs)
+
+
+def invalid_subtract(dst_fmt, index):
+    lhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).make_infinity(lhs.sign)
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_SUBTRACT, lhs, rhs)
+    handler_class = (InvalidAdd, Invalid, IEEEError)[index]
+    return result, InvalidAdd, handler_class, op_tuple, partial(dst_fmt.subtract, lhs, rhs)
+
+
+def invalid_multiply(dst_fmt, index):
+    zero = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
+    inf = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
+    lhs, rhs = random.choice(((zero, inf), (inf, zero)))
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_MULTIPLY, lhs, rhs)
+    handler_class = (InvalidMultiply, Invalid, IEEEError)[index]
+    return result, InvalidMultiply, handler_class, op_tuple, partial(dst_fmt.multiply, lhs, rhs)
+
+
+def invalid_divide_zero(dst_fmt, index):
+    lhs = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_DIVIDE, lhs, rhs)
+    handler_class = (InvalidDivide, Invalid, IEEEError)[index]
+    return result, InvalidDivide, handler_class, op_tuple, partial(dst_fmt.divide, lhs, rhs)
+
+
+def invalid_divide_inf(dst_fmt, index):
+    lhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_DIVIDE, lhs, rhs)
+    handler_class = (InvalidDivide, Invalid, IEEEError)[index]
+    return result, InvalidDivide, handler_class, op_tuple, partial(dst_fmt.divide, lhs, rhs)
+
+
+def invalid_sqrt(dst_fmt, index):
+    lhs = getattr(dst_fmt, random.choice(('make_one', 'make_infinity')))(True)
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_SQRT, lhs)
+    handler_class = (InvalidSqrt, Invalid, IEEEError)[index]
+    return result, InvalidSqrt, handler_class, op_tuple, partial(dst_fmt.sqrt, lhs)
+
+def invalid_fma(dst_fmt, index):
+    zero = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
+    inf = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
+    lhs, rhs = random.choice(((zero, inf), (inf, zero)))
+    addend = random.choice(all_IEEE_fmts).make_one(random.choice(signs))
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (OP_FMA, lhs, rhs, addend)
+    handler_class = (InvalidFMA, Invalid, IEEEError)[index]
+    return result, InvalidFMA, handler_class, op_tuple, partial(dst_fmt.fma, lhs, rhs, addend)
+
+
+def invalid_remainder(dst_fmt, index):
+    if random.choice((0,1)):
+        lhs = dst_fmt.make_infinity(random.choice(signs))
+        rhs = dst_fmt.make_one(random.choice(signs))
+    else:
+        lhs = dst_fmt.make_one(random.choice(signs))
+        rhs = dst_fmt.make_zero(random.choice(signs))
+    op, op_name = random.choice(((lhs.remainder, OP_REMAINDER), (lhs.fmod, OP_FMOD)))
+    result = dst_fmt.make_NaN(False, False, 0)
+    op_tuple = (op_name, lhs, rhs)
+    handler_class = (InvalidRemainder, Invalid, IEEEError)[index]
+    return result, InvalidRemainder, handler_class, op_tuple, partial(op, rhs)
+
+
+def invalid_logb_integral(dst_fmt, index):
+    kind = random.choice(range(3))
+    if kind == 0:
+        value = dst_fmt.make_NaN(False, False, 0)
+        result = dst_fmt.logb_NaN
+    elif kind == 1:
+        value = dst_fmt.make_zero(random.choice(signs))
+        result = dst_fmt.logb_zero
+    else:
+        value = dst_fmt.make_infinity(random.choice(signs))
+        result = dst_fmt.logb_inf
+    op_tuple = (OP_LOGB_INTEGRAL, value)
+    handler_class = (InvalidLogBIntegral, Invalid, IEEEError)[index]
+    return result, InvalidLogBIntegral, handler_class, op_tuple, value.logb_integral
+
+
+def invalid_comparison(dst_fmt, index):
+    lhs = dst_fmt.make_zero(random.choice(signs))
+    rhs = dst_fmt.make_NaN(False, False, 0)
+    lhs, rhs = random.choice(((lhs, rhs), (rhs, lhs)))
+    result = Compare.UNORDERED
+    op_tuple = (OP_COMPARE, lhs, rhs)
+    handler_class = (InvalidComparison, Invalid, IEEEError)[index]
+    return result, InvalidComparison, handler_class, op_tuple, partial(lhs.compare_signal, rhs)
+
+
+def invalid_convert_to_integer(kind, index):
+    dst_fmt = random.choice(all_IEEE_fmts)
+    if kind == 0:
+        value = dst_fmt.make_NaN(False, False, 0)
+        result = 0
+    elif kind == 1:
+        value = dst_fmt.make_one(True)
+        result = 0
+    elif kind == 2:
+        value = dst_fmt.make_infinity(False)
+        result = 15
+    else:
+        value = dst_fmt.make_real(False, 0, 16, None, Context())
+        result = 15
+    op_tuple = (OP_CONVERT_TO_INTEGER, value)
+    handler_class = (InvalidConvertToInteger, Invalid, IEEEError)[index]
+    return (result, InvalidConvertToInteger, handler_class, op_tuple,
+            partial(value.convert_to_integer, nibble_fmt, ROUND_DOWN))
+
+
+invalid_testcase_funcs = (invalid_to_decimal_string, invalid_to_string, invalid_convert,
+                          invalid_add, invalid_subtract, invalid_multiply, invalid_divide_zero,
+                          invalid_divide_inf, invalid_sqrt, invalid_fma, invalid_remainder,
+                          invalid_logb_integral, invalid_comparison)
+
+invalid_testcases = tuple(testcase_func(fmt, index)
+                          for testcase_func in invalid_testcase_funcs
+                          for index in range(3)
+                          for fmt in all_IEEE_fmts)
+invalid_testcases += tuple(invalid_convert_to_integer(kind, index)
+                           for kind in range(4)
+                           for index in range(3))
+
+
+class TestInvalid:
+
+    @pytest.mark.parametrize('testcase, kind', product(
+        invalid_testcases,
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+    ))
+    def test_basic_kinds(self, testcase, kind, context):
+        answer, exc_class, handler_class, op_tuple, invalid_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, kind)
+
+        result = invalid_func(context)
+        assert values_equal(result, answer)
+        assert context.flags == 0 if kind == HandlerKind.NO_FLAG else Flags.INVALID
+        if kind == HandlerKind.RECORD_EXCEPTION:
+            assert len(context.exceptions) == 1
+            exception = context.exceptions[0]
+            assert isinstance(exception, exc_class)
+            assert exception.op_tuple == op_tuple
+        else:
+            assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', invalid_testcases)
+    def test_substitute_value(self, testcase, context):
+        answer, exc_class, handler_class, op_tuple, invalid_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_one)
+
+        result = invalid_func(context)
+        if isinstance(answer, str):
+            assert result == '+1.0'
+        elif isinstance(result, int):
+            assert result == 1
+        else:
+            assert floats_equal(result, answer.fmt.make_one(False))
+        assert context.flags == Flags.INVALID
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', invalid_testcases)
+    def test_substitute_value_xor(self, testcase, context):
+        answer, exc_class, handler_class, op_tuple, invalid_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
+
+        result = invalid_func(context)
+        # Ignored unless one of thse
+        if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
+            sign = op_tuple[1].sign ^ op_tuple[2].sign
+            assert floats_equal(result, answer.fmt.make_one(sign))
+        else:
+            assert values_equal(result, answer)
+        assert context.flags == Flags.INVALID
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', invalid_testcases)
+    def test_abrupt_underflow(self, testcase, context):
+        handler_class = testcase[2]
+        context = get_context() if context is None else context
+        with pytest.raises(TypeError) as e:
+            context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
+
+        assert 'must be subclasses of Underflow' in str(e.value)
+
+    @pytest.mark.parametrize('testcase', invalid_testcases)
+    def test_raise(self, testcase, context):
+        answer, exc_class, handler_class, op_tuple, invalid_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.RAISE)
+
+        with pytest.raises(exc_class) as e:
+            invalid_func(context)
+
+        e = e.value
+        assert e.op_tuple == op_tuple
+        assert values_equal(e.default_result, answer)
+        assert context.flags == Flags.INVALID
+        assert not context.exceptions
+
+
+def inexact_divide(dst_fmt, index):
+    lhs = random.choice(all_IEEE_fmts).make_one(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).make_real(False, 0, 3, None, Context())
+    op_tuple = (OP_DIVIDE, lhs, rhs)
+    handler_class = (Inexact, IEEEError)[index]
+    return Inexact, handler_class, op_tuple, partial(dst_fmt.divide, lhs, rhs)
+
+
+def inexact_from_string(dst_fmt, index):
+    lhs = '0.2'
+    op_tuple = (OP_FROM_STRING, lhs)
+    handler_class = (Inexact, IEEEError)[index]
+    return Inexact, handler_class, op_tuple, partial(dst_fmt.from_string, lhs)
+
+
+def inexact_sqrt(dst_fmt, index):
+    lhs = random.choice(all_IEEE_fmts).make_real(False, 0, 2, None, Context())
+    op_tuple = (OP_SQRT, lhs)
+    handler_class = (Inexact, IEEEError)[index]
+    return Inexact, handler_class, op_tuple, partial(dst_fmt.sqrt, lhs)
+
+
+def inexact_round_to_integral(dst_fmt, index):
+    lhs = dst_fmt.from_string('0.5')
+    op_tuple = (OP_ROUND_TO_INTEGRAL_EXACT, lhs)
+    handler_class = (Inexact, IEEEError)[index]
+    return Inexact, handler_class, op_tuple, lhs.round_to_integral_exact
+
+
+def inexact_convert_to_integer(dst_fmt, index):
+    lhs = dst_fmt.from_string('0.5')
+    op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, lhs)
+    handler_class = (Inexact, IEEEError)[index]
+    return Inexact, handler_class, op_tuple, partial(lhs.convert_to_integer_exact,
+                                                     nibble_fmt, ROUND_DOWN)
+
+
+def inexact_to_decimal_string(dst_fmt, index):
+    lhs = dst_fmt.from_string('0x1p-14')
+    op_tuple = (OP_TO_DECIMAL_STRING, lhs, 2)
+    handler_class = (Inexact, IEEEError)[index]
+    return Inexact, handler_class, op_tuple, partial(lhs.to_decimal_string, 2, None)
+
+
+
+inexact_testcase_funcs = (inexact_divide, inexact_from_string, inexact_sqrt,
+                          inexact_round_to_integral, inexact_convert_to_integer,
+                          inexact_to_decimal_string)
+
+inexact_testcases = tuple(testcase_func(fmt, index)
+                          for testcase_func in inexact_testcase_funcs
+                          for index in range(2)
+                          for fmt in all_IEEE_fmts)
+
+class TestInexact:
+
+    @pytest.mark.parametrize('testcase, kind', product(
+        inexact_testcases,
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+    ))
+    def test_basic_kinds(self, testcase, kind, context):
+        exc_class, handler_class, op_tuple, inexact_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, kind)
+
+        inexact_func(context)
+        assert context.flags == 0 if kind == HandlerKind.NO_FLAG else Flags.INEXACT
+        if kind == HandlerKind.RECORD_EXCEPTION:
+            assert len(context.exceptions) == 1
+            exception = context.exceptions[0]
+            assert isinstance(exception, exc_class)
+            assert exception.op_tuple == op_tuple
+        else:
+            assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', inexact_testcases)
+    def test_substitute_value(self, testcase, context):
+        exc_class, handler_class, op_tuple, inexact_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_one)
+
+        result = inexact_func(context)
+        if isinstance(result, str):
+            assert result == '+1.0'
+        elif isinstance(result, int):
+            assert result == 1
+        else:
+            assert floats_equal(result, result.fmt.make_one(False))
+        assert context.flags == Flags.INEXACT
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', inexact_testcases)
+    def test_substitute_value_xor(self, testcase, context):
+        exc_class, handler_class, op_tuple, inexact_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
+
+        result = inexact_func(context)
+        # Ignored unless one of thse
+        if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
+            sign = op_tuple[1].sign ^ op_tuple[2].sign
+            assert floats_equal(result, result.fmt.make_one(sign))
+        assert context.flags == Flags.INEXACT
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', inexact_testcases)
+    def test_abrupt_underflow(self, testcase, context):
+        handler_class = testcase[1]
+        context = get_context() if context is None else context
+        with pytest.raises(TypeError) as e:
+            context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
+
+        assert 'must be subclasses of Underflow' in str(e.value)
+
+    @pytest.mark.parametrize('testcase', inexact_testcases)
+    def test_raise(self, testcase, context):
+        exc_class, handler_class, op_tuple, inexact_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.RAISE)
+
+        with pytest.raises(exc_class) as e:
+            inexact_func(context)
+
+        e = e.value
+        assert e.op_tuple == op_tuple
+        assert context.flags == Flags.INEXACT
+        assert not context.exceptions
+
+
+def overflow_multiply(dst_fmt, index):
+    lhs = dst_fmt.make_largest_finite(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).make_real(False, 0, 2, None, Context())
+    op_tuple = (OP_MULTIPLY, lhs, rhs)
+    handler_class = (Overflow, IEEEError)[index]
+    return Overflow, handler_class, op_tuple, partial(dst_fmt.multiply, lhs, rhs)
+
+
+def overflow_from_string(dst_fmt, index):
+    lhs = '1e200000'
+    op_tuple = (OP_FROM_STRING, lhs)
+    handler_class = (Overflow, IEEEError)[index]
+    return Overflow, handler_class, op_tuple, partial(dst_fmt.from_string, lhs)
+
+
+overflow_testcase_funcs = (overflow_multiply, overflow_from_string)
+
+overflow_testcases = tuple(testcase_func(fmt, index)
+                           for testcase_func in overflow_testcase_funcs
+                           for index in range(2)
+                           for fmt in all_IEEE_fmts)
+
+class TestOverflow:
+
+    @pytest.mark.parametrize('testcase, kind, inexact_kind', product(
+        overflow_testcases,
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+    ))
+    def test_basic_kinds(self, testcase, kind, inexact_kind, context):
+        exc_class, handler_class, op_tuple, overflow_func = testcase
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, kind)
+        context.set_handler(Inexact, inexact_kind)
+
+        overflow_func(context)
+
+        flags = 0 if kind == HandlerKind.NO_FLAG else Flags.OVERFLOW
+        flags |= 0 if inexact_kind == HandlerKind.NO_FLAG else Flags.INEXACT
+        assert context.flags == flags
+
+        record_count = ((kind == HandlerKind.RECORD_EXCEPTION) +
+                        (inexact_kind == HandlerKind.RECORD_EXCEPTION))
+        if record_count:
+            assert len(context.exceptions) == record_count
+            if kind == HandlerKind.RECORD_EXCEPTION:
+                assert isinstance(context.exceptions[0], exc_class)
+            if inexact_kind == HandlerKind.RECORD_EXCEPTION:
+                assert isinstance(context.exceptions[-1], Inexact)
+            assert (exception.op_tuple == op_tuple for exception in context.exceptions)
+        else:
+            assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase, inexact', product(overflow_testcases, (True, False)))
+    def test_substitute_value(self, testcase, inexact, context):
+        exc_class, handler_class, op_tuple, overflow_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_one)
+        if inexact:
+            context.set_handler(Inexact, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_zero)
+
+        result = overflow_func(context)
+        if inexact:
+            assert floats_equal(result, result.fmt.make_zero(False))
+        else:
+            assert floats_equal(result, result.fmt.make_one(False))
+        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', overflow_testcases)
+    def test_substitute_value_xor(self, testcase, context):
+        exc_class, handler_class, op_tuple, overflow_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
+
+        result = overflow_func(context)
+        # Ignored unless one of thse
+        if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
+            sign = op_tuple[1].sign ^ op_tuple[2].sign
+            assert floats_equal(result, result.fmt.make_one(sign))
+        else:
+            assert floats_equal(result, result.fmt.make_infinity(False))
+        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', overflow_testcases)
+    def test_abrupt_underflow(self, testcase, context):
+        handler_class = testcase[1]
+        context = get_context() if context is None else context
+        with pytest.raises(TypeError) as e:
+            context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
+
+        assert 'must be subclasses of Underflow' in str(e.value)
+
+    @pytest.mark.parametrize('testcase', overflow_testcases)
+    def test_raise(self, testcase, context):
+        exc_class, handler_class, op_tuple, overflow_func = testcase
+
+        context = get_context() if context is None else context
+        context.set_handler(handler_class, HandlerKind.RAISE)
+
+        with pytest.raises(exc_class) as e:
+            overflow_func(context)
+
+        e = e.value
+        assert e.op_tuple == op_tuple
+        assert context.flags == Flags.OVERFLOW   # Inexact has not been signalled
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', overflow_testcases)
+    def test_raise_inexact(self, testcase, context):
+        exc_class, handler_class, op_tuple, overflow_func = testcase
+        # Inexact has the raise
+        exc_class = Inexact
+
+        context = get_context() if context is None else context
+        context.set_handler(exc_class, HandlerKind.RAISE)
+
+        with pytest.raises(exc_class) as e:
+            overflow_func(context)
+
+        e = e.value
+        assert e.op_tuple == op_tuple
+        assert context.flags == Flags.OVERFLOW | Flags.INEXACT
+        assert not context.exceptions
+
+#     def test_underflow_to_non_zero(self):
+#         context = Context(traps=Flags.UNDERFLOW)
+#         assert issubclass(Underflow, SubnormalInexact)
+#         with pytest.raises(Underflow):
+#             IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
+#         assert result.is_subnormal()
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+
+#     def test_underflow_to_zero(self):
+#         context = Context(traps=Flags.UNDERFLOW)
+#         with pytest.raises(Underflow):
+#             IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
+#         assert result.is_zero()
+#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
 
 
 class TestBinaryFormat:
@@ -919,7 +1556,7 @@ class TestUnaryOps:
         if precision <= 0 and value.is_finite():
             # Confirm the round-trip: reading in the decimal value gives the same as the
             # hex value
-            context.clear_flags()
+            context.flags = 0
             dec_value = fmt.from_string(answer, context)
             assert floats_equal(dec_value, value)
             assert context.flags == status
@@ -979,7 +1616,7 @@ class TestUnaryOps:
         assert context.flags == status
 
         # Now test logb_integral
-        context.clear_flags()
+        context.flags = 0
         result_integral = in_value.logb_integral(context)
         if result.is_finite():
             value = result.significand >> -result.exponent_int()
@@ -1015,7 +1652,7 @@ class TestUnaryOps:
         assert context.flags == status
 
         # Now for next_down
-        context.clear_flags()
+        context.flags = 0
         in_value = in_value.copy_negate()
         answer = answer.copy_negate()
         result = in_value.next_down(context)

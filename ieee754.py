@@ -16,14 +16,25 @@ from struct import Struct
 import attr
 
 __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
-           'Flags', 'Compare',
+           'Flags', 'Compare', 'HandlerKind',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
-           'ArithmeticSignal', 'InvalidSignal', 'DivisionByZeroSignal', 'InexactSignal',
-           'OverflowSignal', 'UnderflowSignal',
+           'IEEEError', 'Invalid', 'DivisionByZero', 'Inexact', 'Overflow', 'Underflow',
+           'SignallingNaNOperand', 'InvalidAdd', 'InvalidMultiply', 'InvalidDivide',
+           'InvalidSqrt', 'InvalidFMA', 'InvalidRemainder', 'InvalidLogBIntegral',
+           'InvalidConvertToInteger', 'InvalidComparison', 'InvalidToString',
+           'DivideByZero', 'LogBZero', 'UnderflowExact', 'UnderflowInexact',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
+            'OP_ADD', 'OP_SUBTRACT', 'OP_MULTIPLY', 'OP_DIVIDE', 'OP_FMA', 'OP_SQRT',
+           'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE', 'OP_FROM_STRING',
+           'OP_REMAINDER', 'OP_FMOD', 'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
+           'OP_CONVERT', 'OP_CONVERT_TO_INTEGER', 'OP_CONVERT_TO_INTEGER_EXACT',
+           'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT',
+           'OP_TO_STRING', 'OP_TO_DECIMAL_STRING',
+           'OP_FROM_INT', 'OP_MAX', 'OP_MAX_NUM', 'OP_MIN', 'OP_MIN_NUM',
+           'OP_MAX_MAG_NUM', 'OP_MAX_MAG', 'OP_MIN_MAG_NUM', 'OP_MIN_MAG',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
-           'x87extended', 'x87double', 'x87single',)
+           'x87extended', 'x87double', 'x87single')
 
 
 # Rounding modes
@@ -52,13 +63,16 @@ OP_NEXT_UP = 'next_up'
 OP_NEXT_DOWN = 'next_down'
 OP_COMPARE = 'compare'
 OP_CONVERT = 'convert'
+OP_ROUND_TO_INTEGRAL = 'round_to_integral'
+OP_ROUND_TO_INTEGRAL_EXACT = 'round_to_integral_exact'
 OP_CONVERT_TO_INTEGER = 'convert_to_integer'
+OP_CONVERT_TO_INTEGER_EXACT = 'convert_to_integer_exact'
 OP_FROM_STRING = 'from_string'
 OP_TO_STRING = 'to_string'
 OP_TO_DECIMAL_STRING = 'to_decimal_string'
 OP_FROM_INT = 'from_int'
 OP_MAX = 'max'
-OP_MAX_NUMBER = 'max_num'
+OP_MAX_NUM = 'max_num'
 OP_MIN = 'min'
 OP_MIN_NUM = 'min_num'
 OP_MAX_MAG_NUM = 'max_mag_num'
@@ -144,7 +158,7 @@ class TextFormat:
     def format_non_finite(self, value, op_tuple, context):
         '''Returns the output text for infinities and NaNs.
 
-        Signals SignallingNaNOperand if a signalling NaN is output as a quiet NaN.'''
+        Signals InvalidToString if a signalling NaN is output as a quiet NaN.'''
         lost_sNaN = False
         # Infinity
         if value.is_infinite():
@@ -164,7 +178,7 @@ class TextFormat:
 
         result = self.leading_sign(value) + special
         if lost_sNaN:
-            result = context.signal(SignallingNaNOperand(op_tuple, result))
+            result = InvalidToString(op_tuple, result).signal(context)
         return result
 
     def format_decimal(self, sign, exponent, digits, precision=None):
@@ -257,199 +271,299 @@ class TextFormat:
 # Signals
 #
 
-class ArithmeticSignal(ArithmeticError):
+class IEEEError(ArithmeticError):
     '''All arithmetic exceptions signalled by this moduile subclass from this.
 
-    Each signal expects two arguments, as if declared as so:
+    IEEEError expects two arguments:
 
-         def __init__(self, op_tuple, data):
+         def __init__(self, op_tuple, result):
 
-    op_tuple indicates the operation naem and operands causing the signal, data is
-    exception-specific information from which a result can be derived.
+    op_tuple is a tuple of the operation name and operands causing the signal. result is
+    the result in the destination format that default exception handling should deliver.
+
+    Derived classes may initialize differently but must initialize IEEEError in this
+    way.
+
+    Exceptions derived from IEEEError must have a linear inheritance from it and
+    through the first base class if an exception has multiple base classes.  See, for
+    example, DivisionByZero.
     '''
+
+    flag_to_raise = NotImplementedError
 
     @property
     def op_tuple(self):
         return self.args[0]
 
     @property
-    def data(self):
+    def default_result(self):
         return self.args[1]
 
+    def is_multiply_divide(self):
+        return self.op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}
+
+    def signal(self, context):
+        '''Call to signal an exception.  This routine handles the exception according to
+        default or alternative exception handling as specified in the context.'''
+        kind, handler = context.handler(self.__class__)
+        result = self.default_result
+
+        if kind != HandlerKind.NO_FLAG:
+            if kind == HandlerKind.ABRUPT_UNDERFLOW:
+                result = result.fmt.make_underflow_value(context.rounding, result.sign, True)
+                context.flags |= Flags.INEXACT
+                return Inexact(self.op_tuple, result).signal(context)
+
+            # flag_to_raise can be zero for exact underflow
+            context.flags |= self.flag_to_raise
+            if kind == HandlerKind.RECORD_EXCEPTION and self.flag_to_raise:
+                context.exceptions.append(self)
+
+        if kind == HandlerKind.RAISE:
+            raise self
+        if kind == HandlerKind.SUBSTITUTE_VALUE:
+            result = handler(self, context)
+        elif kind == HandlerKind.SUBSTITUTE_VALUE_XOR and self.is_multiply_divide():
+            result = handler(self, context)
+            if not result.is_NaN():
+                result = result.set_sign(self.op_tuple[1].sign ^ self.op_tuple[2].sign)
+
+        return result
+
 
 #
-# InvalidSignal - many sub-exceptions
+# Invalid - many sub-exceptions
 #
 
-class InvalidSignal(ArithmeticSignal):
+class Invalid(IEEEError):
     '''Invalid operation base class.  Signalled when an operation has no usefully defineable
     result.  The default result is a quiet NaN.
     '''
 
-    def default_handler(self, context):
-        '''For operations with floating-point results, the default hanlder provides a quiet
-        NaN result that should provide some diagnostic information.
-        '''
-        context.flags |= Flags.INVALID
-        # If self.data is a format a canonical quiet NaN of that format is returned
-        result = self.data
+    flag_to_raise = Flags.INVALID
+
+    def __init__(self, op_tuple, result):
+        '''If result is a BinaryFormat its canonical quiet NaN is used.'''
         if isinstance(result, BinaryFormat):
             result = result.make_NaN(False, False, 0)
-        return result
+        super().__init__(op_tuple, result)
 
 
-class SignallingNaNOperand(InvalidSignal):
+class SignallingNaNOperand(Invalid):
     '''Signalled when an operand is a signalling NaN.'''
 
 
-class InvalidAdd(InvalidSignal):
+class InvalidAdd(Invalid):
     '''Signalled when adding two differently-signed infinities or subtracting two like-signed
     infinities.'''
 
 
-class InvalidMultiply(InvalidSignal):
+class InvalidMultiply(Invalid):
     '''Signalled when multiplying a zero and an infinity.'''
 
 
-class InvalidDivide(InvalidSignal):
+class InvalidDivide(Invalid):
     '''Signalled when dividing two zeros or two infinities.'''
 
 
-class InvalidFMA(InvalidSignal):
+class InvalidFMA(Invalid):
     '''Signalled when an FMA operation multiplies a zero and an infinity.'''
 
 
-class InvalidRemainder(InvalidSignal):
+class InvalidRemainder(Invalid):
     '''Signalled by remainder(x, y) when x is infinite, or y is zero, and neither is a NaN.'''
 
 
-class InvalidSqrt(InvalidSignal):
+class InvalidSqrt(Invalid):
     '''Signalled if the sqrt operand is less than zero.'''
 
 
-class InvalidToString(InvalidSignal):
+class InvalidToString(Invalid):
     '''Signalled if to_string() converts a singalling NaN to a quiet NaN.'''
 
 
-class InvalidConvertToInteger(InvalidSignal):
+class InvalidConvertToInteger(Invalid):
     '''Signalled if the result cannot be represented in the destination format.'''
 
 
-class InvalidComparison(InvalidSignal):
+class InvalidComparison(Invalid):
     '''Signalled on comparison of unordered operands with unordered signalling predicates.'''
 
 
-class InvalidLogBIntegral(InvalidSignal):
+class InvalidLogBIntegral(Invalid):
     '''Singalled when the operand of logb_integral is a zero, infinity or NaN.'''
 
 
 #
-# DivisionByZeroSignal - sub-exceptions are DivisionByZero, LogBZero
+# DivisionByZero - sub-exceptions are DivisionByZero, LogBZero
 #
 
-class DivisionByZeroSignal(ArithmeticSignal, ZeroDivisionError):
+class DivisionByZero(IEEEError, ZeroDivisionError):
     '''Base class of division by zero errors.  Division by zero is signalled when an operation
     on finite operands delivers an exact infinite result.'''
 
-    def default_handler(self, context):
-        '''Raises the flag, and returns a suitably-signed infinity.'''
-        context.flags |= Flags.DIV_BY_ZERO
-        return self.data
+    flag_to_raise = Flags.DIV_BY_ZERO
 
 
-class DivisionByZero(DivisionByZeroSignal):
-    '''Division of a finite value by a zero.'''
+class DivideByZero(DivisionByZero):
+    '''A divide operation with zero divisor.'''
 
 
-class LogBZero(DivisionByZeroSignal):
+class LogBZero(DivisionByZero):
     '''LogB on a zero.'''
 
 
 #
-# InexactSignal.  Not subclassed.
+# Inexact.  Not subclassed.
 #
 
-class InexactSignal(ArithmeticSignal):
+class Inexact(IEEEError):
     '''Signalled when the infinitely precise result cannot be represented.'''
 
-
-    def default_handler(self, context):
-        '''An operation delivering a numerical result that signals no other exception shall
-        signal INEXACT if its rounded result differs from the infinitely precise result.'''
-        context.flags |= Flags.INEXACT
-        return self.data
+    flag_to_raise = Flags.INEXACT
 
 
 #
-# OverflowSignal.  Not subclassed.
+# Overflow.  Not subclassed.
 #
 
-class OverflowSignal(ArithmeticSignal):
-    '''Signalled when, after rounding, the result would have an exponent exceeding e_max.'''
+class Overflow(IEEEError):
+    '''Signalled when, after rounding, the result would have an exponent exceeding e_max.  The
+       default result is either infinity, or the finite value of the greatest magnitude,
+       depending on the rounding mode and sign.'''
 
-    def default_handler(self, context):
-        '''Deafult exception handling flags overflow, and delivers either infinity or the finite
-        value of greatest magnitude, of the correct sign, depending on the rounding mode.
-        It then signals inexact.
-        '''
-        context.flags |= Flags.OVERFLOW
-        dest_fmt, sign = self.data
-        result = dest_fmt.make_overflow_value(context.rounding, sign)
-        return context.signal(InexactSignal(self.op_tuple, result))
+    flag_to_raise = Flags.OVERFLOW
+
+    def __init__(self, op_tuple, fmt, rounding, sign):
+        super().__init__(op_tuple, fmt.make_overflow_value(rounding, sign))
+
+    def signal(self, context):
+        '''Call to signal the overflow exception.  Defer to the base class for standard handling;
+        then signal inexact.'''
+        result = super().signal(context)
+        return Inexact(self.op_tuple, result).signal(context)
 
 
 #
-# UnderflowSignal.  Not subclassed.
+# Underflow - sub-exceptions are UnderflowExact and UnderflowInexact.
 #
 
-class UnderflowSignal(ArithmeticSignal):
+class Underflow(IEEEError):
     '''Signalled when a tiny non-zero result is detected.  Tininess means the result computed
     as though with unbounded exponent range woud lie strictly between ±2^e_min.  Tininess
     can be detected before or after rounding.'''
 
-    def default_handler(self, context):
-        '''Under default handling, if the rounded result is inexact, the underflow flag is raised
-        and inexact is signalled, otherwise neither happens.
-        '''
-        result, is_inexact = self.data
-        if not is_inexact:
-            return result
-        context.flags |= Flags.UNDERFLOW
-        return context.signal(InexactSignal(self.op_tuple, result))
+
+class UnderflowExact(Underflow):
+    '''An exact underflow.  By default, raises no flag.'''
+
+    flag_to_raise = 0
+
+
+class UnderflowInexact(Underflow):
+    '''An inexact underflow.'''
+
+    flag_to_raise = Flags.UNDERFLOW
+
+    def signal(self, context):
+        '''Signal an inexact underflow.  Defer to the base class for standard handling; then
+        signal inexact.'''
+        result = super().signal(context)
+        return Inexact(self.op_tuple, result).signal(context)
+
+
+# Alternate exception handling
+
+class HandlerKind(IntEnum):
+    '''Indicates how a singalled exception should be handled.'''
+    # Default exception handling as per IEEE-754.  This returns a default value, and
+    # except possibly for underflow, raises a flag
+    DEFAULT = 0
+
+    # Default exception handling without raising the associated flag
+    NO_FLAG = 1
+
+    # Default exception handling but raise the associated flag if not expensive.
+    MAYBE_FLAG = 2
+
+    # Default exception handling but record the exception if that raises the associated flag
+    RECORD_EXCEPTION = 3
+
+    # Default exception handling but substitute a value for the default result.  A handler
+    # must be provided with signature
+    #
+    #    def handler(exception, context):
+    #
+    # The value returned by the handler will become the operation's result.  The behaviour
+    # is undefined if this is not a Binary object with format that of
+    # exception.default_result.
+    SUBSTITUTE_VALUE = 4
+
+    # For exceptions arising from multiply and divide operations: default exception
+    # handling but substitute a value for the default result, giving it the sign bit the
+    # XOR of the signs of the operands if it is not a NaN.  A handler must be provided as
+    # described for SUBSTITUTE_VALUE.
+    SUBSTITUTE_VALUE_XOR = 5
+
+    # When underflow is signalled, replace the default result with a zero of the same
+    # sign, or a minimum *normal* rounded result of the same sign, raise the underflow
+    # flag, and signal the inexact exception.
+    ABRUPT_UNDERFLOW = 6
+
+    # Raise the exception immediately
+    RAISE = 7
+
+    def requires_handler(self):
+        return self in {HandlerKind.SUBSTITUTE_VALUE, HandlerKind.SUBSTITUTE_VALUE_XOR}
 
 
 class Context:
     '''The execution context for operations.  Carries the rounding mode, status flags,
     whether tininess is detected before or after rounding, and traps.'''
 
-    __slots__ = ('rounding', 'flags', 'tininess_after')
+    __slots__ = ('rounding', 'flags', 'tininess_after', 'handlers', 'exceptions')
 
     def __init__(self, *, rounding=None, flags=None, tininess_after=True):
         '''rounding is one of the ROUND_ constants and controls rounding of inexact results.'''
         self.rounding = rounding or ROUND_HALF_EVEN
         self.flags = flags or 0
         self.tininess_after = tininess_after
-
-    def clear_flags(self):
-        self.flags = 0
+        self.handlers = {}
+        self.exceptions = []
 
     def copy(self):
-        '''Return a copy of the context.'''
-        return copy.copy(self)
+        '''Return a copy of the context.  We need to do a deep copy because handlers is a
+        dictionary and handlers a list.'''
+        return copy.deepcopy(self)
 
-    def set_flags(self, flags):
-        self.flags |= flags
+    def set_handler(self, exc_classes, kind, handler=None):
+        classes = (exc_classes, ) if not isinstance(exc_classes, (tuple, list)) else exc_classes
+        base = Underflow if kind == HandlerKind.ABRUPT_UNDERFLOW else IEEEError
+        if not all (issubclass(exc_class, base) for exc_class in classes):
+            raise TypeError(f'all exception classes must be subclasses of {base.__name__}')
+        if not isinstance(kind, HandlerKind):
+            raise TypeError('kind must be a HandlerKind instance')
+        if (handler is not None) ^ kind.requires_handler():
+            if handler is None:
+                raise ValueError(f'handler not given for kind {kind!r}')
+            else:
+                raise ValueError(f'handler given for kind {kind!r}')
+        pair = (kind, handler)
+        for exc_class in classes:
+            self.handlers[exc_class] = pair
 
-    def signal(self, signal):
-        assert isinstance(signal, ArithmeticSignal)
+    def handler(self, exc_class):
+        '''Return a (handler_kind, callback) pair for a signal class.'''
+        if not issubclass(exc_class, IEEEError):
+            raise TypeError('exception class must be a subclass of IEEEError')
 
-        # TODO: implement alternative handlers
-        return signal.default_handler(self)
+        for cls in exc_class.mro():
+            if issubclass(cls, IEEEError):
+                handler = self.handlers.get(cls)
+                if handler:
+                    return handler
 
-    def underflow_to_zero(self, dest_fmt, op_tuple, sign):
-        '''Return the value to deliver when a calculation underflows to zero.'''
-        result = dest_fmt.make_underflow_to_zero_value(self.rounding, sign)
-        return self.signal(UnderflowSignal(op_tuple, (result, True)))
+        return HandlerKind.DEFAULT, None
 
     def round_to_nearest(self):
         '''Return True if the rounding mode rounds to nearest (ignoring ties).'''
@@ -643,9 +757,12 @@ class BinaryFormat(NamedTuple):
         '''Returns the finite number of maximal magnitude with the given sign.'''
         return Binary(self, sign, self.e_max + self.e_bias, self.max_significand)
 
-    def make_smallest_finite(self, sign):
-        '''Returns the finite number of maximal magnitude with the given sign.'''
-        return Binary(self, sign, 1, 1)
+    def make_smallest_finite(self, sign, force_normal):
+        '''Returns the finite number of maximal magnitude with the given sign.  This is the
+        smallest subnormal number, unless force_normal is True, in which case it is the
+        smallest normal.
+        '''
+        return Binary(self, sign, 1, self.int_bit if force_normal else 1)
 
     def make_NaN(self, sign, is_signalling, payload):
         '''Return a NaN with the given sign and payload and signalling status.
@@ -670,11 +787,11 @@ class BinaryFormat(NamedTuple):
             return self.make_infinity(sign)
         return self.make_largest_finite(sign)
 
-    def make_underflow_to_zero_value(self, rounding, sign):
+    def make_underflow_value(self, rounding, sign, force_normal):
         '''Returns the value to deliver when a calculation can be determined, typically early, to
         underflow to zero with the given sign.  rounding is the rounding mode to apply.'''
         if round_up(rounding, LF_LESS_THAN_HALF, sign, False):
-            return self.make_smallest_finite(sign)
+            return self.make_smallest_finite(sign, force_normal)
         else:
             return self.make_zero(sign)
 
@@ -695,7 +812,7 @@ class BinaryFormat(NamedTuple):
 
         result = self.make_NaN(NaN.sign, False, NaN.NaN_payload())
         if any(NaN.is_signalling() for NaN in NaNs):
-            result = context.signal(SignallingNaNOperand(op_tuple, result))
+            result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
     def make_real(self, sign, exponent, significand, op_tuple, context=None):
@@ -738,7 +855,7 @@ class BinaryFormat(NamedTuple):
 
         # If the new exponent would be too big, then signal overflow.
         if exponent > self.e_max:
-            return context.signal(OverflowSignal(op_tuple, (self, sign)))
+            return Overflow(op_tuple, self, context.rounding, sign).signal(context)
 
         if context.tininess_after:
             is_tiny = significand < self.int_bit
@@ -747,9 +864,10 @@ class BinaryFormat(NamedTuple):
 
         result = Binary(self, sign, exponent + self.e_bias, significand)
         if is_tiny:
-            result = context.signal(UnderflowSignal(op_tuple, (result, is_inexact)))
+            cls = UnderflowInexact if is_inexact else UnderflowExact
+            result = cls(op_tuple, result).signal(context)
         elif is_inexact:
-            result = context.signal(InexactSignal(op_tuple, result))
+            result = Inexact(op_tuple, result).signal(context)
         return result
 
     def _next_up(self, value, context, flip_sign):
@@ -797,7 +915,7 @@ class BinaryFormat(NamedTuple):
 
         result = Binary(self, sign ^ flip_sign, e_biased, significand)
         if result.is_subnormal():
-            result = context.signal(UnderflowSignal(op_tuple, (result, False)))
+            result = UnderflowExact(op_tuple, result).signal(context)
         return result
 
     def convert(self, value, context=None):
@@ -818,7 +936,7 @@ class BinaryFormat(NamedTuple):
             # Avoid expensive normalisation to same format; copy and check for subnormals
             if value.fmt is self:
                 if value.is_subnormal():
-                    value = context.signal(UnderflowSignal(op_tuple, (value, False)))
+                    value = UnderflowExact(op_tuple, value).signal(context)
                 return value
 
             if value.significand:
@@ -835,7 +953,7 @@ class BinaryFormat(NamedTuple):
 
             result = self.make_NaN(value.sign, False, value.NaN_payload())
             if value.is_signalling():
-                result = context.signal(SignallingNaNOperand(op_tuple, result))
+                result = SignallingNaNOperand(op_tuple, result).signal(context)
             return result
 
         # Infinities
@@ -913,14 +1031,13 @@ class BinaryFormat(NamedTuple):
         op_tuple = (OP_FROM_STRING, string)
 
         if HEX_SIGNIFICAND_PREFIX.match(string):
-            return self._from_hex_significand_string(op_tuple, context)
-        return self._from_decimal_string(op_tuple, context)
+            return self._from_hex_significand_string(op_tuple, string, context)
+        return self._from_decimal_string(op_tuple, string, context)
 
-    def _from_hex_significand_string(self, op_tuple, context):
+    def _from_hex_significand_string(self, op_tuple, string, context):
         '''Convert a string with hexadecimal significand to a rounded floating number of this
         format.
         '''
-        _, string = op_tuple
         match = HEX_SIGNIFICAND_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid hexadecimal float: {string}')
@@ -941,7 +1058,7 @@ class BinaryFormat(NamedTuple):
 
         return self.make_real(sign, exponent, significand, op_tuple, context)
 
-    def _from_decimal_string(self, op_tuple, context):
+    def _from_decimal_string(self, op_tuple, string, context):
         '''Converts a string with a hexadecimal significand to a floating number of the
         required format.
 
@@ -951,7 +1068,6 @@ class BinaryFormat(NamedTuple):
         becomes 1.  If the payload of the returned NaN does not equal the given payload
         INEXACT is flagged.
         '''
-        _, string = op_tuple
         match = DEC_FLOAT_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid floating point number: {string}')
@@ -1025,11 +1141,12 @@ class BinaryFormat(NamedTuple):
         # Test for obviously over-large exponents
         frac_exp = exponent + len(sig_str)
         if frac_exp - 1 >= (self.e_max + 1) / log2_10:
-            return context.signal(OverflowSignal(op_tuple, (self, sign)))
+            return Overflow(op_tuple, self, context.rounding, sign).signal(context)
 
         # Test for obviously over-small exponents
         if frac_exp < (self.e_min - self.precision) / log2_10:
-            return context.underflow_to_zero(self, op_tuple, sign)
+            value = self.make_underflow_value(context.rounding, sign, False)
+            return UnderflowInexact(op_tuple, value).signal(context)
 
         # Start with a precision a multiple of 64 bits with some room over the format
         # precision, and always an exponent range 1 bit larger - we eliminate obviously
@@ -1114,7 +1231,7 @@ class BinaryFormat(NamedTuple):
 
             # If we round now are we guaranteed to round correctly?
             if err <= rounding_distance:
-                convert_context = context.copy()
+                convert_context = Context(rounding=context.rounding)
                 result = self.convert(scaled_sig, convert_context)
 
                 # Now work out distance of the result from our estimate; if it's too
@@ -1139,7 +1256,7 @@ class BinaryFormat(NamedTuple):
         # FIXME: overflow, underflow etc.
         context.flags |= (convert_context.flags & (Flags.OVERFLOW | Flags.UNDERFLOW))
         if signal_inexact:
-            result = context.signal(InexactSignal(op_tuple, result))
+            result = Inexact(op_tuple, result).signal(context)
 
         return result
 
@@ -1195,7 +1312,7 @@ class BinaryFormat(NamedTuple):
                 if rhs.significand == 0:
                     if (op_name == OP_SUBTRACT) == (lhs.sign == rhs.sign):
                         # Subtraction of like-signed infinities is an invalid op
-                        return context.signal(InvalidAdd(op_tuple, self))
+                        return InvalidAdd(op_tuple, self).signal(context)
                     # Addition of like-signed infinites preserves its sign
                     return self.make_infinity(lhs.sign)
 
@@ -1257,7 +1374,7 @@ class BinaryFormat(NamedTuple):
             if lhs.significand == 0:
                 # infinity * zero -> invalid op
                 if rhs.is_zero():
-                    return context.signal(InvalidMultiply(op_tuple, self))
+                    return InvalidMultiply(op_tuple, self).signal(context)
                 # infinity * infinity -> infinity
                 # infinity * finite-non-zero -> infinity
                 if not rhs.is_NaN():
@@ -1287,9 +1404,9 @@ class BinaryFormat(NamedTuple):
                 if rhs.significand == 0:
                     # 0 / 0 -> NaN
                     if lhs.significand == 0:
-                        return context.signal(InvalidDivide(op_tuple, self))
+                        return InvalidDivide(op_tuple, self).signal(context)
                     # Finite / 0 -> Infinity
-                    return context.signal(DivisionByZero(op_tuple, self.make_infinity(sign)))
+                    return DivideByZero(op_tuple, self.make_infinity(sign)).signal(context)
 
                 return self._divide_finite(lhs, rhs, op_tuple, context)
 
@@ -1306,7 +1423,7 @@ class BinaryFormat(NamedTuple):
                 return self.make_infinity(sign)
             # infinity / infinity is an invalid op
             if rhs.significand == 0:
-                return context.signal(InvalidDivide(op_tuple, self))
+                return InvalidDivide(op_tuple, self).signal(context)
             # infinity / NaN propagates the NaN.
 
         return self._propagate_NaN(op_tuple, context)
@@ -1386,13 +1503,13 @@ class BinaryFormat(NamedTuple):
                 return self._propagate_NaN(op_tuple, context)
             # -Inf -> invalid operation
             if value.sign:
-                return context.signal(InvalidSqrt(op_tuple, self))
+                return InvalidSqrt(op_tuple, self).signal(context)
             return self.make_infinity(False)
         if not value.significand:
             # +0 -> +0, -0 -> -0
             return self.make_zero(value.sign)
         if value.sign:
-            return context.signal(InvalidSqrt(op_tuple, self))
+            return InvalidSqrt(op_tuple, self).signal(context)
 
         # Value is non-zero, finite and positive.  Try and find a good initial estimate
         # with significand the square root of the target significand, and half the
@@ -1414,7 +1531,7 @@ class BinaryFormat(NamedTuple):
             print(n, "EST", est.as_tuple(), est)
             assert est.significand
 
-            nearest_context.clear_flags()
+            nearest_context.flags = 0
             div = self.divide(value, est, nearest_context)
             print(n, "DIV", div.as_tuple(), nearest_context)
 
@@ -1436,7 +1553,7 @@ class BinaryFormat(NamedTuple):
             # Do we have an exact square root?
             if not (nearest_context.flags & Flags.INEXACT):
                 if est.is_subnormal():
-                    est = context.signal(UnderflowSignal(op_tuple, (est, False)))
+                    est = UnderflowExact(op_tuple, est).signal(context)
                 return est
 
             est_squared = value.fmt.multiply(est, est, down_context)
@@ -1451,11 +1568,11 @@ class BinaryFormat(NamedTuple):
         # it up.  This is only difficult with non-directed roundings.
         if context.round_to_nearest():
             temp_fmt = BinaryFormat.from_triple(self.precision + 1, self.e_max, self.e_min)
-            nearest_context.clear_flags()
+            nearest_context.flags = 0
             half = temp_fmt.add(est, est.next_up(nearest_context), nearest_context)
             half = half.scaleb(-1, nearest_context)
             assert not (nearest_context.flags & Flags.INEXACT)
-            down_context.clear_flags()
+            down_context.flags = 0
             half_squared = value.fmt.multiply(half, half, down_context)
             compare = half_squared.compare(value, down_context)
             if compare == Compare.LESS_THAN:
@@ -1480,11 +1597,7 @@ class BinaryFormat(NamedTuple):
         if context.tininess_after:
             is_tiny = result.is_subnormal()
 
-        if is_tiny:
-            result = context.signal(UnderflowSignal(op_tuple, (result, True)))
-        else:
-            result = context.signal(InexactSignal(op_tuple, result))
-        return result
+        return (UnderflowInexact if is_tiny else Inexact)(op_tuple, result).signal(context)
 
     def fma(self, lhs, rhs, addend, context=None):
         '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
@@ -1501,7 +1614,7 @@ class BinaryFormat(NamedTuple):
             return self._propagate_NaN(op_tuple, context)
 
         if (lhs.is_zero() and rhs.is_infinite()) or (rhs.is_zero() and lhs.is_infinite()):
-            return context.signal(InvalidFMA(op_tuple, self))
+            return InvalidFMA(op_tuple, self).signal(context)
 
         # Perform the multiplication in a format where it is exact and there are no
         # subnormals.  Then the only invalid operation can be signalled.
@@ -1695,21 +1808,23 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## Quiet computational operations
     ##
 
+    def set_sign(self, sign):
+        '''Retuns a copy of this number with the given sign.'''
+        if self.sign is sign:
+            return self
+        return Binary(self.fmt, sign, self.e_biased, self.significand)
+
     def copy_sign(self, y):
         '''Retuns a copy of this number but with the sign of y.'''
-        if y.sign == self.sign:
-            return self
-        return Binary(self.fmt, y.sign, self.e_biased, self.significand)
+        return self.set_sign(y.sign)
 
     def copy_negate(self):
         '''Returns a copy of this number with the opposite sign.'''
-        return Binary(self.fmt, not self.sign, self.e_biased, self.significand)
+        return self.set_sign(not self.sign)
 
     def copy_abs(self):
         '''Returns a copy of this number with sign False (positive).'''
-        if self.sign:
-            return Binary(self.fmt, False, self.e_biased, self.significand)
-        return self
+        return self.set_sign(False)
 
     def payload(self):
         '''Return the payload of a NaN as a non-negative floating point integer, or -1
@@ -1797,7 +1912,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 return self.fmt._propagate_NaN(op_tuple, context)
             else:
                 # remainder (infinity, non-NaN) is an invalid operation
-                return context.signal(InvalidRemainder(op_tuple, self.fmt))
+                return InvalidRemainder(op_tuple, self.fmt).signal(context)
         elif rhs.e_biased == 0:
             if rhs.significand:
                 return self.fmt._propagate_NaN(op_tuple, context)
@@ -1806,11 +1921,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 # remainder(finite, infinity) is the LHS and exact.  remainder(subnormal,
                 # infinity) is the LHS and signals underflow
                 if self.is_subnormal():
-                    result = context.signal(UnderflowSignal(op_tuple, (result, False)))
+                    result = UnderflowExact(op_tuple, result).signal(context)
                 return result
         elif rhs.significand == 0:
             # remainder (finite, zero) is an invalid operation
-            return context.signal(InvalidRemainder(op_tuple, self.fmt))
+            return InvalidRemainder(op_tuple, self.fmt).signal(context)
 
         lhs_sig = self.significand
         if not lhs_sig:
@@ -1929,7 +2044,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         else:
             result = self.fmt.logb_zero
 
-        return context.signal(InvalidLogBIntegral(op_tuple, result))
+        return InvalidLogBIntegral(op_tuple, result).signal(context)
 
     def logb(self, context=None):
         '''Return the exponent e of x, a signed integer, when represented with infinite range and
@@ -1947,7 +2062,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if result == 'NaN':
             return self.fmt._propagate_NaN(op_tuple, context)
         if result == 'Zero':
-            return context.signal(LogBZero(op_tuple, self.fmt.make_infinity(True)))
+            return LogBZero(op_tuple, self.fmt.make_infinity(True)).signal(context)
         return self.fmt.make_infinity(False)
 
     ##
@@ -1968,7 +2083,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self.fmt._next_up(self, context, True)
 
-    def _to_integer(self, integer_fmt, rounding, signal_inexact, context):
+    def _to_integer(self, integer_fmt, rounding, signal_inexact, op_tuple, context):
         '''Round the value to an integer, as per rounding.  If integer_fmt is None, the result is
         a floating point value of the same format (a round_to_integral operation).
         Otherwise it is a convert_to_integer operation and an integer that fits in the
@@ -1986,7 +2101,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             raise TypeError('integer_fmt must be an integer format or None')
 
         context = context or get_context()
-        op_tuple = (OP_CONVERT_TO_INTEGER, self)
 
         if self.e_biased == 0:
             if integer_fmt is None:
@@ -2000,7 +2114,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 result = 0
             else:
                 result = integer_fmt.min_int if self.sign else integer_fmt.max_int
-            return context.signal(InvalidConvertToInteger(op_tuple, result))
+            return InvalidConvertToInteger(op_tuple, result).signal(context)
 
         # Zeroes return unchanged.
         if self.significand == 0:
@@ -2041,9 +2155,9 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if integer_fmt:
             value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
             if was_clamped:
-                return context.signal(InvalidConvertToInteger(op_tuple, value))
+                return InvalidConvertToInteger(op_tuple, value).signal(context)
         if signal_inexact:
-            return context.signal(InexactSignal(op_tuple, value))
+            return Inexact(op_tuple, value).signal(context)
         return value
 
     def round_to_integral(self, rounding, context=None):
@@ -2052,7 +2166,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         This only signal is SignallingNaNOperand.
         '''
-        return self._to_integer(None, rounding, False, context)
+        op_tuple = (OP_ROUND_TO_INTEGRAL, self)
+        return self._to_integer(None, rounding, False, op_tuple, context)
 
     def round_to_integral_exact(self, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
@@ -2061,23 +2176,26 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         This function signals SignallingNaNOperand, or INEXACT if the result is not the
         original value (i.e. it was not an integer).
         '''
-        return self._to_integer(None, context.rounding, True, context)
+        op_tuple = (OP_ROUND_TO_INTEGRAL_EXACT, self)
+        return self._to_integer(None, context.rounding, True, op_tuple, context)
 
     def convert_to_integer(self, integer_fmt, rounding, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
         method is given explicitly; that in context is ignored.
 
         NaNs, infinities and out-of-range values signal InvalidConvertToInteger.
-        InexactSignal is not signalled.
+        Inexact is not signalled.
         '''
-        return self._to_integer(integer_fmt, rounding, False, context)
+        op_tuple = (OP_CONVERT_TO_INTEGER, self)
+        return self._to_integer(integer_fmt, rounding, False, op_tuple, context)
 
     def convert_to_integer_exact(self, integer_fmt, rounding, context=None):
-        '''As for convert_to_integer, except that InexactSignal is signaled if the result is
+        '''As for convert_to_integer, except that Inexact is signaled if the result is
         in-range and not numerically equal to the original value (i.e. it was not an
         integer).
         '''
-        return self._to_integer(integer_fmt, rounding, True, context)
+        op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, self)
+        return self._to_integer(integer_fmt, rounding, True, op_tuple, context)
 
     ##
     ## Signalling computational operations
@@ -2166,7 +2284,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             context = context or get_context()
             op_tuple = (OP_COMPARE, self, rhs)
             cls = InvalidComparison if signalling else SignallingNaNOperand
-            result = context.signal(cls(op_tuple, result))
+            result = cls(op_tuple, result).signal(context)
         return result
 
     def compare(self, rhs, context=None):
@@ -2303,7 +2421,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if self.is_signalling() or rhs.is_signalling():
             if result.is_signalling():
                 result = result.fmt.make_NaN(result.sign, False, result.NaN_payload())
-            result = context.signal(SignallingNaNOperand(op_tuple, result))
+            result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
     def max(self, rhs, context):
@@ -2372,7 +2490,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 precision = len(digits)
             result = text_format.format_decimal(self.sign, exponent, digits, precision)
             if is_inexact:
-                result = context.signal(InexactSignal(op_tuple, result))
+                result = Inexact(op_tuple, result).signal(context)
             return result
         else:
             return text_format.format_non_finite(self, op_tuple, context)
@@ -2549,7 +2667,6 @@ def round_up(rounding, lost_fraction, sign, is_odd):
     elif rounding == ROUND_HALF_DOWN:
         return lost_fraction == LF_MORE_THAN_HALF
     else:
-        assert rounding == ROUND_HALF_UP
         return lost_fraction != LF_LESS_THAN_HALF
 
 #
