@@ -815,16 +815,11 @@ class BinaryFormat(NamedTuple):
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
-    def make_real(self, sign, exponent, significand, op_tuple, context=None):
-        '''Return a floating point number that is the correctly-rounded (by the context) value of
-        the infinitely precise result
+    def _normalize(self, sign, exponent, significand, op_tuple, context=None):
+        '''Return a normalized floating point number that is the correctly-rounded (by the
+        context) value of the infinitely precise result
 
            ± 2^exponent * significand
-
-        of the given sign.  For example,
-
-           IEEEsingle.make_real(True, -3, 2) -> -0.75
-           IEEEsingle.make_real(False, 1, -200) -> +0.0 and signals underflow.
         '''
         if significand == 0:
             return self.make_zero(sign)
@@ -940,8 +935,8 @@ class BinaryFormat(NamedTuple):
                 return value
 
             if value.significand:
-                return self.make_real(value.sign, value.exponent_int(), value.significand,
-                                      op_tuple, context)
+                return self._normalize(value.sign, value.exponent_int(), value.significand,
+                                       op_tuple, context)
 
             # Zeroes
             return self.make_zero(value.sign)
@@ -1056,7 +1051,7 @@ class BinaryFormat(NamedTuple):
             significand = int((groups[1] + fraction) or '0', 16)
             exponent -= len(fraction) * 4
 
-        return self.make_real(sign, exponent, significand, op_tuple, context)
+        return self._normalize(sign, exponent, significand, op_tuple, context)
 
     def _from_decimal_string(self, op_tuple, string, context):
         '''Converts a string with a hexadecimal significand to a floating number of the
@@ -1183,13 +1178,13 @@ class BinaryFormat(NamedTuple):
                 sig_err = 0
 
             calc_context = Context(rounding=ROUND_HALF_EVEN)
-            sig = calc_fmt.make_real(sign, 0, significand, calc_context)
+            sig = calc_fmt._normalize(sign, 0, significand, calc_context)
             if calc_context.flags & Flags.INEXACT:
                 sig_err += 1
             calc_context.flags &= ~Flags.INEXACT
 
             pow5_int = pow(5, abs(sig_exponent))
-            pow5 = calc_fmt.make_real(False, 0, pow5_int, calc_context)
+            pow5 = calc_fmt._normalize(False, 0, pow5_int, calc_context)
             pow5_err = 1 if calc_context.flags & Flags.INEXACT else 0
             calc_context.flags &= ~Flags.INEXACT
 
@@ -1284,7 +1279,7 @@ class BinaryFormat(NamedTuple):
     def from_int(self, x, context=None):
         '''Return the integer x converted to this floating point format, rounding if necessary.'''
         op_tuple = (OP_FROM_INT, x)
-        return self.make_real(x < 0, 0, abs(x), op_tuple, context)
+        return self._normalize(x < 0, 0, abs(x), op_tuple, context)
 
     def add(self, lhs, rhs, context=None):
         '''Return the sum LHS + RHS in this format.'''
@@ -1359,7 +1354,7 @@ class BinaryFormat(NamedTuple):
         if not significand and (lhs.significand or rhs.significand or is_sub):
             sign = context.rounding == ROUND_FLOOR
 
-        return self.make_real(sign, exponent, significand, op_tuple, context)
+        return self._normalize(sign, exponent, significand, op_tuple, context)
 
     def multiply(self, lhs, rhs, context=None):
         '''Returns the product of LHS and RHS in this format.'''
@@ -1388,8 +1383,8 @@ class BinaryFormat(NamedTuple):
         '''Returns the product of two finite floating point numbers in this format.'''
         sign = lhs.sign ^ rhs.sign
         exponent = lhs.exponent_int() + rhs.exponent_int()
-        return self.make_real(sign, exponent, lhs.significand * rhs.significand,
-                              op_tuple, context)
+        return self._normalize(sign, exponent, lhs.significand * rhs.significand,
+                               op_tuple, context)
 
     def divide(self, lhs, rhs, context=None):
         '''Return lhs / rhs in this format.'''
@@ -1489,7 +1484,7 @@ class BinaryFormat(NamedTuple):
             quot_sig = (quot_sig << 2) + 3
             exponent -= 2
 
-        return self.make_real(sign, exponent, quot_sig, op_tuple, context)
+        return self._normalize(sign, exponent, quot_sig, op_tuple, context)
 
     def sqrt(self, value, context=None):
         '''Return sqrt(value) in this format.  It has a positive sign for all operands >= 0,
@@ -1525,7 +1520,7 @@ class BinaryFormat(NamedTuple):
         sig <<= precision_bump
 
         # Newton-Raphson loop
-        est = self.make_real(False, exponent // 2, floor(sqrt(sig)), op_tuple, nearest_context)
+        est = self._normalize(False, exponent // 2, floor(sqrt(sig)), op_tuple, nearest_context)
         n = 1
         while True:
             print(n, "EST", est.as_tuple(), est)
@@ -1990,7 +1985,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             # IEEE-754 decrees a remainder of zero shall have the sign of the LHS.  A
             # remainder of zero cannot have rounded up, so this is already the case.
 
-        return self.fmt.make_real(sign, rhs_exponent, lhs_sig, op_tuple, context)
+        return self.fmt._normalize(sign, rhs_exponent, lhs_sig, op_tuple, context)
 
     ##
     ## logBFormat operations (logBFormat is an integer format)
@@ -2009,8 +2004,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             if self.significand:
                 return self.fmt._propagate_NaN(op_tuple, context)
             return self
-        return self.fmt.make_real(self.sign, self.exponent_int() + N, self.significand,
-                                  op_tuple, context)
+        return self.fmt._normalize(self.sign, self.exponent_int() + N, self.significand,
+                                   op_tuple, context)
 
     def _logb(self):
         '''A private helper function.'''
@@ -2057,7 +2052,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         result = self._logb()
         if isinstance(result, int):
-            return self.fmt.make_real(result < 0, 0, abs(result), op_tuple, context)
+            return self.fmt._normalize(result < 0, 0, abs(result), op_tuple, context)
 
         if result == 'NaN':
             return self.fmt._propagate_NaN(op_tuple, context)
