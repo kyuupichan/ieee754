@@ -599,7 +599,7 @@ def invalid_convert_to_integer(kind, index):
         value = dst_fmt.make_infinity(False)
         result = 15
     else:
-        value = dst_fmt.make_real(False, 0, 16, None, Context())
+        value = dst_fmt.from_value(16)
         result = 15
     op_tuple = (OP_CONVERT_TO_INTEGER, value)
     handler_class = (InvalidConvertToInteger, Invalid, IEEEError)[index]
@@ -707,7 +707,7 @@ class TestInvalid:
 
 def inexact_divide(dst_fmt, index):
     lhs = random.choice(all_IEEE_fmts).make_one(random.choice(signs))
-    rhs = random.choice(all_IEEE_fmts).make_real(False, 0, 3, None, Context())
+    rhs = random.choice(all_IEEE_fmts).from_int(3)
     op_tuple = (OP_DIVIDE, lhs, rhs)
     handler_class = (Inexact, IEEEError)[index]
     return Inexact, handler_class, op_tuple, partial(dst_fmt.divide, lhs, rhs)
@@ -721,7 +721,7 @@ def inexact_from_string(dst_fmt, index):
 
 
 def inexact_sqrt(dst_fmt, index):
-    lhs = random.choice(all_IEEE_fmts).make_real(False, 0, 2, None, Context())
+    lhs = random.choice(all_IEEE_fmts).from_int(2)
     op_tuple = (OP_SQRT, lhs)
     handler_class = (Inexact, IEEEError)[index]
     return Inexact, handler_class, op_tuple, partial(dst_fmt.sqrt, lhs)
@@ -841,7 +841,7 @@ class TestInexact:
 
 def overflow_multiply(dst_fmt, index):
     lhs = dst_fmt.make_largest_finite(random.choice(signs))
-    rhs = random.choice(all_IEEE_fmts).make_real(False, 0, 2, None, Context())
+    rhs = random.choice(all_IEEE_fmts).from_value(2)
     op_tuple = (OP_MULTIPLY, lhs, rhs)
     handler_class = (Overflow, IEEEError)[index]
     return Overflow, handler_class, op_tuple, partial(dst_fmt.multiply, lhs, rhs)
@@ -1061,7 +1061,7 @@ class TestBinary:
     def test_from_float(self, text):
         py_value = float(text)
         answer = IEEEdouble.from_string(text)
-        result = Binary.from_float(py_value)
+        result = IEEEdouble.from_float(py_value)
         get_context().flags = 0
         assert floats_equal(result, answer)
         assert get_context().flags == 0
@@ -1178,7 +1178,7 @@ class TestGeneralNonComputationalOps:
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts, (False, True),
                              ))
-    def test_make_real_MSB_set(self, fmt, sign):
+    def test_normalize_MSB_set(self, fmt, sign):
         '''Test MSB set with various exponents.'''
         op_tuple = ('test', None)
         significand = 1
@@ -1192,7 +1192,7 @@ class TestGeneralNonComputationalOps:
                 fmt.e_max
         ):
             context = Context(rounding=ROUND_HALF_EVEN)
-            value = fmt.make_real(sign, exponent, significand, op_tuple, context)
+            value = fmt._normalize(sign, exponent, significand, op_tuple, context)
             if exponent < fmt.e_min:
                 assert context.flags == 0
                 # FIXME: test underflow was signalled
@@ -1227,10 +1227,10 @@ class TestGeneralNonComputationalOps:
                                      (False, True),
                                      (-1, 0, 1, (1 << 200)),
                              ))
-    def test_make_real_zero_significand(self, fmt, sign, exponent):
+    def test_normalize_zero_significand(self, fmt, sign, exponent):
         # Test that a zero significand gives a zero regardless of exponent
         context = std_context()
-        value = fmt.make_real(sign, exponent, 0, context)
+        value = fmt._normalize(sign, exponent, 0, context)
         assert context.flags == 0
         assert value.is_zero()
         assert value.sign is sign
@@ -1242,12 +1242,12 @@ class TestGeneralNonComputationalOps:
                                      (1, 2, 3, ),
                                      all_roundings,
                              ))
-    def test_make_real_underflow_to_zero(self, fmt, sign, two_bits, rounding):
+    def test_normalize_underflow_to_zero(self, fmt, sign, two_bits, rounding):
         # Test that a value that loses two bits of precision underflows correctly
         context = Context(rounding=rounding)
         op_tuple = ('test', None)
-        value = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits,
-                              op_tuple, context)
+        value = fmt._normalize(sign, fmt.e_min - 2 - (fmt.precision - 1), two_bits,
+                               op_tuple, context)
         underflows_to_zero = (rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN} and two_bits in (1, 2)
                               or (rounding == ROUND_HALF_UP and two_bits == 1)
                               or (rounding == ROUND_CEILING and sign)
@@ -1273,7 +1273,7 @@ class TestGeneralNonComputationalOps:
         context = Context(rounding=rounding)
         # First test the exponent that doesn't overflow but that one more would
         exponent = fmt.e_max
-        value = fmt.make_real(sign, exponent, 1, op_tuple, context)
+        value = fmt._normalize(sign, exponent, 1, op_tuple, context)
         assert context.flags == 0
         assert value.is_normal()
         assert value.sign is sign
@@ -1281,7 +1281,7 @@ class TestGeneralNonComputationalOps:
 
         # Increment the exponent.  Overflow now depends on rounding mode
         exponent += 1
-        value = fmt.make_real(sign, exponent, 1, op_tuple, context)
+        value = fmt._normalize(sign, exponent, 1, op_tuple, context)
         assert context.flags == Flags.OVERFLOW | Flags.INEXACT
         if (rounding in {ROUND_HALF_EVEN, ROUND_HALF_DOWN, ROUND_HALF_UP, ROUND_UP}
                 or (rounding == ROUND_CEILING and not sign)
@@ -1299,7 +1299,7 @@ class TestGeneralNonComputationalOps:
                                      (0, 1, 2, 3, ),
                                      all_roundings,
                              ))
-    def test_make_real_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding):
+    def test_normalie_overflows_significand(self, fmt, sign, e_selector, two_bits, rounding):
         op_tuple = ('test', None)
         # Test cases where rounding away causes significand to overflow
         context = Context(rounding=rounding)
@@ -1307,7 +1307,8 @@ class TestGeneralNonComputationalOps:
         exponent = [fmt.e_min - 2, fmt.e_max - 3, fmt.e_max - 2][e_selector]
         # two extra bits in the significand
         significand = two_bits + (fmt.max_significand << 2)
-        value = fmt.make_real(sign, exponent - (fmt.precision - 1), significand, op_tuple, context)
+        value = fmt._normalize(sign, exponent - (fmt.precision - 1), significand,
+                               op_tuple, context)
         rounds_away = (two_bits and
                        ((rounding == ROUND_HALF_EVEN and two_bits in (2, 3))
                         or rounding == ROUND_UP
@@ -1338,14 +1339,14 @@ class TestGeneralNonComputationalOps:
                                      (0, 1, 2, 3, ),
                                      all_roundings,
                              ))
-    def test_make_real_subnormal_to_normal(self, fmt, sign, two_bits, rounding):
+    def test_normalize_subnormal_to_normal(self, fmt, sign, two_bits, rounding):
         op_tuple = ('test', None)
         # Test cases where rounding away causes a subnormal to normalize
         context = Context(rounding=rounding)
         # an extra bit in the significand with two LSBs varying
         significand = two_bits + ((fmt.max_significand >> 1) << 2)
-        value = fmt.make_real(sign, fmt.e_min - 2 - (fmt.precision - 1), significand,
-                              op_tuple, context)
+        value = fmt._normalize(sign, fmt.e_min - 2 - (fmt.precision - 1), significand,
+                               op_tuple, context)
         rounds_away = (two_bits and
                        ((rounding == ROUND_HALF_EVEN and two_bits in (2, 3))
                         or rounding == ROUND_UP

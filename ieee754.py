@@ -25,14 +25,15 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'DivideByZero', 'LogBZero', 'UnderflowExact', 'UnderflowInexact',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
-            'OP_ADD', 'OP_SUBTRACT', 'OP_MULTIPLY', 'OP_DIVIDE', 'OP_FMA', 'OP_SQRT',
-           'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE', 'OP_FROM_STRING',
+           'OP_ADD', 'OP_SUBTRACT', 'OP_MULTIPLY', 'OP_DIVIDE', 'OP_FMA', 'OP_SQRT',
+           'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE',
+           'OP_FROM_INT', 'OP_FROM_FLOAT', 'OP_FROM_STRING',
            'OP_REMAINDER', 'OP_FMOD', 'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
            'OP_CONVERT', 'OP_CONVERT_TO_INTEGER', 'OP_CONVERT_TO_INTEGER_EXACT',
            'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT',
            'OP_TO_STRING', 'OP_TO_DECIMAL_STRING',
-           'OP_FROM_INT', 'OP_MAX', 'OP_MAX_NUM', 'OP_MIN', 'OP_MIN_NUM',
-           'OP_MAX_MAG_NUM', 'OP_MAX_MAG', 'OP_MIN_MAG_NUM', 'OP_MIN_MAG',
+           'OP_MAX', 'OP_MAX_NUM', 'OP_MIN', 'OP_MIN_NUM', 'OP_MAX_MAG_NUM', 'OP_MAX_MAG',
+           'OP_MIN_MAG_NUM', 'OP_MIN_MAG',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single')
 
@@ -67,10 +68,11 @@ OP_ROUND_TO_INTEGRAL = 'round_to_integral'
 OP_ROUND_TO_INTEGRAL_EXACT = 'round_to_integral_exact'
 OP_CONVERT_TO_INTEGER = 'convert_to_integer'
 OP_CONVERT_TO_INTEGER_EXACT = 'convert_to_integer_exact'
+OP_FROM_FLOAT = 'from_float'
+OP_FROM_INT = 'from_int'
 OP_FROM_STRING = 'from_string'
 OP_TO_STRING = 'to_string'
 OP_TO_DECIMAL_STRING = 'to_decimal_string'
-OP_FROM_INT = 'from_int'
 OP_MAX = 'max'
 OP_MAX_NUM = 'max_num'
 OP_MIN = 'min'
@@ -1020,6 +1022,44 @@ class BinaryFormat(NamedTuple):
 
         return Binary(self, sign, exponent, significand)
 
+    ##
+    ## General computational operations.  The operand(s) can be different formats;
+    ## the destination format is self.
+    ##
+
+    def from_value(self, value, context=None):
+        '''Return a floating point value derived from value.  Values of type int, float and string
+        are accepted, ass passed on to from_int, from_float and from_string respectively.'''
+        if isinstance(value, int):
+            return self.from_int(value, context)
+        if isinstance(value, float):
+            return self.from_float(value, context)
+        elif isinstance(value, str):
+            return self.from_string(value, context)
+        raise TypeError(f'from() cannot handle values of type {type(value)}')
+
+    def from_int(self, value, context=None):
+        '''Return the integer value converted to this format, rounding if necessary.'''
+        if not isinstance(value, int):
+            raise TypeError('from_int requires an integer')
+        op_tuple = (OP_FROM_INT, value)
+        return self._normalize(value < 0, 0, abs(value), op_tuple, context)
+
+    @classmethod
+    def double_from_float(cls, value):
+        '''Return an IEEEdouble converted from a Python float value.'''
+        return IEEEdouble.unpack_value(pack_double(value))
+
+    def from_float(self, value, context=None):
+        '''Return the float value converted to this format, rounding if necessary.'''
+        if not isinstance(value, float):
+            raise TypeError('from_float requires a float')
+        result = self.double_from_float(value)
+        if not self is IEEEdouble:
+            op_tuple = (OP_FROM_FLOAT, value)
+            result = self._convert(result, op_tuple, context, True)
+        return result
+
     def from_string(self, string, context=None):
         '''Convert a string to a rounded floating number of this format.'''
         context = context or get_context()
@@ -1255,11 +1295,6 @@ class BinaryFormat(NamedTuple):
 
         return result
 
-    ##
-    ## General computational operations.  The operand(s) can be different formats;
-    ## the destination format is self.
-    ##
-
     def to_string(self, value, text_format=None, context=None):
         '''Return text, with a hexadecimal significand for finite numbers, that is a
         representation of the floating point value converted to this format.  See
@@ -1275,11 +1310,6 @@ class BinaryFormat(NamedTuple):
         # Now output the value.  This step signals if sNaNs are lost.
         text_format = text_format or TextFormat()
         return text_format.format_hex(value, op_tuple, context)
-
-    def from_int(self, x, context=None):
-        '''Return the integer x converted to this floating point format, rounding if necessary.'''
-        op_tuple = (OP_FROM_INT, x)
-        return self._normalize(x < 0, 0, abs(x), op_tuple, context)
 
     def add(self, lhs, rhs, context=None):
         '''Return the sum LHS + RHS in this format.'''
@@ -1719,11 +1749,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             exponent = self.exponent_int()
 
         return BinaryTuple(self.sign, exponent, significand)
-
-    @classmethod
-    def from_float(cls, value):
-        '''Return an IEEEdouble converted from a Python float value.'''
-        return IEEEdouble.unpack_value(pack_double(value))
 
     def pack(self, endianness='little'):
         '''Packs this value to bytes of the given endianness.'''
