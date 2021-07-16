@@ -698,16 +698,13 @@ class BinaryFormat(NamedTuple):
             result = context.signal(SignallingNaNOperand(op_tuple, result))
         return result
 
-    def make_real(self, sign, exponent, significand, op_tuple, context=None,
-                  lost_fraction=LF_EXACTLY_ZERO):
+    def make_real(self, sign, exponent, significand, op_tuple, context=None):
         '''Return a floating point number that is the correctly-rounded (by the context) value of
         the infinitely precise result
 
-           ± 2^exponent * (significand + lost_fraction)
+           ± 2^exponent * significand
 
-        of the given sign, where 0 <= lost_fraction < 1 ULPs have been lost.
-
-        For example,
+        of the given sign.  For example,
 
            IEEEsingle.make_real(True, -3, 2) -> -0.75
            IEEEsingle.make_real(False, 1, -200) -> +0.0 and signals underflow.
@@ -725,15 +722,8 @@ class BinaryFormat(NamedTuple):
         rshift = max(size - self.precision, self.e_min - exponent)
 
         # Shift the significand and update the exponent
-        significand, shift_lf = shift_right(significand, rshift)
+        significand, lost_fraction = shift_right(significand, rshift)
         exponent += rshift
-
-        # Santity check - a lost fraction loses information if we needed to shift left
-        assert rshift >= 0 or lost_fraction == LF_EXACTLY_ZERO
-
-        # If we shifted, combine the lost fractions; shift_lf is the more significant
-        if rshift:
-            lost_fraction = shift_lf | (lost_fraction != LF_EXACTLY_ZERO)
 
         is_tiny = significand < self.int_bit
 
@@ -1369,19 +1359,20 @@ class BinaryFormat(NamedTuple):
 
         assert 0 <= lhs_sig < rhs_sig
 
-        if lhs_sig == 0:
-            lost_fraction = LF_EXACTLY_ZERO
-        elif lhs_sig * 2 < rhs_sig:
-            lost_fraction = LF_LESS_THAN_HALF
-        elif lhs_sig * 2 == rhs_sig:
-            lost_fraction = LF_EXACTLY_HALF
-        else:
-            lost_fraction = LF_MORE_THAN_HALF
-
-        # At present both quotient (which is truncated) and remainder have sign lhs.sign.
-        # The exponent when viewing quot_sig as an integer.
         exponent = lhs_exponent - rhs_exponent - (bits - 1)
-        return self.make_real(sign, exponent, quot_sig, op_tuple, context, lost_fraction)
+        if lhs_sig == 0:              # LF_EXACTLY_ZERO
+            pass
+        elif lhs_sig * 2 < rhs_sig:   # LF_LESS_THAN_HALF
+            quot_sig = (quot_sig << 2) + 1
+            exponent -= 2
+        elif lhs_sig * 2 == rhs_sig:  # LF_EXACTLY_HALF
+            quot_sig = (quot_sig << 1) + 1
+            exponent -= 1
+        else:                         # LF_MORE_THAN_HALF
+            quot_sig = (quot_sig << 2) + 3
+            exponent -= 2
+
+        return self.make_real(sign, exponent, quot_sig, op_tuple, context)
 
     def sqrt(self, value, context=None):
         '''Return sqrt(value) in this format.  It has a positive sign for all operands >= 0,
