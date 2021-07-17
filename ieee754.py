@@ -2752,6 +2752,7 @@ def round_up(rounding, lost_fraction, sign, is_odd):
 #
 
 DefaultContext = Context()
+DefaultContext.set_handler((Invalid, DivisionByZero, Overflow), HandlerKind.RAISE)
 tls = threading.local()
 
 

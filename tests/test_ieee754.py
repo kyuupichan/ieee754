@@ -87,10 +87,6 @@ def read_lines(filename):
     return result
 
 
-def std_context():
-    return Context(rounding=ROUND_HALF_EVEN)
-
-
 def rounding_string_to_context(rounding):
     return Context(rounding=rounding_codes[rounding])
 
@@ -102,7 +98,7 @@ def read_significand(significand):
 
 
 def from_string(fmt, string):
-    context = std_context()
+    context = Context()
     result = fmt.from_string(string, context)
     if HEX_SIGNIFICAND_PREFIX.match(string):
         assert context.flags == 0
@@ -152,15 +148,17 @@ def substitute_plus_one(exception, context):
 
 
 # Test functions with an explicit context and a None context
-@pytest.fixture(params=[Context(), None])
-def context(request):
-    context = request.param
-    if context is None:
-        with local_context():
-            yield None
-    else:
-        with local_context(context) as context:
-            yield context
+@pytest.fixture
+def context():
+    with local_context(DefaultContext) as context:
+        yield context
+
+
+# Test functions with an explicit context and a None context
+@pytest.fixture
+def quiet_context():
+    with local_context(Context()) as context:
+        yield context
 
 
 class TestContext:
@@ -239,24 +237,18 @@ class TestContext:
 
         assert get_context() is context
 
-    def test_local_context_timing(self):
-        set_context(DefaultContext)
-
-        orig_context = get_context()
-        try:
-            # Want to check that the saved context is taken not on construction but on entry
-            my_context = Context(rounding=ROUND_DOWN, flags=Flags.INVALID)
-            manager = local_context(my_context)
-            my_context.flags |= Flags.DIV_BY_ZERO
-            set_context(my_context)
-            with manager as ctx:
-                assert get_context() is ctx
-                assert ctx is not my_context   # must be a copy
-                assert self.contexts_equal(ctx, my_context)
-                assert not self.contexts_equal(ctx, orig_context)
-            assert get_context() is my_context
-        finally:
-            set_context(orig_context)
+    def test_local_context_timing(self, context):
+        # Want to check that the saved context is taken not on construction but on entry
+        my_context = Context(rounding=ROUND_DOWN, flags=Flags.INVALID)
+        manager = local_context(my_context)
+        my_context.flags |= Flags.DIV_BY_ZERO
+        set_context(my_context)
+        with manager as ctx:
+            assert get_context() is ctx
+            assert ctx is not my_context   # must be a copy
+            assert self.contexts_equal(ctx, my_context)
+            assert not self.contexts_equal(ctx, context)
+        assert get_context() is my_context
 
     def test_repr(self):
         c = Context(rounding=ROUND_UP, flags=Flags.INEXACT, tininess_after=True)
@@ -374,10 +366,10 @@ class TestDivisionByZero:
         (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
          HandlerKind.RECORD_EXCEPTION),
     ))
-    def test_basic_kinds(self, testcase, kind, context):
+    def test_basic_kinds(self, testcase, kind, quiet_context):
         answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, kind)
 
         result = div_by_zero_func(context)
@@ -393,10 +385,10 @@ class TestDivisionByZero:
             assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', div_by_zero_testcases)
-    def test_substitute_value(self, testcase, context):
+    def test_substitute_value(self, testcase, quiet_context):
         answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_zero)
 
         result = div_by_zero_func(context)
@@ -406,10 +398,10 @@ class TestDivisionByZero:
         assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', div_by_zero_testcases)
-    def test_substitute_value_xor(self, testcase, context):
+    def test_substitute_value_xor(self, testcase, quiet_context):
         answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_zero)
 
         result = div_by_zero_func(context)
@@ -422,18 +414,18 @@ class TestDivisionByZero:
         assert not context.exceptions
 
     @pytest.mark.parametrize('exc_class', (DivideByZero, DivisionByZero, IEEEError))
-    def test_abrupt_underflow(self, exc_class, context):
-        context = get_context() if context is None else context
+    def test_abrupt_underflow(self, exc_class, quiet_context):
+        context = quiet_context
         with pytest.raises(TypeError) as e:
             context.set_handler(exc_class, HandlerKind.ABRUPT_UNDERFLOW)
 
         assert 'must be subclasses of Underflow' in str(e.value)
 
     @pytest.mark.parametrize('testcase', div_by_zero_testcases)
-    def test_raise(self, testcase, context):
+    def test_raise(self, testcase, quiet_context):
         answer, exc_class, handler_class, op_tuple, div_by_zero_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.RAISE)
 
         with pytest.raises(exc_class) as e:
@@ -628,10 +620,10 @@ class TestInvalid:
         (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
          HandlerKind.RECORD_EXCEPTION),
     ))
-    def test_basic_kinds(self, testcase, kind, context):
+    def test_basic_kinds(self, testcase, kind, quiet_context):
         answer, exc_class, handler_class, op_tuple, invalid_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, kind)
 
         result = invalid_func(context)
@@ -646,10 +638,10 @@ class TestInvalid:
             assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', invalid_testcases)
-    def test_substitute_value(self, testcase, context):
+    def test_substitute_value(self, testcase, quiet_context):
         answer, exc_class, handler_class, op_tuple, invalid_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_one)
 
         result = invalid_func(context)
@@ -663,10 +655,10 @@ class TestInvalid:
         assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', invalid_testcases)
-    def test_substitute_value_xor(self, testcase, context):
+    def test_substitute_value_xor(self, testcase, quiet_context):
         answer, exc_class, handler_class, op_tuple, invalid_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
 
         result = invalid_func(context)
@@ -680,19 +672,19 @@ class TestInvalid:
         assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', invalid_testcases)
-    def test_abrupt_underflow(self, testcase, context):
+    def test_abrupt_underflow(self, testcase, quiet_context):
         handler_class = testcase[2]
-        context = get_context() if context is None else context
+        context = quiet_context
         with pytest.raises(TypeError) as e:
             context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
 
         assert 'must be subclasses of Underflow' in str(e.value)
 
     @pytest.mark.parametrize('testcase', invalid_testcases)
-    def test_raise(self, testcase, context):
+    def test_raise(self, testcase, quiet_context):
         answer, exc_class, handler_class, op_tuple, invalid_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.RAISE)
 
         with pytest.raises(exc_class) as e:
@@ -870,9 +862,9 @@ class TestOverflow:
         (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
          HandlerKind.RECORD_EXCEPTION),
     ))
-    def test_basic_kinds(self, testcase, kind, inexact_kind, context):
+    def test_basic_kinds(self, testcase, kind, inexact_kind, quiet_context):
         exc_class, handler_class, op_tuple, overflow_func = testcase
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, kind)
         context.set_handler(Inexact, inexact_kind)
 
@@ -895,10 +887,10 @@ class TestOverflow:
             assert not context.exceptions
 
     @pytest.mark.parametrize('testcase, inexact', product(overflow_testcases, (True, False)))
-    def test_substitute_value(self, testcase, inexact, context):
+    def test_substitute_value(self, testcase, inexact, quiet_context):
         exc_class, handler_class, op_tuple, overflow_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_one)
         if inexact:
             context.set_handler(Inexact, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_zero)
@@ -912,10 +904,10 @@ class TestOverflow:
         assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', overflow_testcases)
-    def test_substitute_value_xor(self, testcase, context):
+    def test_substitute_value_xor(self, testcase, quiet_context):
         exc_class, handler_class, op_tuple, overflow_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
 
         result = overflow_func(context)
@@ -929,19 +921,19 @@ class TestOverflow:
         assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', overflow_testcases)
-    def test_abrupt_underflow(self, testcase, context):
+    def test_abrupt_underflow(self, testcase, quiet_context):
         handler_class = testcase[1]
-        context = get_context() if context is None else context
+        context = quiet_context
         with pytest.raises(TypeError) as e:
             context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
 
         assert 'must be subclasses of Underflow' in str(e.value)
 
     @pytest.mark.parametrize('testcase', overflow_testcases)
-    def test_raise(self, testcase, context):
+    def test_raise(self, testcase, quiet_context):
         exc_class, handler_class, op_tuple, overflow_func = testcase
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(handler_class, HandlerKind.RAISE)
 
         with pytest.raises(exc_class) as e:
@@ -953,12 +945,12 @@ class TestOverflow:
         assert not context.exceptions
 
     @pytest.mark.parametrize('testcase', overflow_testcases)
-    def test_raise_inexact(self, testcase, context):
+    def test_raise_inexact(self, testcase, quiet_context):
         exc_class, handler_class, op_tuple, overflow_func = testcase
         # Inexact has the raise
         exc_class = Inexact
 
-        context = get_context() if context is None else context
+        context = quiet_context
         context.set_handler(exc_class, HandlerKind.RAISE)
 
         with pytest.raises(exc_class) as e:
@@ -1036,7 +1028,7 @@ class TestBinaryFormat:
     @pytest.mark.parametrize('fmt, text', product(
         all_IEEE_fmts, ('0', '-0', 'Inf', '-Inf', 'NaN', '1', '-1',
                         '123.456', '1e300', '-2.65721e-310')))
-    def test_from_float(self, fmt, text, context):
+    def test_from_float(self, fmt, text, quiet_context):
         # Work out what should happen
         with local_context() as ctx:
             answer = IEEEdouble.from_string(text)
@@ -1053,7 +1045,7 @@ class TestBinaryFormat:
     @pytest.mark.parametrize('fmt, value', product(
         all_IEEE_fmts,
         (-1, 0, 1, 123456 << 5000, -1.3, 1.25, 1.2e1000, '6.25', '-1.1', '-Inf', 'NaN2', 'sNaN')))
-    def test_from_value(self, fmt, value, context):
+    def test_from_value(self, fmt, value, quiet_context):
         with local_context() as ctx:
             if isinstance(value, int):
                 answer = fmt.from_int(value)
@@ -1136,11 +1128,12 @@ class TestBinary:
         assert context.flags == 0
 
         h = IEEEdouble.from_string('-sNaN')
-        k = IEEEdouble.from_string('sNaN')
+        with pytest.raises(SignallingNaNOperand) as exc:
+            abs(h)
+        exc = exc.value
         # The NaN is quietened; sign is not changed
-        assert floats_equal(abs(h), f)
+        assert floats_equal(exc.default_result, f)
         assert context.flags == Flags.INVALID
-        assert floats_equal(abs(k), g)
 
     def test_copy_abs(self, context):
         d = IEEEdouble.from_int(1)
@@ -1173,11 +1166,13 @@ class TestBinary:
         context = get_context()
         assert context.flags == 0
 
-        h = IEEEdouble.from_string('sNaN')
-        k = IEEEdouble.from_string('-sNaN')
-        assert floats_equal(-h, g)
+        h = IEEEdouble.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as exc:
+            h = -h
+        exc = exc.value
+        # The NaN is quietened; sign is not changed
+        assert floats_equal(exc.default_result, f)
         assert context.flags == Flags.INVALID
-        assert floats_equal(f, -k)
 
     def test_copy_negate(self, context):
         d = IEEEdouble.from_int(1)
@@ -1215,11 +1210,13 @@ class TestBinary:
         context = get_context()
         assert context.flags == 0
 
-        h = IEEEdouble.from_string('sNaN')
         k = IEEEdouble.from_string('-sNaN')
-        assert floats_equal(+h, g)
+        with pytest.raises(SignallingNaNOperand) as exc:
+            k = -k
+        exc = exc.value
+        # The NaN is quietened; sign is not changed
+        assert floats_equal(exc.default_result, f)
         assert context.flags == Flags.INVALID
-        assert floats_equal(+k, f)
 
 
 class TestIntegerFormat:
@@ -1382,9 +1379,8 @@ class TestGeneralNonComputationalOps:
                                      (False, True),
                                      (-1, 0, 1, (1 << 200)),
                              ))
-    def test_normalize_zero_significand(self, fmt, sign, exponent):
+    def test_normalize_zero_significand(self, fmt, sign, exponent, context):
         # Test that a zero significand gives a zero regardless of exponent
-        context = std_context()
         value = fmt._normalize(sign, exponent, 0, context)
         assert context.flags == 0
         assert value.is_zero()
@@ -1553,7 +1549,7 @@ class TestUnaryOps:
         if len(parts) == 1:
             hex_str, = parts
             with pytest.raises(SyntaxError):
-                IEEEsingle.from_string(hex_str, std_context())
+                IEEEsingle.from_string(hex_str, Context())
         elif len(parts) in (5, 7):
             fmt, context, test_str, status = parts[:4]
             fmt = format_codes[fmt]
@@ -1563,9 +1559,7 @@ class TestUnaryOps:
 
             if len(parts) == 5:
                 answer = parts[-1]
-                input_context = std_context()
-                answer = fmt.from_string(answer, input_context)
-                assert input_context.flags == 0
+                answer = from_string(fmt, answer)
                 answer_tuple = answer.as_tuple()
             else:
                 sign, exponent, significand = parts[-3:]
@@ -1766,7 +1760,7 @@ class TestUnaryOps:
         answer = from_string(fmt, answer)
         status = status_codes[status]
 
-        context = std_context()
+        context = Context()
         result = in_value.logb(context)
         assert floats_equal(result, answer)
         assert context.flags == status
@@ -1796,7 +1790,7 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) != 4:
             assert False, f'bad line: {line}'
-        context = std_context()
+        context = Context()
         fmt, in_str, status, answer = parts
         fmt = format_codes[fmt]
         in_value = from_string(fmt, in_str)
@@ -1968,7 +1962,7 @@ def min_max_op(line, operation):
     status = status_codes[status]
 
     operation = getattr(lhs, operation)
-    context = std_context()
+    context = Context()
     result = operation(rhs, context)
     assert floats_equal(result, answer)
     assert context.flags == status
@@ -2072,7 +2066,7 @@ class TestBinaryOps:
         status = status_codes[status]
         answer = from_string(fmt, answer)
 
-        context = std_context()
+        context = Context()
         result = lhs.remainder(rhs, context)
         assert floats_equal(result, answer)
         assert context.flags == status
@@ -2090,7 +2084,7 @@ class TestBinaryOps:
         status = status_codes[status]
         answer = from_string(fmt, answer)
 
-        context = std_context()
+        context = Context()
         result = lhs.fmod(rhs, context)
         assert floats_equal(result, answer)
         assert context.flags == status
@@ -2108,13 +2102,13 @@ class TestBinaryOps:
         answer = compare_codes[answer_code]
 
         # Compare quietly
-        context = std_context()
+        context = Context()
         result = lhs.compare(rhs, context)
         assert result == answer
         assert context.flags == status
 
         # Compare singalling
-        context = std_context()
+        context = Context()
         result = lhs.compare_signal(rhs, context)
         op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
         assert result == answer
@@ -2126,7 +2120,7 @@ class TestBinaryOps:
             op_name = f'compare_{op}'
             op_result = answer_code in true_set
             op_status = Flags.INVALID if lhs.is_signalling() or rhs.is_signalling() else 0
-            context = std_context()
+            context = Context()
             result = getattr(lhs, op_name)(rhs, context)
             assert result == op_result
             assert context.flags == op_status
@@ -2135,7 +2129,7 @@ class TestBinaryOps:
             if op not in {'un', 'or'}:
                 op_name = f'compare_{op}_signal'
                 op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
-                context = std_context()
+                context = Context()
                 result = getattr(lhs, op_name)(rhs, context)
                 assert result == op_result
                 assert context.flags == op_status
