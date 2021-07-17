@@ -1121,6 +1121,106 @@ class TestBinary:
         pi =  IEEEdouble.from_string('3.141592653589793')
         assert pi.as_integer_ratio() == (884279719003555, 281474976710656)
 
+    def test_abs(self, context):
+        d = IEEEdouble.from_int(1)
+        assert abs(d) is d
+
+        e = IEEEdouble.from_int(-1)
+        assert floats_equal(abs(e), d)
+
+        f = IEEEdouble.from_string('-NaN1')
+        g = IEEEdouble.from_string('NaN1')
+        assert floats_equal(abs(f), g)
+
+        context = get_context()
+        assert context.flags == 0
+
+        h = IEEEdouble.from_string('-sNaN')
+        k = IEEEdouble.from_string('sNaN')
+        # The NaN is quietened; sign is not changed
+        assert floats_equal(abs(h), f)
+        assert context.flags == Flags.INVALID
+        assert floats_equal(abs(k), g)
+
+    def test_copy_abs(self, context):
+        d = IEEEdouble.from_int(1)
+        assert d.copy_abs() is d
+
+        e = IEEEdouble.from_int(-1)
+        assert floats_equal(e.copy_abs(), d)
+
+        f = IEEEdouble.from_string('-NaN')
+        g = IEEEdouble.from_string('NaN')
+        assert floats_equal(f.copy_abs(), g)
+
+        h = IEEEdouble.from_string('sNaN')
+        assert h.copy_abs() is h
+
+        assert get_context().flags == 0
+
+    def test_negate(self, context):
+        d = IEEEdouble.from_int(1)
+        e = IEEEdouble.from_int(-1)
+
+        assert floats_equal(-d, e)
+        assert floats_equal(-e, d)
+
+        f = IEEEdouble.from_string('-NaN1')
+        g = IEEEdouble.from_string('NaN1')
+        assert floats_equal(-f, g)
+        assert floats_equal(-g, f)
+
+        context = get_context()
+        assert context.flags == 0
+
+        h = IEEEdouble.from_string('sNaN')
+        k = IEEEdouble.from_string('-sNaN')
+        assert floats_equal(-h, g)
+        assert context.flags == Flags.INVALID
+        assert floats_equal(f, -k)
+
+    def test_copy_negate(self, context):
+        d = IEEEdouble.from_int(1)
+        e = IEEEdouble.from_int(-1)
+
+        assert floats_equal(d.copy_negate(), e)
+        assert floats_equal(e.copy_negate(), d)
+
+        f = IEEEdouble.from_string('-NaN')
+        g = IEEEdouble.from_string('NaN')
+        assert floats_equal(f.copy_negate(), g)
+        assert floats_equal(g.copy_negate(), f)
+
+        context = get_context()
+        assert context.flags == 0
+
+        h = IEEEdouble.from_string('sNaN')
+        k = IEEEdouble.from_string('-sNaN')
+        assert floats_equal(h.copy_negate(), k)
+        assert floats_equal(h, k.copy_negate())
+        assert context.flags == 0
+
+    def test_plus(self, context):
+        d = IEEEdouble.from_int(1)
+        e = IEEEdouble.from_int(-1)
+
+        assert +d is d
+        assert +e is e
+
+        f = IEEEdouble.from_string('-NaN1')
+        g = IEEEdouble.from_string('NaN1')
+        assert +f is f
+        assert +g is g
+
+        context = get_context()
+        assert context.flags == 0
+
+        h = IEEEdouble.from_string('sNaN')
+        k = IEEEdouble.from_string('-sNaN')
+        assert floats_equal(+h, g)
+        assert context.flags == Flags.INVALID
+        assert floats_equal(+k, f)
+
 
 class TestIntegerFormat:
 

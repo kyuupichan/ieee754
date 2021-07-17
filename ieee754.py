@@ -49,6 +49,7 @@ ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
 
 
 # Operation names
+OP_ABS = 'abs'
 OP_ADD = 'add'
 OP_SUBTRACT = 'subtract'
 OP_MULTIPLY = 'multiply'
@@ -81,6 +82,8 @@ OP_MAX_MAG_NUM = 'max_mag_num'
 OP_MAX_MAG = 'max_mag'
 OP_MIN_MAG_NUM = 'min_mag_num'
 OP_MIN_MAG = 'min_mag'
+OP_UNARY_MINUS = 'minus'
+OP_UNARY_PLUS = 'plus'
 
 
 class MinMaxFlags(IntFlag):
@@ -304,9 +307,10 @@ class IEEEError(ArithmeticError):
     def is_multiply_divide(self):
         return self.op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}
 
-    def signal(self, context):
+    def signal(self, context=None):
         '''Call to signal an exception.  This routine handles the exception according to
         default or alternative exception handling as specified in the context.'''
+        context = context or get_context()
         kind, handler = context.handler(self.__class__)
         result = self.default_result
 
@@ -797,7 +801,7 @@ class BinaryFormat(NamedTuple):
         else:
             return self.make_zero(sign)
 
-    def _propagate_NaN(self, op_tuple, context):
+    def _propagate_NaN(self, op_tuple, context=None):
         '''Return the result of an operation with at least one NaN.
 
         This implementation returns the leftmost NaN whose payload can fit in the
@@ -1837,17 +1841,17 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return self
         return Binary(self.fmt, sign, self.e_biased, self.significand)
 
-    def copy_sign(self, y):
-        '''Retuns a copy of this number but with the sign of y.'''
-        return self.set_sign(y.sign)
+    def copy_abs(self):
+        '''Return this value with sign False (positive), including for NaNs.'''
+        return self.set_sign(False)
 
     def copy_negate(self):
-        '''Returns a copy of this number with the opposite sign.'''
+        '''Return this value with the opposite sign, including for NaNs.'''
         return self.set_sign(not self.sign)
 
-    def copy_abs(self):
-        '''Returns a copy of this number with sign False (positive).'''
-        return self.set_sign(False)
+    def copy_sign(self, y):
+        '''Return this value but with the sign of y.'''
+        return self.set_sign(y.sign)
 
     def as_integer_ratio(self):
         '''Return a pair (n, d) of integers that represent the floating point value as a fraction
@@ -2654,6 +2658,36 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         return exponent, digits, R != 0
 
+    ##
+    ## Python support - make it feel like a Python numeric data type.
+    ##
+    ## These operations are not quiet.
+    ##
+
+    def __abs__(self):
+        '''Return this value with sign False (positive).'''
+        if self.is_signalling():
+            op_tuple = (OP_ABS, self)
+            return self.fmt._propagate_NaN(op_tuple)
+        return self.set_sign(False)
+
+    def __neg__(self):
+        '''Return this value with the opposite sign (unary minus).'''
+        if self.is_signalling():
+            op_tuple = (OP_UNARY_MINUS, self)
+            return self.fmt._propagate_NaN(op_tuple)
+        return self.set_sign(not self.sign)
+
+    def __pos__(self):
+        '''Return this value (unary plus).'''
+        if self.is_signalling():
+            op_tuple = (OP_UNARY_PLUS, self)
+            return self.fmt._propagate_NaN(op_tuple)
+        return self
+
+
+    # TODO: comparisons, add, sub, mul, truediv, floordiv, mod, divmod, r-forms, i-forms
+    # __int__  __float__  __round__  __trunc__  __floor__ __ceil__
 
 #
 # Useful internal helper routines
