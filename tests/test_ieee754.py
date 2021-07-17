@@ -1093,6 +1093,34 @@ class TestBinary:
         with pytest.raises(AttributeError):
             d.sign = True
 
+    @pytest.mark.parametrize('fmt, value', product(all_IEEE_fmts, signs))
+    def test_as_integer_ratio_inf(self, fmt, sign):
+        with pytest.raises(OverflowError):
+            fmt.make_infinity(sign).as_integer_ratio()
+
+    @pytest.mark.parametrize('fmt, is_signalling', product(all_IEEE_fmts, signs))
+    def test_as_integer_ratio_inf(self, fmt, is_signalling):
+        with pytest.raises(ValueError):
+            fmt.make_NaN(False, is_signalling, 0).as_integer_ratio()
+
+    @pytest.mark.parametrize('fmt, testcase', product(
+        all_IEEE_fmts, (
+            ('1', 1, 1),
+            ('-1', -1, 1),
+            ('0', 0, 1),
+            ('-0', 0, 1),
+            ('-0.5', -1, 2),
+            ('123.25', 493, 4),
+            ('-0.000518798828125', -17, 32768),
+        )))
+    def test_as_integer_ratio_exact(self, fmt, testcase):
+        text, n, d = testcase
+        assert fmt.from_string(text).as_integer_ratio() == (n, d)
+
+    def test_as_integer_ratio_inexact(self):
+        pi =  IEEEdouble.from_string('3.141592653589793')
+        assert pi.as_integer_ratio() == (884279719003555, 281474976710656)
+
 
 class TestIntegerFormat:
 

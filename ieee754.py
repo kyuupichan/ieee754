@@ -1702,6 +1702,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 raise ValueError(f'significand {significand:,d} out of range')
         return super().__new__(cls, fmt, sign, e_biased, significand)
 
+
     ##
     ## Non-computational operations.  These are never exceptional so simply return their
     ## non-floating-point results.
@@ -1847,6 +1848,27 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def copy_abs(self):
         '''Returns a copy of this number with sign False (positive).'''
         return self.set_sign(False)
+
+    def as_integer_ratio(self):
+        '''Return a pair (n, d) of integers that represent the floating point value as a fraction
+        in lowest terms and with a positive denominator.'''
+        if self.e_biased == 0:
+            if self.significand:
+                raise ValueError('cannot convert a NaN to an integer ratio')
+            raise OverflowError('cannot convert an infinity to an integer ratio')
+        if self.significand == 0:
+            return (0, 1)
+        exp = self.exponent_int()
+        significand = self.significand
+        while exp < 0 and not (significand & 1):
+            significand >>= 1
+            exp += 1
+
+        if exp >= 0:
+            n, d = significand << exp, 1
+        else:
+            n, d = significand, 1 << -exp
+        return (-n if self.sign else n), d
 
     def payload(self):
         '''Return the payload of a NaN as a non-negative floating point integer, or -1
