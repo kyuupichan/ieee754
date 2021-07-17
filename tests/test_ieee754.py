@@ -1033,6 +1033,43 @@ class TestBinaryFormat:
         with pytest.raises(AttributeError):
             IEEEhalf.precision = 5
 
+    @pytest.mark.parametrize('fmt, text', product(
+        all_IEEE_fmts, ('0', '-0', 'Inf', '-Inf', 'NaN', '1', '-1',
+                        '123.456', '1e300', '-2.65721e-310')))
+    def test_from_float(self, fmt, text, context):
+        # Work out what should happen
+        with local_context() as ctx:
+            answer = IEEEdouble.from_string(text)
+            ctx.flags = 0
+            answer = fmt.convert(answer)
+            flags = ctx.flags
+
+        py_value = float(text)
+        result = fmt.from_float(py_value)
+        assert result.fmt == fmt
+        assert floats_equal(result, answer)
+        assert get_context().flags == flags
+
+    @pytest.mark.parametrize('fmt, value', product(
+        all_IEEE_fmts,
+        (-1, 0, 1, 123456 << 5000, -1.3, 1.25, 1.2e1000, '6.25', '-1.1', '-Inf', 'NaN2', 'sNaN')))
+    def test_from_value(self, fmt, value, context):
+        with local_context() as ctx:
+            if isinstance(value, int):
+                answer = fmt.from_int(value)
+            elif isinstance(value, float):
+                answer = fmt.from_float(value)
+            else:
+                answer = fmt.from_string(value)
+            flags = ctx.flags
+
+        result = fmt.from_value(value)
+        assert result.fmt == fmt
+        assert floats_equal(result, answer)
+        assert get_context().flags == flags
+        # Test binary is accepted too.
+        assert floats_equal(fmt.from_value(answer.pack()), answer)
+
     def test_repr(self):
         assert repr(IEEEdouble) == 'BinaryFormat(precision=53, e_max=1023, e_min=-1022)'
 
@@ -1055,16 +1092,6 @@ class TestBinary:
         d = IEEEdouble.from_string('1.25')
         with pytest.raises(AttributeError):
             d.sign = True
-
-    @pytest.mark.parametrize('text', ('0.0', '-0.0', 'Inf', '-Inf', 'NaN',
-                                      '1.0', '-1.0', '123.456', '-2.65721e-310'))
-    def test_from_float(self, text):
-        py_value = float(text)
-        answer = IEEEdouble.from_string(text)
-        result = IEEEdouble.from_float(py_value)
-        get_context().flags = 0
-        assert floats_equal(result, answer)
-        assert get_context().flags == 0
 
 
 class TestIntegerFormat:

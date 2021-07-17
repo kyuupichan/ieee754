@@ -1027,6 +1027,11 @@ class BinaryFormat(NamedTuple):
     ## the destination format is self.
     ##
 
+    @classmethod
+    def IEEEdouble_from_float(cls, value):
+        '''Return an IEEEdouble converted from a Python float value.'''
+        return IEEEdouble.unpack_value(pack_double(value))
+
     def from_value(self, value, context=None):
         '''Return a floating point value derived from value.  Values of type int, float and string
         are accepted, ass passed on to from_int, from_float and from_string respectively.'''
@@ -1034,8 +1039,10 @@ class BinaryFormat(NamedTuple):
             return self.from_int(value, context)
         if isinstance(value, float):
             return self.from_float(value, context)
-        elif isinstance(value, str):
+        if isinstance(value, str):
             return self.from_string(value, context)
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            return self.unpack_value(value)
         raise TypeError(f'from() cannot handle values of type {type(value)}')
 
     def from_int(self, value, context=None):
@@ -1045,20 +1052,15 @@ class BinaryFormat(NamedTuple):
         op_tuple = (OP_FROM_INT, value)
         return self._normalize(value < 0, 0, abs(value), op_tuple, context)
 
-    @classmethod
-    def double_from_float(cls, value):
-        '''Return an IEEEdouble converted from a Python float value.'''
-        return IEEEdouble.unpack_value(pack_double(value))
-
     def from_float(self, value, context=None):
         '''Return the float value converted to this format, rounding if necessary.'''
         if not isinstance(value, float):
             raise TypeError('from_float requires a float')
-        result = self.double_from_float(value)
-        if not self is IEEEdouble:
-            op_tuple = (OP_FROM_FLOAT, value)
-            result = self._convert(result, op_tuple, context, True)
-        return result
+        result = self.IEEEdouble_from_float(value)
+        if self is IEEEdouble:
+            return result
+        op_tuple = (OP_FROM_FLOAT, value)
+        return self._convert(result, op_tuple, context, True)
 
     def from_string(self, string, context=None):
         '''Convert a string to a rounded floating number of this format.'''
