@@ -2221,9 +2221,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self._round_to_integral(OP_ROUND_TO_INTEGRAL_EXACT, context.rounding, context)
 
-    def _to_integer(self, operation, integer_fmt, rounding, context):
-        '''Convert this to an integer, as per rounding.  The result fits in the
-        target integer format specified.
+    def _to_integer(self, operation, integer_fmt, rounding, context=None):
+        '''Convert this to an integer, as per rounding.  The result fits in the target integer
+        format specified.  If integer_fmt is None, the target integer format is unbounded
+        (as in Python).
 
         If the value is a NaN or infinity, or the result cannot be represented in the
         integer format, invalid operation is signalled.  The result is zero if the source
@@ -2233,19 +2234,18 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         If operation is OP_CONVERT_TO_INTEGER_EXACT, and the operand was finite and not an
         integer, signal Inexact.
         '''
-        if not isinstance(integer_fmt, IntegerFormat):
+        if integer_fmt is not None and not isinstance(integer_fmt, IntegerFormat):
             raise TypeError('integer_fmt must be an integer format')
 
         op_tuple = (operation, self, integer_fmt, rounding)
-
-        result, is_exact = self._to_int(rounding)
-        if result is None:
+        if self.e_biased == 0:
             is_invalid = True
-            if self.significand:
+            if self.significand or integer_fmt is None:
                 result = 0
-            else:
+            else:   # An infinity going to a bounded format
                 result = integer_fmt.min_int if self.sign else integer_fmt.max_int
         else:
+            result, is_exact = self._to_int(rounding)
             unclamped_result = -result if self.sign else result
             result = min(max(unclamped_result, integer_fmt.min_int), integer_fmt.max_int)
             is_invalid = result != unclamped_result
@@ -2747,6 +2747,16 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if compare is None:
             return NotImplemented
         return compare == Compare.GREATER_THAN
+
+    def __trunc__(self):
+        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_DOWN)
+
+    def __floor__(self):
+        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_FLOOR)
+
+    def __ceil__(self):
+        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_CEILING)
+
 
     # TODO: add, sub, mul, truediv, floordiv, mod, divmod, r-forms, i-forms
     # __int__  __float__  __round__  __trunc__  __floor__ __ceil__
