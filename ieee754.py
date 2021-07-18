@@ -120,6 +120,7 @@ class Flags(IntFlag):
 
 BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
 pack_double = Struct('<d').pack
+unpack_double = Struct('<d').unpack
 
 
 @attr.s(slots=True)
@@ -2748,6 +2749,18 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return NotImplemented
         return compare == Compare.GREATER_THAN
 
+    def __bool__(self):
+        return not self.is_zero()
+
+    def __int__(self):
+        # Same as __trunc__
+        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_DOWN)
+
+    def __float__(self):
+        value = IEEEdouble.convert(self)
+        result, = unpack_double(value.pack())
+        return result
+
     def __trunc__(self):
         return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_DOWN)
 
@@ -2759,7 +2772,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
 
     # TODO: add, sub, mul, truediv, floordiv, mod, divmod, r-forms, i-forms
-    # __int__  __float__  __round__  __trunc__  __floor__ __ceil__
+    # __round__
 
 #
 # Useful internal helper routines
