@@ -595,7 +595,7 @@ def invalid_convert_to_integer(kind, index):
     else:
         value = dst_fmt.from_value(16)
         result = 15
-    op_tuple = (OP_CONVERT_TO_INTEGER, value)
+    op_tuple = (OP_CONVERT_TO_INTEGER, value, nibble_fmt, ROUND_DOWN)
     handler_class = (InvalidConvertToInteger, Invalid, IEEEError)[index]
     return (result, InvalidConvertToInteger, handler_class, op_tuple,
             partial(value.convert_to_integer, nibble_fmt, ROUND_DOWN))
@@ -730,7 +730,7 @@ def inexact_round_to_integral(dst_fmt, index):
 
 def inexact_convert_to_integer(dst_fmt, index):
     lhs = dst_fmt.from_string('0.5')
-    op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, lhs)
+    op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, lhs, nibble_fmt, ROUND_DOWN)
     handler_class = (Inexact, IEEEError)[index]
     return Inexact, handler_class, op_tuple, partial(lhs.convert_to_integer_exact,
                                                      nibble_fmt, ROUND_DOWN)

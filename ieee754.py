@@ -601,15 +601,6 @@ class IntegerFormat:
             self.min_int = 0
             self.max_int = (1 << width) - 1
 
-    def clamp(self, value):
-        '''Clamp the value to being in-range.  Return a (clamped_value, was_clamped) pair.'''
-        assert isinstance(value, int)
-        if value > self.max_int:
-            return self.max_int, True
-        if value < self.min_int:
-            return self.min_int, True
-        return value, False
-
     def __eq__(self, other):
         '''Returns True if two formats are equal.'''
         return (isinstance(other, IntegerFormat) and
@@ -2161,91 +2152,65 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self.fmt._next_up(self, context, True)
 
-    def _to_integer(self, integer_fmt, rounding, signal_inexact, op_tuple, context):
-        '''Round the value to an integer, as per rounding.  If integer_fmt is None, the result is
-        a floating point value of the same format (a round_to_integral operation).
-        Otherwise it is a convert_to_integer operation and an integer that fits in the
-        given format is returned.
+    def _to_int(self, rounding):
+        '''Round our value to an integer, rounding as specified.
 
-        If the value is a NaN or infinity or the rounded result cannot be represented in
-        the integer format, invalid operation is signalled.  The result is zero if the
-        source is a NaN, otherwise it is the smallest or largest value in the integer
-        format, whichever is closest to the ideal result.
-
-        If signal_inexact is True then if the result is not numerically equal to the
-        original value, inexact is signalled, otherwise it is not.
+        Return a (abs_result, is_exact) pair.  result is None for infinities and NaNs.
+        The caller needs to apply our sign to the result.
         '''
-        if not isinstance(integer_fmt, (type(None), IntegerFormat)):
-            raise TypeError('integer_fmt must be an integer format or None')
-
-        context = context or get_context()
-
         if self.e_biased == 0:
-            if integer_fmt is None:
-                # NaNs and infinities are unchanged (but NaNs are made quiet)
-                if self.significand:
-                    return self.fmt._propagate_NaN(op_tuple, context)
-                return self
-
-            # Nan?
-            if self.significand:
-                result = 0
-            else:
-                result = integer_fmt.min_int if self.sign else integer_fmt.max_int
-            return InvalidConvertToInteger(op_tuple, result).signal(context)
-
-        # Zeroes return unchanged.
+            return None, True
         if self.significand == 0:
-            if integer_fmt is None:
-                return self
-            return 0
+            return 0, True
 
         # Strategy: truncate the significand, capture the lost fraction, and round.
-        # Truncating the significand means clearing zero or more of its least-significant
-        # bits.
+        is_exact = True
         value = self.significand
         rshift = -self.exponent_int()
 
         if rshift <= 0:
             # We're already a (large) integer if rshift is <= 0
-            if integer_fmt is None:
-                return self
             value <<= -rshift
-            signal_inexact = False
         else:
             value, lost_fraction = shift_right(value, rshift)
+            if lost_fraction != LF_EXACTLY_ZERO:
+                is_exact = False
+                if round_up(rounding, lost_fraction, self.sign, bool(value & 1)):
+                    value += 1
+        return value, is_exact
 
-            if lost_fraction == LF_EXACTLY_ZERO:
-                signal_inexact = False
-            elif round_up(rounding, lost_fraction, self.sign, bool(value & 1)):
-                value += 1
+    def _round_to_integral(self, operation, rounding, context):
+        '''Round this value to an integer, as per rounding.  The result is a floating point value
+        of the same format.
 
-            # must only do so after confirming the result was not clamped (consider a
-            # negative subnormal rounding down to -1 with an unsigned format).
-            if integer_fmt is None:
-                if value:
-                    lshift = self.fmt.precision - value.bit_length()
-                    e_biased = self.e_biased + rshift - lshift
-                    value = Binary(self.fmt, self.sign, e_biased, value << lshift)
-                else:
-                    value = self.fmt.make_zero(self.sign)
+        If the operation is OP_ROUND_TO_INTEGRAL_EXACT, and the operand was finite and not
+        an integer, signal Inexact.
+        '''
+        if operation == OP_ROUND_TO_INTEGRAL:
+            op_tuple = (operation, self, rounding)
+        else:
+            op_tuple = (operation, self)
 
-        if integer_fmt:
-            value, was_clamped = integer_fmt.clamp(-value if self.sign else value)
-            if was_clamped:
-                return InvalidConvertToInteger(op_tuple, value).signal(context)
-        if signal_inexact:
-            return Inexact(op_tuple, value).signal(context)
-        return value
+        result, is_exact = self._to_int(rounding)
+        if result is None:
+            # NaNs and infinities are unchanged (but NaNs are made quiet)
+            if self.is_NaN():
+                return self.fmt._propagate_NaN(op_tuple, context)
+            return self
+
+        # This should not raise any signals
+        result = self.fmt._normalize(self.sign, 0, result, op_tuple)
+        if operation == OP_ROUND_TO_INTEGRAL_EXACT and not is_exact:
+            result = Inexact(op_tuple, result).signal(context)
+        return result
 
     def round_to_integral(self, rounding, context=None):
-        '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
+        '''Return the value rounded to the nearest integer in the same format.  The rounding
         method is given explicitly; that in context is ignored.
 
         This only signal is SignallingNaNOperand.
         '''
-        op_tuple = (OP_ROUND_TO_INTEGRAL, self)
-        return self._to_integer(None, rounding, False, op_tuple, context)
+        return self._round_to_integral(OP_ROUND_TO_INTEGRAL, rounding, context)
 
     def round_to_integral_exact(self, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
@@ -2254,8 +2219,42 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         This function signals SignallingNaNOperand, or INEXACT if the result is not the
         original value (i.e. it was not an integer).
         '''
-        op_tuple = (OP_ROUND_TO_INTEGRAL_EXACT, self)
-        return self._to_integer(None, context.rounding, True, op_tuple, context)
+        return self._round_to_integral(OP_ROUND_TO_INTEGRAL_EXACT, context.rounding, context)
+
+    def _to_integer(self, operation, integer_fmt, rounding, context):
+        '''Convert this to an integer, as per rounding.  The result fits in the
+        target integer format specified.
+
+        If the value is a NaN or infinity, or the result cannot be represented in the
+        integer format, invalid operation is signalled.  The result is zero if the source
+        is a NaN, otherwise it is the smallest or largest value in the integer format,
+        whichever is closest to the ideal result.
+
+        If operation is OP_CONVERT_TO_INTEGER_EXACT, and the operand was finite and not an
+        integer, signal Inexact.
+        '''
+        if not isinstance(integer_fmt, IntegerFormat):
+            raise TypeError('integer_fmt must be an integer format')
+
+        op_tuple = (operation, self, integer_fmt, rounding)
+
+        result, is_exact = self._to_int(rounding)
+        if result is None:
+            is_invalid = True
+            if self.significand:
+                result = 0
+            else:
+                result = integer_fmt.min_int if self.sign else integer_fmt.max_int
+        else:
+            unclamped_result = -result if self.sign else result
+            result = min(max(unclamped_result, integer_fmt.min_int), integer_fmt.max_int)
+            is_invalid = result != unclamped_result
+
+        if is_invalid:
+            return InvalidConvertToInteger(op_tuple, result).signal(context)
+        if operation == OP_CONVERT_TO_INTEGER_EXACT and not is_exact:
+            return Inexact(op_tuple, result).signal(context)
+        return result
 
     def convert_to_integer(self, integer_fmt, rounding, context=None):
         '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
@@ -2264,16 +2263,14 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         NaNs, infinities and out-of-range values signal InvalidConvertToInteger.
         Inexact is not signalled.
         '''
-        op_tuple = (OP_CONVERT_TO_INTEGER, self)
-        return self._to_integer(integer_fmt, rounding, False, op_tuple, context)
+        return self._to_integer(OP_CONVERT_TO_INTEGER, integer_fmt, rounding, context)
 
     def convert_to_integer_exact(self, integer_fmt, rounding, context=None):
         '''As for convert_to_integer, except that Inexact is signaled if the result is
         in-range and not numerically equal to the original value (i.e. it was not an
         integer).
         '''
-        op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, self)
-        return self._to_integer(integer_fmt, rounding, True, op_tuple, context)
+        return self._to_integer(OP_CONVERT_TO_INTEGER_EXACT, integer_fmt, rounding, context)
 
     ##
     ## Signalling computational operations
