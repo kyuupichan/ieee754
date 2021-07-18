@@ -2770,8 +2770,53 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def __ceil__(self):
         return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_CEILING)
 
+    #def __round__(self, ndigits=None):
+    #    print (ndigits)
+    #    return self
 
-    # TODO: add, sub, mul, truediv, floordiv, mod, divmod, r-forms, i-forms
+    def __add__(self, other):
+        other = convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.fmt.add(self, other)
+
+    def __sub__(self, other):
+        other = convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.fmt.subtract(self, other)
+
+    def __mul__(self, other):
+        other = convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.fmt.multiply(self, other)
+
+    def __truediv__(self, other):
+        other = convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.fmt.divide(self, other)
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __rsub__(self, other):
+        other = convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.fmt.subtract(other, self)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __rtruediv__(self, other):
+        other = convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.fmt.divide(other, self)
+
+    # TODO: floordiv, mod, divmod
     # __round__
 
 #
@@ -2871,7 +2916,23 @@ def compare_any(value, other):
             return Compare.LESS_THAN
         return Compare.EQUAL
 
-    return NotImplemented
+    return None
+
+
+def convert_for_arith(value):
+    '''Convert int and floats for use in Python arithmetic.'''
+    if isinstance(value, Binary):
+        return value
+    if isinstance(value, float):
+        return IEEEdouble_from_float(value)
+    if isinstance(value, int):
+        size = value.bit_length()
+        fmt = IEEEdouble
+        if size > fmt.precision:
+            fmt = BinaryFormat.from_precision_extended(size)
+        return fmt.from_int(value)
+
+    return None
 
 
 #
