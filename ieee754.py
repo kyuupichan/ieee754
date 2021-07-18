@@ -8,7 +8,9 @@ import copy
 import re
 import threading
 from collections import namedtuple
+from decimal import Decimal
 from enum import IntFlag, IntEnum
+from fractions import Fraction
 from math import floor, log2, sqrt
 from typing import NamedTuple
 from struct import Struct
@@ -1026,28 +1028,44 @@ class BinaryFormat(NamedTuple):
 
         return Binary(self, sign, exponent, significand)
 
+    def _unpack_value(self, binary, context):
+        '''unpack_value but takes a context for from_value dispatch.'''
+        return self.unpack_value(binary)
+
     ##
     ## General computational operations.  The operand(s) can be different formats;
     ## the destination format is self.
     ##
 
-    @classmethod
-    def IEEEdouble_from_float(cls, value):
-        '''Return an IEEEdouble converted from a Python float value.'''
-        return IEEEdouble.unpack_value(pack_double(value))
-
     def from_value(self, value, context=None):
         '''Return a floating point value derived from value.  Values of type int, float and string
         are accepted, ass passed on to from_int, from_float and from_string respectively.'''
-        if isinstance(value, int):
-            return self.from_int(value, context)
-        if isinstance(value, float):
-            return self.from_float(value, context)
-        if isinstance(value, str):
-            return self.from_string(value, context)
-        if isinstance(value, (bytes, bytearray, memoryview)):
-            return self.unpack_value(value)
-        raise TypeError(f'from() cannot handle values of type {type(value)}')
+        converter = BinaryFormat._converters.get(type(value))
+        if not converter:
+            raise TypeError(f'from_value cannot convert values of type {type(value)}')
+        return converter(self, value, context)
+
+    def from_decimal(self, value, context=None):
+        '''Return the decimal converted to this format, rounding if necessary.'''
+        if not isinstance(value, Decimal):
+            raise TypeError('from_decimal requires a Decimal instance')
+        return self.from_string(str(value), context)
+
+    def from_fraction(self, value, context=None):
+        '''Return the decimal converted to this format, rounding if necessary.'''
+        if not isinstance(value, Fraction):
+            raise TypeError('from_fraction requires a Fraction instance')
+        numerator = self._from_int_exact(value.numerator)
+        denominator = self._from_int_exact(value.denominator)
+        return self.divide(numerator, denominator, context)
+
+    @classmethod
+    def _from_int_exact(cls, value):
+        '''Returns an integer as a floating point value.  A wide format is used if necessary
+        so that this is exact.  If an IEEEdouble suffices, that format is used.'''
+        size = value.bit_length()
+        fmt = IEEEdouble if size <= IEEEdouble.precision else cls.from_precision_extended(size)
+        return fmt.from_int(value)
 
     def from_int(self, value, context=None):
         '''Return the integer value converted to this format, rounding if necessary.'''
@@ -1060,7 +1078,7 @@ class BinaryFormat(NamedTuple):
         '''Return the float value converted to this format, rounding if necessary.'''
         if not isinstance(value, float):
             raise TypeError('from_float requires a float')
-        result = self.IEEEdouble_from_float(value)
+        result = IEEEdouble_from_float(value)
         if self is IEEEdouble:
             return result
         op_tuple = (OP_FROM_FLOAT, value)
@@ -1659,6 +1677,18 @@ class BinaryFormat(NamedTuple):
         assert not product_context.flags
 
         return self.add(product, addend, context)
+
+
+BinaryFormat._converters = {
+    int: BinaryFormat.from_int,
+    float: BinaryFormat.from_float,
+    str: BinaryFormat.from_string,
+    bytes: BinaryFormat._unpack_value,
+    bytearray: BinaryFormat._unpack_value,
+    memoryview: BinaryFormat._unpack_value,
+    Decimal: BinaryFormat.from_decimal,
+    Fraction: BinaryFormat.from_fraction,
+}
 
 
 class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
@@ -2685,8 +2715,43 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return self.fmt._propagate_NaN(op_tuple)
         return self
 
+    def __eq__(self, other):
+        compare = compare_any(self, other)
+        if compare is None:
+            return NotImplemented
+        return compare == Compare.EQUAL
 
-    # TODO: comparisons, add, sub, mul, truediv, floordiv, mod, divmod, r-forms, i-forms
+    def __ne__(self, other):
+        compare = compare_any(self, other)
+        if compare is None:
+            return NotImplemented
+        return compare != Compare.EQUAL
+
+    def __lt__(self, other):
+        compare = compare_any(self, other)
+        if compare is None:
+            return NotImplemented
+        return compare == Compare.LESS_THAN
+
+    def __le__(self, other):
+        compare = compare_any(self, other)
+        if compare is None:
+            return NotImplemented
+        return compare in (Compare.EQUAL, Compare.LESS_THAN)
+
+    def __ge__(self, other):
+        compare = compare_any(self, other)
+        if compare is None:
+            return NotImplemented
+        return compare in (Compare.EQUAL, Compare.GREATER_THAN)
+
+    def __gt__(self, other):
+        compare = compare_any(self, other)
+        if compare is None:
+            return NotImplemented
+        return compare == Compare.GREATER_THAN
+
+    # TODO: add, sub, mul, truediv, floordiv, mod, divmod, r-forms, i-forms
     # __int__  __float__  __round__  __trunc__  __floor__ __ceil__
 
 #
@@ -2746,6 +2811,48 @@ def round_up(rounding, lost_fraction, sign, is_odd):
         return lost_fraction == LF_MORE_THAN_HALF
     else:
         return lost_fraction != LF_LESS_THAN_HALF
+
+
+def IEEEdouble_from_float(value):
+    '''Return an IEEEdouble converted from a Python float value.'''
+    return IEEEdouble.unpack_value(pack_double(value))
+
+
+def compare_any(value, other):
+    '''LHS is a Binary.  RHS is any type.'''
+    if isinstance(other, Binary):
+        return value.compare(other)
+    if isinstance(other, float):
+        return value.compare(IEEEdouble_from_float(other))
+    if isinstance(other, Decimal):
+        # Deal with infinites and NaNs only here.  Let finite decimals fall through.
+        if other.is_nan():
+            return Compare.UNORDERED
+        if other.is_infinite():
+            return value.compare(IEEEdouble.make_infinity(other.is_signed()))
+    if isinstance(other, (Decimal, Fraction, int)):
+        # other is finite.  Handle non-finite cases for us; they compare the same as to zero.
+        if value.e_biased == 0:
+            return value.compare(_positive_zero)
+
+        # Both are finite.  We want an infinitely precise comparison so we must not
+        # convert to Binary.  Compare both sides as fractions.
+        a, b = value.as_integer_ratio()
+        if isinstance(other, Decimal):
+            c, d = other.as_integer_ratio()
+        elif isinstance(other, int):
+            c, d = other, 1
+        else:
+            c, d = other.numerator, other.denominator
+        diff = a * d - b * c
+        if diff > 0:
+            return Compare.GREATER_THAN
+        if diff < 0:
+            return Compare.LESS_THAN
+        return Compare.EQUAL
+
+    return NotImplemented
+
 
 #
 # Exported functions
@@ -2836,3 +2943,6 @@ IEEEquad = BinaryFormat.from_IEEE(128)
 x87extended = BinaryFormat.from_precision_e_width(64, 15)
 x87double = BinaryFormat.from_precision_e_width(53, 15)
 x87single = BinaryFormat.from_precision_e_width(24, 15)
+
+
+_positive_zero = IEEEdouble.make_zero(False)

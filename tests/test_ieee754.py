@@ -2,6 +2,8 @@ import os
 import random
 import re
 import threading
+from decimal import Decimal
+from fractions import Fraction
 from functools import partial
 from itertools import product
 
@@ -1042,15 +1044,46 @@ class TestBinaryFormat:
         assert floats_equal(result, answer)
         assert get_context().flags == flags
 
+    @pytest.mark.parametrize('text', ('+0', '-0', 'Inf', '-Inf', '1.1', '-1.25', 'NaN'))
+    def test_from_decimal(self, text, context):
+        for fmt in all_IEEE_fmts:
+            with local_context(context) as ctx1:
+                value1 = fmt.from_string(text)
+            with local_context(context) as ctx2:
+                value2 = fmt.from_decimal(Decimal(text))
+
+            assert floats_equal(value1, value2)
+            assert ctx1.flags == ctx2.flags
+
+    @pytest.mark.parametrize('fmt, fraction, answer, flags', (
+        (IEEEdouble, Fraction(1, 3), '0x1.5555555555555p-2', Flags.INEXACT),
+        (IEEEdouble, Fraction(-1, 2), '-0.5', 0),
+        (IEEEhalf, Fraction(65504, 1), '65504', 0),
+        (IEEEhalf, Fraction(-65505, 1), '-65504', Flags.INEXACT),
+        (IEEEhalf, Fraction(-65520, 1), '-Inf', Flags.OVERFLOW | Flags.INEXACT),
+        # This test would fail if each integer were converted to IEEEdouble before dividing
+        (IEEEdouble, Fraction(72057594037927941, 72057594037927933), '1.0000000000000002',
+         Flags.INEXACT),
+    ))
+    def test_from_fraction(self, fmt, fraction, answer, flags, quiet_context):
+        with local_context():
+            answer = fmt.from_string(answer)
+        result = fmt.from_fraction(fraction)
+        assert floats_equal(result, answer)
+        assert quiet_context.flags == flags
+
     @pytest.mark.parametrize('fmt, value', product(
         all_IEEE_fmts,
-        (-1, 0, 1, 123456 << 5000, -1.3, 1.25, 1.2e1000, '6.25', '-1.1', '-Inf', 'NaN2', 'sNaN')))
+        (-1, 0, 1, 123456 << 5000, -1.3, 1.25, 1.2e1000, '6.25', '-1.1', '-Inf', 'NaN2', 'sNaN',
+         Decimal(1.2), Decimal(-15))))
     def test_from_value(self, fmt, value, quiet_context):
         with local_context() as ctx:
             if isinstance(value, int):
                 answer = fmt.from_int(value)
             elif isinstance(value, float):
                 answer = fmt.from_float(value)
+            elif isinstance(value, Decimal):
+                answer = fmt.from_decimal(value)
             else:
                 answer = fmt.from_string(value)
             flags = ctx.flags
@@ -1217,6 +1250,91 @@ class TestBinary:
         # The NaN is quietened; sign is not changed
         assert floats_equal(exc.default_result, f)
         assert context.flags == Flags.INVALID
+
+    @pytest.mark.parametrize('text, rhs, compare', (
+        # Comparisons of Infs
+        ('1', Decimal('Inf'), Compare.LESS_THAN),
+        ('1', Decimal('-Inf'), Compare.GREATER_THAN),
+        ('-Inf', Decimal('-Inf'), Compare.EQUAL),
+        ('Inf', Decimal('Inf'), Compare.EQUAL),
+        ('-Inf', Decimal('0'), Compare.LESS_THAN),
+        ('Inf', Decimal('0'), Compare.GREATER_THAN),
+        ('Inf', 0, Compare.GREATER_THAN),
+        ('-Inf', 0, Compare.LESS_THAN),
+        ('Inf', 1.1, Compare.GREATER_THAN),
+        ('-Inf', -1.1, Compare.LESS_THAN),
+        ('-Inf', Fraction(1, 2), Compare.LESS_THAN),
+        ('Inf', Fraction(1, 2), Compare.GREATER_THAN),
+        # Comparison of NaNs
+        ('1', Decimal('NaN'), Compare.UNORDERED),
+        ('Inf', Decimal('-NaN'), Compare.UNORDERED),
+        ('-NaN', Decimal('NaN'), Compare.UNORDERED),
+        ('NaN', Decimal('1'), Compare.UNORDERED),
+        ('-NaN', 1, Compare.UNORDERED),
+        ('NaN', 1.0, Compare.UNORDERED),
+        ('NaN', Fraction(1, 3), Compare.UNORDERED),
+        # Comparison of one
+        ('1', Decimal('-1'), Compare.GREATER_THAN),
+        ('1', Decimal('1'), Compare.EQUAL),
+        ('1', -1, Compare.GREATER_THAN),
+        ('1', 1, Compare.EQUAL),
+        ('1', -1.0, Compare.GREATER_THAN),
+        ('1', 1.0, Compare.EQUAL),
+        ('1', Fraction(-1, 1), Compare.GREATER_THAN),
+        ('1', Fraction(1, 1), Compare.EQUAL),
+        ('1', IEEEhalf.from_int(-1), Compare.GREATER_THAN),
+        ('1', IEEEhalf.from_int(1), Compare.EQUAL),
+    ))
+    def test_comparisons_exact(self, text, rhs, compare, context):
+        for fmt in all_IEEE_fmts:
+            lhs = fmt.from_string(text)
+            if compare == Compare.EQUAL:
+                assert lhs == rhs
+                assert not lhs != rhs
+                assert lhs >= rhs
+                assert not lhs > rhs
+                assert lhs <= rhs
+                assert not lhs < rhs
+            elif compare == Compare.LESS_THAN:
+                assert not lhs == rhs
+                assert lhs != rhs
+                assert not lhs >= rhs
+                assert not lhs > rhs
+                assert lhs <= rhs
+                assert lhs < rhs
+            elif compare == Compare.GREATER_THAN:
+                assert not lhs == rhs
+                assert lhs != rhs
+                assert lhs >= rhs
+                assert lhs > rhs
+                assert not lhs <= rhs
+                assert not lhs < rhs
+            else:
+                assert not lhs == rhs
+                assert lhs != rhs
+                assert not lhs >= rhs
+                assert not lhs > rhs
+                assert not lhs <= rhs
+                assert not lhs < rhs
+        assert context.flags == 0
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_comparisons_inexact(self, fmt, context):
+        one = fmt.from_int(1)
+        three = fmt.from_int(3)
+        third = fmt.divide(one, three)
+        assert context.flags == Flags.INEXACT
+        context.flags = 0
+        frac = Fraction(1, 3)
+        if fmt in (IEEEhalf, IEEEdouble, IEEEquad):
+            # 0x1.554p-2 0x1.5555555555555p-2 0x1.5555555555555555555555555555p-2
+            assert third < frac
+            assert -third > -frac
+        else:
+            # 0x1.555556p-2 for IEEEsingle
+            assert third > frac
+            assert -third < -frac
+        assert context.flags == 0
 
 
 class TestIntegerFormat:
