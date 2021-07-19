@@ -2925,6 +2925,17 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return NotImplemented
         return other.divmod(self)
 
+    def __hash__(self):
+        '''Python hash.  Must hash equally to other types with the same value.'''
+        if self.e_biased == 0:
+            # Follow behaviour of the Decimal package for non-finite values
+            if self.significand == 0:
+                return -314159 if self.sign else 314159
+            if self.is_quiet():
+                return 0
+            raise TypeError('cannot hash a signalling NaN')
+
+        return hash(Fraction(*self.as_integer_ratio()))
 
 #
 # Useful internal helper routines
