@@ -59,6 +59,9 @@ OP_DIVIDE = 'divide'
 OP_FMA = 'fma'
 OP_REMAINDER = 'remainder'
 OP_FMOD = 'fmod'
+OP_MOD = 'mod'                # Python
+OP_DIVMOD = 'divmod'          # Python
+OP_FLOORDIV = 'floordiv'      # Python
 OP_SQRT = 'sqrt'
 OP_SCALEB = 'scaleb'
 OP_LOGB = 'logb'
@@ -953,6 +956,21 @@ class BinaryFormat(NamedTuple):
 
         # Infinities
         return self.make_infinity(value.sign)
+
+    def convert_for_arith(self, value):
+        '''Convert value to something capable of doing arithmetic with this format.
+
+        Binary values are returned unmodified.  Python floats are returned as an
+        IEEEdouble.  Python ints are converted to this format.  Otherwise None is
+        returned.
+        '''
+        if isinstance(value, Binary):
+            return value
+        if isinstance(value, float):
+            return IEEEdouble_from_float(value)
+        if isinstance(value, int):
+            return self.from_int(value)
+        return None
 
     def pack(self, sign, exponent, significand, endianness='little'):
         '''Packs the IEEE parts of a floating point number as bytes of the given endianness.
@@ -1950,58 +1968,88 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Set to the remainder when divided by rhs.
 
         If rhs != 0, the remainder is defined for finite operands as r = x - y * n, where
-        n is the integer nearest the exact number x / y with round-to-even semantics.  The
+        n is the integer nearest the exact number x / y rounded with ROUND_HALF_EVEN.  The
         result is always exact, and if r is zero its sign shall be that of lhs.
 
         If rhs is zero or lhs is infinite, an invalid operation is returned if neither
-        operand is a NaN.
-        If rhs is infinite then the result is lhs if it is finite.
+        operand is a NaN.  If rhs is infinite then the result is lhs if it is finite.
         '''
-        return self._remainder(OP_REMAINDER, rhs, context)
+        op_tuple = (OP_REMAINDER, self, rhs)
+        _quot, rem = self._divmod(op_tuple, rhs, ROUND_HALF_EVEN, context)
+        return rem
 
     def fmod(self, rhs, context=None):
-        '''C99's fmod operation.  Return the value x− ny, for some integer n such that, if y is
-        nonzero, the result has the same sign as x and magnitude less than the magnitude
-        of y.
+        '''C99's fmod operation.  As for remainder, but rounding is with ROUND_DOWN.'''
+        op_tuple = (OP_FMOD, self, rhs)
+        _quot, rem = self._divmod(op_tuple, rhs, ROUND_DOWN, context)
+        return rem
 
-        Like remainder the result is always exact.  Mimic IEEE-754 remainder for specials.
+    def mod(self, rhs, context=None):
+        '''Python's mod.  As for remainder, but rounding is with ROUND_FLOOR.'''
+        op_tuple = (OP_MOD, self, rhs)
+        _quot, rem = self._divmod(op_tuple, rhs, ROUND_FLOOR, context)
+        return rem
+
+    def floordiv(self, rhs, context=None):
+        '''Python's floordiv operation.  The quotient of mod().'''
+        # TODO - suppress remainder signals?
+        op_tuple = (OP_FLOORDIV, self, rhs)
+        quot, _rem = self._divmod(op_tuple, rhs, ROUND_FLOOR, context)
+        return self.fmt.from_int(quot)
+
+    def divmod(self, rhs, context=None):
+        '''Python's divmod operation - floordiv and mod combined.  The quotient is returned as a
+        floating point number of the same format.
         '''
-        return self._remainder(OP_FMOD, rhs, context)
+        # TODO - are two sets of signals possible?
+        quot, rem = self._divmod(OP_DIVMOD, rhs, ROUND_FLOOR, context)
+        quot = self.fmt.from_int(quot)
+        return quot, rem
 
-    def _remainder(self, operation, rhs, context):
-        '''Common implementation of remainder and fmod.'''
+    def _divmod(self, op_tuple, rhs, rounding, context):
+        '''Common implementation of the various remainder operations.
+
+        Returns a (quot, remainder) pair where quot is a Python int or a NaN.
+        '''
         if self.fmt != rhs.fmt:
             raise ValueError(f'{operation} requires operands of the same format')
 
         context = context or get_context()
-        op_tuple = (operation, self, rhs)
+        quot_sign = self.sign ^ rhs.sign     # Sign of the quotient
+        rem_sign = self.sign                 # Rounding up always flips rem_sign
 
-        # Are we an infinity or NaN?
+        # NaNs?
+        if self.is_NaN() or rhs.is_NaN():
+            result = self.fmt._propagate_NaN(op_tuple, context)
+            return result, result
+
+        # remainder (infinity, non-NaN) is an invalid operation
         if self.e_biased == 0:
-            if self.significand or rhs.is_NaN():
-                return self.fmt._propagate_NaN(op_tuple, context)
-            else:
-                # remainder (infinity, non-NaN) is an invalid operation
-                return InvalidRemainder(op_tuple, self.fmt).signal(context)
-        elif rhs.e_biased == 0:
-            if rhs.significand:
-                return self.fmt._propagate_NaN(op_tuple, context)
-            else:
-                result = self
-                # remainder(finite, infinity) is the LHS and exact.  remainder(subnormal,
-                # infinity) is the LHS and signals underflow
-                if self.is_subnormal():
-                    result = UnderflowExact(op_tuple, result).signal(context)
-                return result
-        elif rhs.significand == 0:
-            # remainder (finite, zero) is an invalid operation
-            return InvalidRemainder(op_tuple, self.fmt).signal(context)
+            result = InvalidRemainder(op_tuple, self.fmt).signal(context)
+            return result, result
+
+        # remainder(finite, infinity) is the LHS and exact.  remainder(subnormal,
+        # infinity) is the LHS and signals underflow
+        if rhs.e_biased == 0:
+            rem = self
+            quot = 0
+            if round_up(rounding, LF_LESS_THAN_HALF, quot_sign, False):
+                rem = self.fmt.make_infinity(not rem_sign)
+                quot = 1
+            elif rem.is_subnormal():
+                rem = UnderflowExact(op_tuple, rem).signal(context)
+            return -quot if quot_sign else quot, rem
+
+        # remainder (finite, zero) is an invalid operation
+        if rhs.significand == 0:
+            result = InvalidRemainder(op_tuple, self.fmt).signal(context)
+            return result, result
 
         lhs_sig = self.significand
         if not lhs_sig:
             # Both operations return a zero of the same sign.  As this is a homogeneous
             # operation formats match so just return self.
-            return self
+            return 0, self
         rhs_sig = rhs.significand
 
         # Like divide, shift significands until rhs_sig <= lhs_sig < rhs_sig * 2 keeping
@@ -2025,42 +2073,52 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         # lhs_exponent - rhs_exponent.  However we only want to do the bit-by-bit division
         # operation until we've found the integer result, when we must stop to keep the
         # remainder.
+        quot = 0
         bits = (lhs_exponent - rhs_exponent) + 1
         if bits <= 0:
-            if bits == 0 and operation == OP_REMAINDER:
-                return self.fmt.subtract(self, rhs, context)
+            if bits == 0:
+                if lhs_sig > rhs_sig:
+                    lost_fraction = LF_MORE_THAN_HALF
+                else:
+                    lost_fraction = LF_EXACTLY_HALF
             else:
-                return self
+                lost_fraction = LF_LESS_THAN_HALF
+            rem = self
+            if round_up(rounding, lost_fraction, quot_sign, False):
+                rem = self.fmt.subtract(self, rhs, context)
+                quot = 1
+            return -quot if quot_sign else quot, rem
 
-        # We do not need to keep the quotient; only its least significant bit.  This is to
-        # know if it's even under the remainder operation's round-half-even semantics.
+        # Perform the division
         while True:
-            is_odd = lhs_sig >= rhs_sig
-            if is_odd:
+            quot <<= 1
+            if lhs_sig >= rhs_sig:
+                quot += 1
                 lhs_sig -= rhs_sig
             bits -= 1
             if not (bits and lhs_sig):
                 break
             lhs_sig <<= 1
 
-        # For fmod, we are now done.  For remainder we may need to round up.
-        sign = self.sign
-        if operation == OP_REMAINDER:
-            # Exactly half rounds-to-even
-            if lhs_sig * 2 == rhs_sig:
-                rounds_up = is_odd
-            else:
-                rounds_up = lhs_sig * 2 > rhs_sig
+        if lhs_sig * 2 > rhs_sig:
+            lost_fraction = LF_MORE_THAN_HALF
+        elif lhs_sig * 2 == rhs_sig:
+            lost_fraction = LF_EXACTLY_HALF
+        elif lhs_sig:
+            lost_fraction = LF_LESS_THAN_HALF
+        else:
+            lost_fraction = LF_EXACTLY_ZERO
 
-            if rounds_up:
-                # Simulate an extra subtraction loop; this also flips the sign
-                lhs_sig = rhs_sig - lhs_sig
-                sign = not sign
+        # IEEE-754 decrees a remainder of zero shall have the sign of the LHS.  A
+        # remainder of zero cannot round up, so this is satisfied.
+        if round_up(rounding, lost_fraction, quot_sign, bool(quot & 1)):
+            lhs_sig = rhs_sig - lhs_sig
+            rem_sign = not rem_sign
+            quot += 1
 
-            # IEEE-754 decrees a remainder of zero shall have the sign of the LHS.  A
-            # remainder of zero cannot have rounded up, so this is already the case.
-
-        return self.fmt._normalize(sign, rhs_exponent, lhs_sig, op_tuple, context)
+        # This is exact; signals underflow if appropriate
+        rem = self.fmt._normalize(rem_sign, rhs_exponent, lhs_sig, op_tuple, context)
+        return -quot if quot_sign else quot, rem
 
     ##
     ## logBFormat operations (logBFormat is an integer format)
@@ -2790,34 +2848,52 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return result.scaleb(-ndigits)
 
     def __add__(self, other):
-        other = convert_for_arith(other)
+        other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
         return self.fmt.add(self, other)
 
     def __sub__(self, other):
-        other = convert_for_arith(other)
+        other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
         return self.fmt.subtract(self, other)
 
     def __mul__(self, other):
-        other = convert_for_arith(other)
+        other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
         return self.fmt.multiply(self, other)
 
     def __truediv__(self, other):
-        other = convert_for_arith(other)
+        other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
         return self.fmt.divide(self, other)
+
+    def __mod__(self, other):
+        other = self.fmt.convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.mod(self, other)
+
+    def __floordiv__(self, other):
+        other = self.fmt.convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.floordiv(self, other)
+
+    def __divmod__(self, other):
+        other = self.fmt.convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return self.divmod(other)
 
     def __radd__(self, other):
         return self.__add__(other)
 
     def __rsub__(self, other):
-        other = convert_for_arith(other)
+        other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
         return self.fmt.subtract(other, self)
@@ -2826,12 +2902,29 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.__mul__(other)
 
     def __rtruediv__(self, other):
-        other = convert_for_arith(other)
+        other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
         return self.fmt.divide(other, self)
 
-    # TODO: floordiv, mod, divmod
+    def __rmod__(self, other):
+        other = self.fmt.convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return other.mod(self)
+
+    def __rfloordiv__(self, other):
+        other = self.fmt.convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return other.floordiv(self)
+
+    def __rdivmod__(self, other):
+        other = self.fmt.convert_for_arith(other)
+        if other is None:
+            return NotImplemented
+        return other.divmod(self)
+
 
 #
 # Useful internal helper routines
@@ -2929,22 +3022,6 @@ def compare_any(value, other):
         if diff < 0:
             return Compare.LESS_THAN
         return Compare.EQUAL
-
-    return None
-
-
-def convert_for_arith(value):
-    '''Convert int and floats for use in Python arithmetic.'''
-    if isinstance(value, Binary):
-        return value
-    if isinstance(value, float):
-        return IEEEdouble_from_float(value)
-    if isinstance(value, int):
-        size = value.bit_length()
-        fmt = IEEEdouble
-        if size > fmt.precision:
-            fmt = BinaryFormat.from_precision_extended(size)
-        return fmt.from_int(value)
 
     return None
 
