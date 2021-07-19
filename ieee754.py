@@ -2071,6 +2071,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         x.  For non-zero values of N, scalb(±0, N) is ±0 and scalb(±∞) is ±∞.  For zero values
         of N, scalb(x, N) is x.
         '''
+        if not isinstance(N, int):
+            raise TypeError('scaleb requires an integer')
         context = context or get_context()
         op_tuple = (OP_SCALEB, self, N)
 
@@ -2154,13 +2156,13 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.fmt._next_up(self, context, True)
 
     def _to_int(self, rounding):
-        '''Round our value to an integer, rounding as specified.
+        '''Round our finite value to an integer, rounding as specified.
 
-        Return a (abs_result, is_exact) pair.  result is None for infinities and NaNs.
-        The caller needs to apply our sign to the result.
+        Return a (abs_result, is_exact) pair.  The caller needs to apply our sign to the
+        result.
         '''
-        if self.e_biased == 0:
-            return None, True
+        assert self.e_biased
+
         if self.significand == 0:
             return 0, True
 
@@ -2180,7 +2182,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                     value += 1
         return value, is_exact
 
-    def _round_to_integral(self, operation, rounding, context):
+    def _round_to_integral(self, operation, rounding, context=None):
         '''Round this value to an integer, as per rounding.  The result is a floating point value
         of the same format.
 
@@ -2192,12 +2194,13 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         else:
             op_tuple = (operation, self)
 
-        result, is_exact = self._to_int(rounding)
-        if result is None:
+        if self.e_biased == 0:
             # NaNs and infinities are unchanged (but NaNs are made quiet)
             if self.is_NaN():
                 return self.fmt._propagate_NaN(op_tuple, context)
             return self
+
+        result, is_exact = self._to_int(rounding)
 
         # This should not raise any signals
         result = self.fmt._normalize(self.sign, 0, result, op_tuple)
@@ -2770,9 +2773,21 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def __ceil__(self):
         return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_CEILING)
 
-    #def __round__(self, ndigits=None):
-    #    print (ndigits)
-    #    return self
+    def __round__(self, ndigits=None):
+        '''If ndigits is None, round to an integer under ROUND_HALF_EVEN.  Otherwise round after
+        ndigits binary digits with ROUND_HALF_EVEN and the result is floating-point.
+        '''
+        if ndigits is None:
+            return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_HALF_EVEN)
+        if not isinstance(ndigits, int):
+            raise TypeError('ndigits must be an integer')
+
+        if self.e_biased == 0:
+            return self._round_to_integral(OP_ROUND_TO_INTEGRAL, ROUND_HALF_EVEN)
+        ndigits = min(ndigits, -self.exponent_int())
+        result = self.scaleb(ndigits)
+        result = result._round_to_integral(OP_ROUND_TO_INTEGRAL, ROUND_HALF_EVEN)
+        return result.scaleb(-ndigits)
 
     def __add__(self, other):
         other = convert_for_arith(other)
@@ -2817,7 +2832,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.fmt.divide(other, self)
 
     # TODO: floordiv, mod, divmod
-    # __round__
 
 #
 # Useful internal helper routines
