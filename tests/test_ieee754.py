@@ -1110,8 +1110,8 @@ class TestBinary:
 
     def test_repr_str(self):
         d = IEEEdouble.from_string('1.25')
-        assert repr(d) == '0x1.4p0'
-        assert str(d) == '0x1.4p0'
+        assert repr(d) == '0x1.4000000000000p+0'
+        assert str(d) == repr(d)
 
     def test_immutable(self):
         d = IEEEdouble.from_string('1.25')
@@ -1802,6 +1802,12 @@ class TestUnaryOps:
         assert result == answer
         assert context.flags == status
 
+    @pytest.mark.parametrize('force_point, answer', ((True, '0x1.0p+0'), (False, '0x1p+0')))
+    def test_to_hex_force_point(self, force_point, answer):
+        text_format = TextFormat(force_exp_sign=True, rstrip_zeroes=True, force_point=force_point)
+        d = IEEEdouble.from_int(1)
+        assert d.to_string(text_format) == answer
+
     @pytest.mark.parametrize('line', read_lines('to_decimal.txt'))
     def test_to_decimal(self, line):
         parts = line.split()
@@ -1813,7 +1819,7 @@ class TestUnaryOps:
         precision = int(precision)
         value = from_string(fmt, in_str)
         status = status_codes[status]
-        text_format = TextFormat(exp_digits=-2, force_exp_sign=True, rstrip_zeroes=True)
+        text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
         # Abuse meaning of rounding field for NaNs in this test only
         if value.is_NaN() and context.rounding != ROUND_HALF_EVEN:
             text_format.sNaN = ''
@@ -2005,7 +2011,7 @@ class TestUnaryOps:
         # integer bit (making it an unnormal) and check
         for hex_str in ('3fff9180000000000000', '3fff1180000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert str(value) == '0x1.23p0'
+            assert str(value) == '0x1.2300000000000000p+0'
 
         # 7fffc000000000000000 is the canonical representation of a NaN with integer bit
         # set.  Test clearing it (a pseudo-NaN) gives the right answer.
@@ -2019,7 +2025,7 @@ class TestUnaryOps:
         # set.  Test clearing it gives the right answer.
         for hex_str in ('7fff8000000000000000', '7fff0000000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert str(value) == 'Inf'
+            assert str(value) == 'Infinity'
 
         # 00000000a03000000000 is the canonical representation of 0x1.85p-16400, or
         # 0x0.0000614p-16382, a subnormal with integer bit clear.  Test setting it gives

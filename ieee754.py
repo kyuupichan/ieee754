@@ -18,6 +18,7 @@ from struct import Struct
 import attr
 
 __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
+           'DefaultDecFormat', 'DefaultHexFormat',
            'Flags', 'Compare', 'HandlerKind',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'IEEEError', 'Invalid', 'DivisionByZero', 'Inexact', 'Overflow', 'Underflow',
@@ -137,11 +138,11 @@ class TextFormat:
     # output always has an exponent so negative values are treated as 1.
     exp_digits = attr.ib(default=1)
     # If True positive exponents display a '+'.
-    force_exp_sign = attr.ib(default=False)
+    force_exp_sign = attr.ib(default=True)
     # If True, numbers with a clear sign bit are preceded with a '+'.
     force_leading_sign = attr.ib(default=False)
-    # If True, display a floating point even if there are no digits after it.  For
-    # example, "5.", "1.e2" and "0x1.p2".
+    # If True, display a floating point followed by a zero even though none is needed.  For
+    # example, "5", "1e2" and "0x1p2" would display as "5.0", "1.0e2" and 0x1.0p2".
     force_point = attr.ib(default=False)
     # If True, the exponent character ('p' or 'e') is in upper case, and for hexadecimal
     # output, the hex indicator 'x' and hexadecimal digits are in upper case.  For NaN
@@ -149,9 +150,9 @@ class TextFormat:
     # the inf, qNaN and sNaN indicators below which are copied unmodified.
     upper_case = attr.ib(default=False)
     # If True, trailing insignificant zeroes are stripped
-    rstrip_zeroes = attr.ib(default=True)
+    rstrip_zeroes = attr.ib(default=False)
     # The string output for infinity
-    inf = attr.ib(default='Inf')
+    inf = attr.ib(default='Infinity')
     # The string output for quiet NaNs
     qNaN = attr.ib(default='NaN')
     # The string output for signalling NaNs.  The empty string means flag an invalid
@@ -218,8 +219,10 @@ class TextFormat:
                 exp_digits = -exp_digits
 
         if exp_digits:
-            if len(digits) > 1 or self.force_point:
+            if len(digits) > 1:
                 parts.extend((digits[0], '.', digits[1:]))
+            elif self.force_point:
+                parts.extend((digits, '.0'))
             else:
                 parts.append(digits)
             parts.append('e')
@@ -237,8 +240,10 @@ class TextFormat:
             else:
                 if point > len(digits):
                     digits += (point - len(digits)) * '0'
-                if point < len(digits) or self.force_point:
+                if point < len(digits):
                     parts.extend((digits[:point], '.', digits[point:]))
+                elif self.force_point:
+                    parts.extend((digits, '.0'))
                 else:
                     parts.append(digits)
 
@@ -272,10 +277,20 @@ class TextFormat:
         # Insert the decimal point only if there are trailing digits
         if len(hex_sig) > 1:
             hex_sig = hex_sig[0] + '.' + hex_sig[1:]
+        elif self.force_point:
+            hex_sig += '.0'
 
         sign = self.leading_sign(value)
         exp_sign = '+' if exponent >= 0 and self.force_exp_sign else ''
         return f'{sign}0x{hex_sig}p{exp_sign}{exponent:d}'
+
+
+# Match Python's float __repr__
+DefaultDecFormat = TextFormat(exp_digits=-2, force_exp_sign=True, force_point=True,
+                              inf='inf', qNaN='nan', sNaN='snan')
+
+# Match Python's float.hex() but for non-finite match the Decimal package.
+DefaultHexFormat = TextFormat(force_exp_sign=True, inf='Infinity', qNaN='NaN', sNaN='sNaN')
 
 
 #
@@ -1336,13 +1351,13 @@ class BinaryFormat(NamedTuple):
         and zeroes are output with an exponent of 0.
         '''
         context = context or get_context()
+        text_format = text_format or DefaultHexFormat
         op_tuple = (OP_TO_STRING, value)
 
         # Do a convert() operation but preserve sNaNs.  This step signals inexact if appropriate.
         value = self._convert(value, op_tuple, context, True)
 
         # Now output the value.  This step signals if sNaNs are lost.
-        text_format = text_format or TextFormat()
         return text_format.format_hex(value, op_tuple, context)
 
     def add(self, lhs, rhs, context=None):
@@ -2607,17 +2622,20 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self.fmt.to_string(self, text_format, context)
 
-    def to_decimal_string(self, precision=-1, text_format=None, context=None):
+    def to_decimal_string(self, precision=0, text_format=None, context=None):
         '''Return text, with a hexadecimal significand for finite numbers, that is a
         representation of the floating point value.  See TextFormat docstring for output
         control.  All signals are raised as appropriate, and zeroes are output with an
         exponent of 0.
-        '''
-        op_tuple = (OP_TO_DECIMAL_STRING, self, precision)
-        context = context or get_context()
 
-        if text_format is None:
-            text_format = TextFormat(exp_digits=-2)
+        precision is the number of significant digits to output.  0 returns the floating
+        point number printed in the shortest posible number of digits such that, when
+        reading back with round-to-nearest it shall give the original floating point
+        number.  -1 outputs as many digits as necessary to give the precise value.
+        '''
+        context = context or get_context()
+        text_format = text_format or DefaultDecFormat
+        op_tuple = (OP_TO_DECIMAL_STRING, self, precision)
 
         if self.is_finite():
             exponent, digits, is_inexact = self._to_decimal_parts(precision, context.rounding)
@@ -2635,13 +2653,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def _to_decimal_parts(self, precision, rounding):
         '''Returns a tuple (exponent, digits, is_inexact) for finite numbers.
 
-        A precision of 0 returns the floating point number printed in the shortest posible
-        number of digits such that, when reading back with round-to-nearest it shall give
-        the original floating point number.  See "How to Print Floating-Point Numbers
-        Accurately" by Steele and White, in particular Table 3.  This is an optimized
-        implementation of their algorithm.
-
-        A precision of -1 outputs as many digits as necessary to give the precise value.
+        See "How to Print Floating-Point Numbers Accurately" by Steele and White, in
+        particular Table 3.  This is an optimized implementation of their algorithm.
         '''
         if self.is_zero():
             return 0, '0', False

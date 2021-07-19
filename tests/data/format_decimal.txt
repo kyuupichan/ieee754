@@ -62,10 +62,10 @@
 
 # Force point
 
-0 N N Y N N N 12345 4 12345.
-0 N N Y N N N 12345 6 1234500.
+0 N N Y N N N 12345 4 12345.0
+0 N N Y N N N 12345 6 1234500.0
 0 N N Y N N N 12345 2 123.45
-1 N N Y N N N 1     2 1.e2
+1 N N Y N N N 1     2 1.0e2
 
 # Upper case
 0 N N N Y N N 12345 2  123.45

@@ -69,10 +69,10 @@ NNYYD E Q SNan123456789012 S K sNaN1645076
 #
 ###############
 
-NNNYN E S Inf H K Inf
-NYNYN E D -Inf H K -Inf
-YNNYN E Q Inf S K +Inf
-YYNYN E H -Inf Q K -Inf
+NNNYN E S Inf H K Infinity
+NYNYN E D -Inf H K -Infinity
+YNNYN E Q Inf S K +Infinity
+YYNYN E H -Inf Q K -Infinity
 
 ###############
 #
