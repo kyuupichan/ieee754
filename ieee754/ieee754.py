@@ -127,7 +127,7 @@ pack_double = Struct('<d').pack
 unpack_double = Struct('<d').unpack
 
 
-@attr.s(slots=True)
+@attr.s(slots=True, kw_only=True)
 class TextFormat:
     '''Controls the output of conversion to decimal and hexadecimal strings.'''
     # The minimum number of digits to show in the exponent of a finite number.  For
@@ -286,11 +286,11 @@ class TextFormat:
 
 
 # Match Python's float __repr__
-DefaultDecFormat = TextFormat(exp_digits=-2, force_exp_sign=True, force_point=True,
+DefaultDecFormat = TextFormat(exp_digits=-2, force_point=True,
                               inf='inf', qNaN='nan', sNaN='snan')
 
 # Match Python's float.hex() but for non-finite match the Decimal package.
-DefaultHexFormat = TextFormat(force_exp_sign=True, inf='Infinity', qNaN='NaN', sNaN='sNaN')
+DefaultHexFormat = TextFormat()
 
 
 #

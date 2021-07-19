@@ -10,9 +10,9 @@ from itertools import product
 import pytest
 
 from ieee754 import *
-from ieee754 import HEX_SIGNIFICAND_PREFIX
 
 
+HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
 all_roundings = (ROUND_CEILING, ROUND_FLOOR, ROUND_DOWN, ROUND_UP,
                  ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_HALF_DOWN)

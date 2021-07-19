@@ -2,6 +2,9 @@
 **/*.#*
 #*
 *.o
+htmlcov/
+_build/
 test-[a-z]*
 __pycache__
 .pytest_cache
+.coverage
