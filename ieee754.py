@@ -2775,13 +2775,13 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self
 
     def __eq__(self, other):
-        compare = compare_any(self, other)
+        compare = compare_any_eq(self, other)
         if compare is None:
             return NotImplemented
         return compare == Compare.EQUAL
 
     def __ne__(self, other):
-        compare = compare_any(self, other)
+        compare = compare_any_eq(self, other)
         if compare is None:
             return NotImplemented
         return compare != Compare.EQUAL
@@ -2988,6 +2988,17 @@ def round_up(rounding, lost_fraction, sign, is_odd):
 def IEEEdouble_from_float(value):
     '''Return an IEEEdouble converted from a Python float value.'''
     return IEEEdouble.unpack_value(pack_double(value))
+
+
+def compare_any_eq(value, other):
+    '''LHS is a Binary.  RHS is any type.  Accept complex comparisons for == and !=.'''
+    if isinstance(other, complex):
+        if not other.imag:
+            return compare_any(value, other.real)
+        # Only used for == and != so this works.
+        return Compare.UNORDERED
+
+    return compare_any(value, other)
 
 
 def compare_any(value, other):
