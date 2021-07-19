@@ -109,8 +109,8 @@ TextFormat objects
     :func:`printf` **g** format specifier to decide whether to display an exponent or not,
     in which case the minimum number of digits in the exponent is the absolute value.
 
-    Hexadecimal output always has an exponent so negative values are treated as
-    :const:`1`.
+    Hexadecimal output always has an exponent so the absolute value is used with a minimum
+    of :const:`1`.
 
   .. attribute:: force_exp_sign
 
@@ -164,15 +164,6 @@ TextFormat objects
      are 'NaN', 'NaN255' and 'NaN0xff' respectively.
 
 
-.. data:: DefaultDecFormat
-
-     This instance controls decimal output when no object is explicitly passed to
-     :meth:`Binary.to_decimal_string`.  It is intended to match the way Python displays
-     :class:`float` values::
-
-       DefaultDecFormat = TextFormat(exp_digits=-2, force_point=True,
-                                     inf='inf', qNaN='nan', sNaN='snan')
-
 .. data:: DefaultHexFormat
 
      This instance controls hexadecimal output when no object is explicitly passed to
@@ -180,4 +171,23 @@ TextFormat objects
      :func:`float.hex` method for finite numbers, and to match Python's :class:`Decimal`
      string conversion for non-finite numbers::
 
-       DefaultHexFormat = TextFormat()
+       DefaultHexFormat = TextFormat(force_point=True, nan_payload='N')
+
+
+.. data:: DefaultDecFormat
+
+     This instance controls decimal output when no object is explicitly passed to
+     :meth:`Binary.to_decimal_string`.  It is intended to match the way Python displays
+     :class:`float` values::
+
+       DefaultDecFormat = TextFormat(exp_digits=-2, force_point=True,
+                                     inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
+
+
+.. data:: Dec_G_Format
+
+     This instance is intended to match the output of Python's **g** format specifier when
+     the specified precisions are the same::
+
+       DefaultDecFormat = TextFormat(exp_digits=-2, rstrip_zeroes=True,
+                                     inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')

@@ -3,6 +3,7 @@ import random
 import re
 import threading
 from decimal import Decimal
+from math import isfinite
 from fractions import Fraction
 from functools import partial
 from itertools import product
@@ -161,6 +162,63 @@ def context():
 def quiet_context():
     with local_context(Context()) as context:
         yield context
+
+
+class TestTextFormat:
+
+    @pytest.mark.parametrize('line', read_lines('format_decimal.txt'))
+    def test_format_decimal(self, line):
+        parts = line.split()
+        if len(parts) != 10:
+            assert False, f'bad line: {line}'
+        (exp_digits, force_exp_sign, force_leading_sign, force_point, upper_case,
+         rstrip_zeroes, sign, digits, exponent, answer) = parts
+        text_format = TextFormat(exp_digits=int(exp_digits),
+                                 force_exp_sign=boolean_codes[force_exp_sign],
+                                 force_leading_sign=boolean_codes[force_leading_sign],
+                                 force_point=boolean_codes[force_point],
+                                 upper_case=boolean_codes[upper_case],
+                                 rstrip_zeroes=boolean_codes[rstrip_zeroes])
+        sign = boolean_codes[sign]
+        exponent = int(exponent)
+        assert text_format.format_decimal(sign, exponent, digits) == answer
+
+    @pytest.mark.parametrize('line', read_lines('format_hex.txt'))
+    def test_format_hex(self, line):
+        parts = line.split()
+        if len(parts) != 8:
+            assert False, f'bad line: {line}'
+        (exp_digits, force_exp_sign, force_leading_sign, force_point, upper_case,
+         rstrip_zeroes, value, answer) = parts
+        text_format = TextFormat(exp_digits=int(exp_digits),
+                                 force_exp_sign=boolean_codes[force_exp_sign],
+                                 force_leading_sign=boolean_codes[force_leading_sign],
+                                 force_point=boolean_codes[force_point],
+                                 upper_case=boolean_codes[upper_case],
+                                 rstrip_zeroes=boolean_codes[rstrip_zeroes])
+        value = from_string(IEEEdouble, value)
+        assert text_format.format_hex(value) == answer
+
+    @pytest.mark.parametrize('value', (-1.0, -0.0, 0.0, 1.0, 123.456e12, 123.456e-12,
+                                       float('inf'), float('-inf'), float('nan')))
+    def test_hex_matches_python(self, value):
+        if isfinite(value):
+            assert value.hex() == IEEEdouble.from_float(value).to_string()
+        else:
+            assert str(Decimal(value)) == IEEEdouble.from_float(value).to_string()
+
+    @pytest.mark.parametrize('value', (-1.0, -0.0, 0.0, 1.0, 123.456e12, 123.456e-12,
+                                       1.256e3, 1.256e2,
+                                       float('inf'), float('-inf'), float('nan')))
+    def test_dec_matches_python(self, value):
+        assert str(value) == IEEEdouble.from_float(value).to_decimal_string()
+        assert f'{value:.3g}' == IEEEdouble.from_float(value).to_decimal_string(
+            text_format=Dec_g_Format, precision=3)
+        #assert f'{value:.2f}' == IEEEdouble.from_float(value).to_decimal_string(
+        #    text_format=Dec_f_Format, precision=3)
+
+    def test_snan(self):
+        assert 'snan' == IEEEdouble.from_string('sNaN').to_decimal_string()
 
 
 class TestContext:
@@ -1642,23 +1700,6 @@ class TestGeneralNonComputationalOps:
 
 
 class TestUnaryOps:
-
-    @pytest.mark.parametrize('line', read_lines('format_decimal.txt'))
-    def test_format_decimal(self, line):
-        parts = line.split()
-        if len(parts) != 10:
-            assert False, f'bad line: {line}'
-        (exp_digits, force_exp_sign, force_leading_sign, force_point, upper_case,
-         rstrip_zeroes, sign, digits, exponent, answer) = parts
-        text_format = TextFormat(exp_digits=int(exp_digits),
-                                 force_exp_sign=boolean_codes[force_exp_sign],
-                                 force_leading_sign=boolean_codes[force_leading_sign],
-                                 force_point=boolean_codes[force_point],
-                                 upper_case=boolean_codes[upper_case],
-                                 rstrip_zeroes=boolean_codes[rstrip_zeroes])
-        sign = boolean_codes[sign]
-        exponent = int(exponent)
-        assert text_format.format_decimal(sign, exponent, digits) == answer
 
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):

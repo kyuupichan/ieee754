@@ -1,0 +1,59 @@
+# Test format: ExpDigits ForceExpSign ForceLeadingSign ForcePoint UpperCase RStripZeroes \
+#              Value Answer
+
+# Values are for IEEEdouble.
+
+0 N N N N N -0x1.2345p2    -0x1.2345000000000p2
+0 N N N N N 0x1.2345p-2    0x1.2345000000000p-2
+0 N N N N N -0x1p-2        -0x1.0000000000000p-2
+0 N N N N N 0              0x0p0
+
+# Exp digits >= 0
+1 N N N N N -0x1.2345p2    -0x1.2345000000000p2
+3 N N N N N -0x1.2345p-2   -0x1.2345000000000p-002
+1 N N N N N 0              0x0p0
+2 N N N N N 1              0x1.0000000000000p00
+
+# Exp digits < 0
+-1 N N N N N -0x1.2345p2    -0x1.2345000000000p2
+-2 N N N N N -0x1.2345p-2    -0x1.2345000000000p-02
+-1 N N N N N 0              0x0p0
+-2 N N N N N 1              0x1.0000000000000p00
+
+# Force exp sign
+
+1 Y N N N N -0x1.2345p2    -0x1.2345000000000p+2
+3 Y N N N N -0x1.2345p-2   -0x1.2345000000000p-002
+1 Y N N N N 0              0x0p+0
+0 Y N N N N 1              0x1.0000000000000p+0
+
+# Force leading sign
+
+1 Y Y N N N 0x1.2345p2    +0x1.2345000000000p+2
+-2 N Y N N N -0x1.2345p-2   -0x1.2345000000000p-02
+1 N Y N N N 0              +0x0p0
+0 N Y N N N 1              +0x1.0000000000000p0
+
+# Force point
+1 N N Y N N -0x1.2345p2    -0x1.2345000000000p2
+0 N N Y N N -0x1p-2        -0x1.0000000000000p-2
+1 N N Y N N 0              0x0.0p0
+1 N N Y N N 0              0x0.0p0
+1 N N Y N N 1              0x1.0000000000000p0
+
+# Upper case
+0 N N Y Y N -0x1p-2        -0X1.0000000000000P-2
+1 N N Y Y N 0              0X0.0P0
+1 N N Y Y N 0              0X0.0P0
+1 N N Y Y N 1              0X1.0000000000000P0
+
+# Rstrip Zeroes
+1 N N Y N Y 1              0x1.0p0
+1 N N N N Y 1              0x1p0
+2 N N N N Y 1              0x1p00
+
+# Standard Python output
+1 Y N Y N N 1              0x1.0000000000000p+0
+1 Y N Y N N 0              0x0.0p+0
+1 Y N Y N N -1             -0x1.0000000000000p+0
+1 Y N Y N N -0             -0x0.0p+0

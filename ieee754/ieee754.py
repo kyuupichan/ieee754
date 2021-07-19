@@ -18,7 +18,7 @@ from struct import Struct
 import attr
 
 __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
-           'DefaultDecFormat', 'DefaultHexFormat',
+           'DefaultDecFormat', 'DefaultHexFormat', 'Dec_g_Format',
            'Flags', 'Compare', 'HandlerKind',
            'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
            'IEEEError', 'Invalid', 'DivisionByZero', 'Inexact', 'Overflow', 'Underflow',
@@ -127,17 +127,23 @@ pack_double = Struct('<d').pack
 unpack_double = Struct('<d').unpack
 
 
-@attr.s(slots=True, kw_only=True)
+@attr.s(slots=True, kw_only=True, cmp=False)
 class TextFormat:
     '''Controls the output of conversion to decimal and hexadecimal strings.'''
-    # The minimum number of digits to show in the exponent of a finite number.  For
-    # decimal output, 0 suppresses the exponent (adding trailing or leading zeroes if
-    # necessary as per the printf 'f' format specifier), and if negative applies the rule
-    # for the printf 'g' format specifier to decide whether to display an exponent or not,
-    # in which case it has at minimum the absolute value number of digits.  Hexadecimal
-    # output always has an exponent so negative values are treated as 1.
+
+    ''' The minimum number of digits to output in the exponent of a finite number.  Defaults
+    to :const:`1`.
+
+    For decimal output :const:`0` suppresses the exponent by adding leading or trailing
+    zeroes to the significand as needed (as for the :func:`printf` **f** format specifier
+    in the **C** programming language).  If negative, apply the rule for the
+    :func:`printf` **g** format specifier to decide whether to display an exponent or not,
+    in which case the minimum number of digits in the exponent is the absolute value.
+
+    Hexadecimal output always has an exponent so the absolute value is used with a minimum
+    of :const:`1`.'''
     exp_digits = attr.ib(default=1)
-    # If True positive exponents display a '+'.
+    '''If True positive exponents display a '+'.'''
     force_exp_sign = attr.ib(default=True)
     # If True, numbers with a clear sign bit are preceded with a '+'.
     force_leading_sign = attr.ib(default=False)
@@ -164,8 +170,15 @@ class TextFormat:
     nan_payload = attr.ib(default='X')
 
     def leading_sign(self, value):
-        '''Returns the leading sign string to output for value.'''
+        '''Return the leading sign string.'''
         return '-' if value.sign else '+' if self.force_leading_sign else ''
+
+    def exponent_str(self, exponent):
+        '''Return the formatted exponent.'''
+        sign = '-' if exponent < 0 else '+' if self.force_exp_sign else ''
+        main = str(abs(exponent))
+        zeroes = '0' * (abs(self.exp_digits) - len(main))
+        return f'{sign}{zeroes}{main}'
 
     def format_non_finite(self, value, op_tuple, context):
         '''Returns the output text for infinities and NaNs.
@@ -215,8 +228,6 @@ class TextFormat:
             # Apply the fprintf 'g' format specifier rule
             if precision > exponent >= -4:
                 exp_digits = 0
-            else:
-                exp_digits = -exp_digits
 
         if exp_digits:
             if len(digits) > 1:
@@ -226,13 +237,7 @@ class TextFormat:
             else:
                 parts.append(digits)
             parts.append('e')
-            if exponent < 0:
-                parts.append('-')
-            elif self.force_exp_sign:
-                parts.append('+')
-            exp_str = f'{abs(exponent):d}'
-            parts.append('0' * (exp_digits - len(exp_str)))
-            parts.append(exp_str)
+            parts.append(self.exponent_str(exponent))
         else:
             point = exponent + 1
             if point <= 0:
@@ -253,13 +258,11 @@ class TextFormat:
 
         return result
 
-    def format_hex(self, value, op_tuple, context):
-        if not value.is_finite():
-            return self.format_non_finite(value, op_tuple, context)
-
-        # The value has been converted and rounded to our format.  We output the
-        # unbiased exponent, but have to shift the significand left up to 3 bits so
-        # that converting the significand to hex has the integer bit as an MSB
+    def format_hex(self, value):
+        '''Return the finite value formatted as a hexadecimal float.'''
+        # The value has been converted and rounded to our format.  We output the unbiased
+        # exponent, but have to shift the significand left up to 3 bits so that converting
+        # the significand to hex has the integer bit as an MSB
         significand = value.significand
         if significand == 0:
             exponent = 0
@@ -267,10 +270,14 @@ class TextFormat:
             significand <<= (value.fmt.precision & 3) ^ 1
             exponent = value.exponent()
 
-        output_digits = (value.fmt.precision + 6) // 4
+        # Treat zero specially only because Python does
+        if value.is_zero():
+            sig_digits = 1
+        else:
+            sig_digits = (value.fmt.precision + 6) // 4
         hex_sig = f'{significand:x}'
         # Prepend zeroes to get the full output precision
-        hex_sig = '0' * (output_digits - len(hex_sig)) + hex_sig
+        hex_sig = '0' * (sig_digits - len(hex_sig)) + hex_sig
         # Strip trailing zeroes?
         if self.rstrip_zeroes:
             hex_sig = hex_sig.rstrip('0') or '0'
@@ -281,16 +288,24 @@ class TextFormat:
             hex_sig += '.0'
 
         sign = self.leading_sign(value)
-        exp_sign = '+' if exponent >= 0 and self.force_exp_sign else ''
-        return f'{sign}0x{hex_sig}p{exp_sign}{exponent:d}'
+        result = f'{sign}0x{hex_sig}p{self.exponent_str(exponent)}'
+        if self.upper_case:
+            result = result.upper()
+        return result
 
 
-# Match Python's float __repr__
+# Default format for decimal output
 DefaultDecFormat = TextFormat(exp_digits=-2, force_point=True,
-                              inf='inf', qNaN='nan', sNaN='snan')
+                              inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
 
-# Match Python's float.hex() but for non-finite match the Decimal package.
-DefaultHexFormat = TextFormat()
+# Default format for hexadecimal output
+DefaultHexFormat = TextFormat(force_point=True, nan_payload='N')
+
+
+# This instance is intended to match the output of Python's **g** format specifier when
+# the specified precisions are the same.
+Dec_g_Format = TextFormat(exp_digits=-2, rstrip_zeroes=True,
+                          inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
 
 
 #
@@ -1357,8 +1372,11 @@ class BinaryFormat(NamedTuple):
         # Do a convert() operation but preserve sNaNs.  This step signals inexact if appropriate.
         value = self._convert(value, op_tuple, context, True)
 
-        # Now output the value.  This step signals if sNaNs are lost.
-        return text_format.format_hex(value, op_tuple, context)
+        # Now output the value.
+        if not value.is_finite():
+            # This step signals if sNaNs are lost.
+            return text_format.format_non_finite(value, op_tuple, context)
+        return text_format.format_hex(value)
 
     def add(self, lhs, rhs, context=None):
         '''Return the sum LHS + RHS in this format.'''
