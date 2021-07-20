@@ -492,7 +492,7 @@ class Overflow(IEEEError):
 
 class Underflow(IEEEError):
     '''Signalled when a tiny non-zero result is detected.  Tininess means the result computed
-    as though with unbounded exponent range woud lie strictly between ±2^e_min.  Tininess
+    as though with unbounded exponent range would lie strictly between ±2^e_min.  Tininess
     can be detected before or after rounding.'''
 
 
@@ -565,17 +565,20 @@ class Context:
 
     __slots__ = ('rounding', 'flags', 'tininess_after', 'handlers', 'exceptions')
 
-    def __init__(self, *, rounding=None, flags=None, tininess_after=True):
-        '''rounding is one of the ROUND_ constants and controls rounding of inexact results.'''
-        self.rounding = rounding or ROUND_HALF_EVEN
-        self.flags = flags or 0
+    def __init__(self, *, rounding=ROUND_HALF_EVEN, flags=0, tininess_after=True):
+        '''rounding is one of the ROUND_ constants and (mostly) controls the rounding of inexact
+        results.  flags represents the initially raised flags.  tininess_after indicates
+        if tininess is detected before or after rounding.
+        '''
+        self.rounding = rounding
+        self.flags = flags
         self.tininess_after = tininess_after
         self.handlers = {}
         self.exceptions = []
 
     def copy(self):
-        '''Return a copy of the context.  We need to do a deep copy because handlers is a
-        dictionary and handlers a list.'''
+        '''Return a (deep) copy of the context.'''
+        # A deep copy is needed because handlers and exceptions are mutable containers
         return copy.deepcopy(self)
 
     def set_handler(self, exc_classes, kind, handler=None):
@@ -597,13 +600,12 @@ class Context:
     def handler(self, exc_class):
         '''Return a (handler_kind, callback) pair for a signal class.'''
         if not issubclass(exc_class, IEEEError):
-            raise TypeError('exception class must be a subclass of IEEEError')
+            raise TypeError('exc_class must be a subclass of IEEEError')
 
         for cls in exc_class.mro():
-            if issubclass(cls, IEEEError):
-                handler = self.handlers.get(cls)
-                if handler:
-                    return handler
+            handler = self.handlers.get(cls)
+            if handler:
+                return handler
 
         return HandlerKind.DEFAULT, None
 
@@ -3103,9 +3105,8 @@ def set_context(context):
 
 class LocalContext:
     '''A context manager that will set the current context for the active thread to a copy of
-    context on entry to the with-statement and restore the previous context when exiting
-    the with-statement.  If no context is specified, a copy of the current context is
-    taken on entry to the with statement.
+    context on entry to the with-statement and restore the previous context on exit.  If
+    no context is specified a copy of the current context is taken instead.
     '''
 
     def __init__(self, context=None):

@@ -226,6 +226,7 @@ class TestContext:
     def test_default_context(self):
         assert DefaultContext.rounding == ROUND_HALF_EVEN
         assert DefaultContext.flags == 0
+        assert DefaultContext.tininess_after is True
 
     def contexts_equal(self, lhs, rhs):
         return lhs.flags == rhs.flags and lhs.rounding == rhs.rounding
@@ -233,7 +234,6 @@ class TestContext:
     def test_get_context(self):
         context = get_context()
         assert context is not DefaultContext
-        assert self.contexts_equal(context, DefaultContext)
         assert get_context() is context
 
         def target():
@@ -315,6 +315,13 @@ class TestContext:
         assert repr(c) == (
             '<Context rounding=ROUND_UP flags=<Flags.INEXACT: 16> tininess_after=True>'
         )
+
+    def test_handler_bad(self):
+        context = Context()
+        with pytest.raises(TypeError):
+            context.handler(SyntaxError)
+        with pytest.raises(TypeError):
+            context.handler(ZeroDivisionError)
 
     def test_set_handler_single(self):
         context = Context()

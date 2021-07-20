@@ -16,7 +16,7 @@ Its design revolves around four concepts: binary numbers, binary formats, the co
 arithmetic, and signals.
 
 A binary number is immutable.  It has a format, sign, exponent and significand, and can
-hold special values such as :const:`infinity`, :const:`NaN`, :const:`sNaN`.  It also
+hold special values such as :const:`Infinity`, :const:`NaN`, :const:`sNaN`.  It also
 distinguishes :const:`-0` from :const:`+0`.
 
 A binary format controls the exponent range and precision that the result of a calculation
@@ -25,18 +25,18 @@ is delivered to.
 Arithmetic is done under the control of an environment called a `context`.  It specifies
 rounding rules, when tininess is detected, holds flags indicating what arithmetic
 exceptions have occurred, and offers fine-grained control over signal handling.  Rounding
-options are :const:`ROUND_CEILING` (towards positive infinity), :const:`ROUND_FLOOR`
-(towards negative infinity), :const:`ROUND_DOWN` (towards zero), :const:`ROUND_UP` (away
+options are :const:`ROUND_CEILING` (towards :const:`+Infinity`), :const:`ROUND_FLOOR`
+(towards :const:`-Infinity`), :const:`ROUND_DOWN` (towards zero), :const:`ROUND_UP` (away
 from zero), :const:`ROUND_HALF_EVEN` (to nearest, ties towards even),
 :const:`ROUND_HALF_DOWN` (to nearest, ties towards zero), :const:`ROUND_HALF_UP` (to
 nearest, ties away from zero).
 
-Signals are exceptional conditions that can arise during the course of a computation.
+`Signals`_ are exceptional conditions that can arise during the course of a computation.
 Depending on the needs of the applicaiton, signals may be handled in various ways
 including ignoring them, noting them with flags, recording their details, substitute a
 result, or raising an exception.  The signals are those specified by the **IEEE-754**
-standard, namely :const:`Invalid`, :const:`DivisionByZero`, :const:`Inexact`,
-:const:`Overflow`, and :const:`Underflow`.
+standard, namely :exc:`Invalid`, :exc:`DivisionByZero`, :exc:`Inexact`, :exc:`Overflow`,
+and :exc:`Underflow`.
 
 Each of the five major signals has its own flag which normally is set in the controlling
 `context` object when it occurs.  Flags are sticky, so the user needs to reset them when
@@ -45,6 +45,10 @@ as an exception hierarchy, and the context controls what happens when each is de
 The user can specify how each exception or sub-exception in the hierarchy is handled.  If
 nothing is specified for the specific exception that occurred, handling is delegated to
 the parent exception, recursively.
+
+Several of the classes described in this documentation have attributes and methods that
+are not documented.  Consider these as implementation details that are subject to change
+or removal.
 
 
 Quick-start Tutorial
@@ -80,8 +84,593 @@ Arithmetic is done under the control of an environment called a `context`.  It s
 rounding rules, when tininess is detected, holds flags indicating what arithmetic
 exceptions have occurred, and offers fine-grained control over signal handling.
 
-Each thread has its own current context which can be accessed or changed using the
+Each thread has its own context which can be accessed or changed using the
 :func:`get_context()` and :func:`set_context()` functions.
+
+.. function:: get_context()
+
+   Return the context for the current thread.
+
+.. function:: set_context(context)
+
+   Set the context for the current thread to *context*.  A copy is not made, a reference
+   is held.
+
+You can also use the `with` statement and the :func:`local_context` function to
+temporarily replace the active context for a block of code.
+
+.. function:: local_context(context=None)
+
+   Return a context manager that will replace the active thread's context with a copy of
+   *context* on entry to the `with` statement, and restore the previous context on exit.
+   If *context* is :const:`None`, a copy of the current context is used instead.
+
+   For example, the following code inherits the ambient context, sets the rounding mode to
+   :const:`ROUND_CEILING`, performs a calculation, and then automatically restores the
+   previous context::
+
+      from ieee754 import local_context
+
+      with local_context() as ctx:
+          ctx.rounding = ROUND_CEILING
+          result = some_calculation()
+
+   On exiting the with block above, the original context will be effective with its
+   original rounding mode, and its flags and other attributes will be unaffected by the
+   arithmetic done within the block.
+
+New contexts can be created with the :class:`Context` constructor described below.  In
+addition the :mod:`ieee754` module provides a predefined context.
+
+.. data:: DefaultContext
+
+   This context is used as the default context in effect when a new thread is started.
+   The module initializes it as follows::
+
+        DefaultContext = Context()
+        DefaultContext.set_handler((Invalid, DivisionByZero, Overflow), HandlerKind.RAISE)
+
+   In words, rounding is :const:`ROUND_HALF_EVEN`, tininess is detected after rounding,
+   and no flags are set.  :exc:`Underflow` and :exc:`Inexact` receive default handling,
+   and :exc:`Invalid`, :exc:`DivisionByZero` and :exc:`Overflow` raise Python exceptions.
+
+   Except perhaps to modify it at program startup, it is preferable to not use
+   :data:`DefaultContext` at all.
+
+.. class:: Context(*, rounding=ROUND_HALF_EVEN, flags=0, tininess_after=True)
+
+    Create a new :class:`Context` object and initialize the three attibutes.
+
+    .. attribute:: rounding
+
+      The rounding mode.  One of the constants listed in the section `Rounding Modes`_.
+
+    .. attribute:: flags
+
+      Which flags have been raised; see `Context Flags`_.
+
+    .. attribute:: tininess_after
+
+      If :const:`True` tininess is detected after rounding, otherwise before rounding.
+
+    .. attribute:: exceptions
+
+       A list of exceptions recorded as specified by the
+       :attr:`HandlerKind.RECORD_EXCEPTION` alternative exception handling attribute.  The
+       exceptions are ordered, earliest first.  This list is never cleared by the library
+       so the user should clear it when done with the exceptions.
+
+    .. method:: copy()
+
+       Return a deep copy of the context.
+
+    .. method:: set_handler(exc_classes, kind, handler=None)
+
+       Specify alternate exception handling for one or more exception classes.
+
+       *exc_classes* is an exception class, or an iterable of one or more exception
+       classes.  Each exception class must be a subclass of :exc:`IEEEError`.  If *kind*
+       is :attr:`ABRUPT_UNDERFLOW`, each exception class must be a subclass of
+       :exc:`Underflow`.
+
+       *kind* is one of the :class:`HandlerKind` constants.
+
+       *handler* is the handler to call.  Some kinds require a handler to be specified,
+       the rest require no handler be given.
+
+       See `Alternate Exception Handling`_ for more information.
+
+    .. method:: handler(exc_class)
+
+       Return how an exception is handled, as ``(kind, handler)`` pair.  *kind* and
+       *handler* are as for :meth:`set_handler`.
+
+
+Rounding Modes
+--------------
+
+When the infinitely precise result of an operation cannot be represented in the
+destination format, the rounding mode of the operation's *context* determines the result
+it will deliver to the default exception handler whilst raising an :exc:`Overflow`,
+:exc:`Underflow` or :exc:`Inexact` signal as appropriate.  Inexact results always have the
+same sign as the infinitely precise result.
+
+Additionally, the rounding mode affects the sign of an exact-zero sum, and the threshold
+beyond which an operation signals :exc:`Overflow`, and the :exc:`Underflow` threshold when
+tininess is detected after rounding.
+
+
+.. data:: ROUND_CEILING
+
+   Round towards :const:`Infinity`.
+
+.. data:: ROUND_FLOOR
+
+   Round towards :const:`-Infinity`.
+
+.. data:: ROUND_UP
+
+   Round away from zero.
+
+.. data:: ROUND_DOWN
+
+   Round towards zero.
+
+.. data:: ROUND_HALF_EVEN
+
+   Round to nearest with ties going to the value whose significand has a *least
+   significant bit* of zero.
+
+.. data:: ROUND_HALF_DOWN
+
+   Round to nearest with ties going towards zero.
+
+.. data:: ROUND_HALF_UP
+
+   Round to nearest with ties going away from zero.
+
+
+Context Flags
+-------------
+
+The :class:`Flags` class is derived from :class:`IntFlag` so the flags form a bitmask,
+with one flag for each of the IEEE-754 signals.  Each flag (with the possible exception of
+:attr:`Flags.UNDERFLOW`; see :exc:`UnderflowExact`) is raised when its associated signal
+is handled by the default exception handler.  Flags are never cleared once raised, so the
+user must clear them when appropriate by directly updating the :attr:`Context.flags`
+attribute of the context object.
+
+.. class:: Flags
+
+    .. attribute:: INVALID
+
+       Corresponds to an :exc:`Invalid` exception.
+
+    .. attribute:: DIV_BY_ZERO
+
+       Corresponds to a :exc:`DivisionByZero` exception.
+
+    .. attribute:: INEXACT
+
+       Corresponds to an :exc:`Inexact` exception.
+
+    .. attribute:: OVERFLOW
+
+       Corresponds to an :exc:`Overflow` exception.
+
+    .. attribute:: UNDERFLOW
+
+       Corresponds to an :exc:`UnderflowInexact` exception.
+
+
+Signals
+=======
+
+Most operations, called **signalling** operations, can signal during their calculation
+depending on the values of their arguments; other **quiet** operations never raise
+signals.  Some signals indicate unusual conditions, such as :exc:`DivisionByZero`, others
+like :exc:`Inexact` are very common.
+
+The IEEE-754 standard specifies five signal categories, namely :exc:`Invalid`,
+:exc:`DivisionByZero`, :exc:`Inexact`, :exc:`Overflow` and :exc:`Underflow`.  Each of
+these categories is associated with a flag in context objects which is normally set when
+it occurs.  Operations only set flags and never clear them; application code must decide
+if and when to clear these flags.
+
+The :mod:`ieee754` module defines several sub-categories of signal as a hierarchy of
+exceptions.  Signal handling can be controlled for each exception class separately or in
+groups, offering very fine-grained control.  For example, you might want to specify that
+invalid operation signals arising from multiplication of zeroes and infinities -
+represented by the :exc:`InvalidMultiply` sub-exception of the :exc:`Invalid` exception
+category - raise a Python exception when they occur, and that all other :exc:`Invalid`
+signals should be handled by default and not interrupt program execution.
+
+Each exception carries the name and operands of the operation that caused it, and the
+default result that should be delivered by default exception handling.  The exception
+class hierarchy as follows::
+
+  IEEEError(ArithmeticError)
+      Invalid
+          SignallingNaNOperand
+          InvalidAdd
+          InvalidMultiply
+          InvalidDivide
+          InvalidFMA
+          InvalidRemainder
+          InvalidSqrt
+          InvalidToString
+          InvalidConvertToInteger
+          InvalidComparison
+          InvalidLogBIntegral
+      DivisionByZero(IEEEError, ZeroDivisionError)
+          DivideByZero
+          LogBZero
+      Inexact
+      Overflow
+      Underflow
+          UnderflowExact
+          UnderflowInexact
+
+
+.. exception:: IEEEError(op_tuple, result)
+
+    All exceptions defined in the `ieee754` module derive from :exc:`IEEEError`.  The
+    constructor initializes the object's attributes as indicated:
+
+    .. attribute:: op_tuple
+
+    A tuple of the :ref:`operation name<Operation Names>` and its operands that caused the
+    signal, for example this tuple indciates that the :meth:`divide` operation raised the
+    signal when *x* and *y* were passed as operands::
+
+         op_tuple = (OP_DIVIDE, x, y)
+
+    .. attribute:: result
+
+    The result that default exception handling should deliver.  This can be inspected to
+    determine the appropriate destination format for the operation.
+
+
+.. exception:: Invalid
+
+    The class representing all invalid operations specified in the IEEE-754 standard.
+    Operations signal invalid when there is no usefully defineable result, and set the
+    default result to a quiet :const:`NaN`.
+
+    Its constructor has the same signature as that of :exc:`IEEEError`, but if *result* is
+    a :class:`BinaryFormat` instance, then *result* is converted to a quiet :const:`NaN`
+    of that format with zero payload and clear sign bit.
+
+    ::exc::`Invalid` has many sub-exceptions which indicate more precisely what happened.
+
+
+.. exception:: SignallingNaNOperand
+
+    This signal is raised when any signalling operation (with the possible exception of
+    conversions to string) is passed a signalling :const:`NaN` operand.  The default
+    result will be a quiet :const:`NaN` in the destination format, see `NaN Propagation`_
+    for more details.
+
+
+.. exception:: InvalidAdd
+
+    The signal is raised when :meth:`add` is given two differently-signed infinities, or
+    :meth:`subtract` is given two like-signed infinities.
+
+
+.. exception:: InvalidMultiply
+
+    This signal is raised when the :meth:`multiply` operation is passed a zero and an
+    infinity.
+
+
+.. exception:: InvalidDivide
+
+    This signal is raised when the :meth:`divide` operation is passed two zeros or two
+    infinities.
+
+
+.. exception:: InvalidFMA
+
+    This signal is raised when the fused-multiply-add operation :meth:`fma` multiplies a
+    zero and an infinity.
+
+
+.. exception:: InvalidRemainder
+
+    This signal is raised when a remainder operation has an infinite dividend or a zero
+    divisor, and neither operand is a :const:`NaN`.
+
+    The remainder operations are :meth:`remainder`, :meth:`fmod`, :meth:`mod`,
+    :meth:`floordiv` and :meth:`divmod`.  Of these only :meth:`remainder` is described in
+    the IEEE standard.
+
+
+.. exception:: InvalidSqrt
+
+    This signal is raised when the square root operation :meth:`sqrt` is passed an operand
+    less than zero.
+
+
+.. exception:: InvalidToString
+
+    This signal is raised when a decimal or hexadecimal string conversion operation is
+    passed a signalling :const:`NaN` and the :class:`TextFormat` :attr:`sNaN` attribute is
+    empty, indicating to output it as a quiet :const:`NaN`.
+
+
+.. exception:: InvalidConvertToInteger
+
+    Raised during the conversion of a Binary value to an integer format when the result
+    cannot be represented in that format.
+
+    This happens when the result would be too large or too small, or the source value is
+    an infinity or :const:`NaN`.
+
+
+.. exception:: InvalidComparison
+
+   Raised when a comparison is done on two values that would return :const:`Unordered`
+   (i.e., at least one of the operands is a :const:`NaN`) and the comparison predicate
+   indicates that unordered comparisons should raise an invalid operation signal.
+
+
+.. exception:: InvalidLogBIntegral
+
+   This signal is raised when the operand of :meth:`logb_integral` is a zero, infinity or
+   :const:`NaN`.
+
+
+.. exception:: DivisionByZero
+
+   This class is the base class of all division-by-zero exceptions specified in the
+   **IEEE-754** standard.  Division by zero is signalled when an operation on finite
+   operands delivers an exact infinite result.
+
+   This class has two sub-exceptions.
+
+
+.. exception:: DivideByZero
+
+   Raised when the :meth:`divide` operation was passed a zero divisor.
+
+
+.. exception:: LogBZero
+
+   Raised when :meth:`logb` operates on a a zero value.
+
+
+.. exception:: Inexact
+
+   One of the five IEEE-754 signals, this is raised when the infinitely precise result
+   cannot be represented in the destination format.  This is perhaps the most common
+   signal.
+
+   The default result is the precise result rounded according to the rounding mode to fit
+   the destination format.
+
+   This class has no sub-exceptions.
+
+   Under default exception handling this signal raises the :attr:`INEXACT` flag.
+
+
+.. exception:: Overflow(op_tuple, fmt, rounding, sign)
+
+   *op_tuple* is as decribed for :exc:`IEEEError`.  *fmt* is the destination format,
+   *rounding* is the rounding mode to apply, and *sign* is the sign of the result.
+
+   Overflow is one of the five IEEE-754 signals.  It is raised, after rounding, when the
+   result would have an exponent exceeding the destination format's :attr:`e_max`
+   attribute.
+
+   The default result is either infinity, or the finite value of the greatest magnitude,
+   depending on *rounding* and *sign*.
+
+   This class has no sub-exceptions.
+
+   Under default exception handling this signal raises the :attr:`OVERFLOW` flag and
+   signals :exc:`Inexact`.
+
+
+.. exception:: Underflow
+
+    The final of the five IEEE-754 signals, :exc:`Underflow` is signalled when a tiny
+    non-zero result is detected.  Tininess means the precise non-zero result computed as
+    though with unbounded exponent range would lie strictly between ``± 2^e_min`` where
+    :attr:`e_min` is the minimum normalized exponent of the destination format.
+
+    Tininess can be detected before or after rounding, as determined by the operation's
+    *context* argument.
+
+    This class should not be raised directly; instead one of its two sub-exceptions should
+    be raised depending on whether the result is exact.
+
+
+.. exception:: UnderflowExact
+
+   This exception is signalled when the result it tiny but exact.  Since the result is
+   exact it was necessarily tiny before and after rounding.
+
+   Under default exception handling, as per IEEE-754, this signal does *not* raise the
+   :attr:`UNDERFLOW` flag and it does *not* signal :exc:`Inexact`.  It is the only signal
+   to not raise its associated flag.
+
+
+.. exception:: UnderflowInexact
+
+   This exception is signalled when tininess was detected and rounding of the precise
+   result was necessary.
+
+   A tiny rounded result was necessarily tiny before rounding, however an infinitely
+   precise result that was tiny might round to be the smallest finite non-tiny number.
+   Hence it matters whether tininess is detected before or after rounding; this is
+   controlled by the :attr:`tininess_after` attribute of the *context* of the operation.
+
+   The method of detecting tininess has no effect on the rounded result delivered, which
+   might be any of zero, a subnormal number, or the smallest finite normal number.
+
+   Under default exception handling this signal raises the :attr:`UNDERFLOW` flag and
+   signals :exc:`Inexact`.
+
+
+Alternate Exception Handling
+============================
+
+When a signal is raised during a computation, it is sometimes desirable to handle the
+signal in a different way to the `default exception handling` that the IEEE-754 standard
+specifies.
+
+Alternate means of handling an exception that occurs in a block of code can be categorised
+as follows:
+
+  * :dfn:`resuming` ones handle the exception immediately, taking some action which
+    delivers a result, and then execution of the block of code continues normally.
+
+  * :dfn:`immediate` ones immediately abandon the block of code, call an alternative block
+    of code to handle the exception condition, and then resume control after the end of
+    the code block.
+
+  * :dfn:`immediate with transfer` ones immediately abandon the block of code and transfer
+    control to an alternative block of code to handle the exception condition, with no
+    return possible.
+
+  * :dfn:`delayed` ones deliver a default result and resume execution of the code block.
+    The actual exception handling takes place when the block of code ends.
+
+  * :dfn:`delayed with transfer` ones deliver a default result and transfer control at the
+    end of the block of code to an alternative block of code to handle the exception, with
+    no return possible.
+
+This module supports several resuming exception handling methods.  The `immediate` form is
+supported by specifying the signal should raise a Python exception and placing a ``try
+... except ...`` construct around the block of code.  The `immediate with transfer` form
+is similarly supported by placing the ``try ... except ...`` construct at a higher place
+in the call stack than the block of code in question.
+
+At present no support is implemented for the delayed forms of exception handling.
+
+
+.. class:: HandlerKind
+
+    Values of the :class:`HandlerKind` enumeration can be associated with a signal via
+    :meth:`Context.set_handler` to specify alternate means of handling exceptions.  The
+    :attr:`SUBSTITUTE_VALUE` and :attr:`SUBSTITUTE_VALUE_XOR` kinds require a handler to
+    be given; the others take no handler.
+
+    .. attribute:: DEFAULT
+
+       The associated exception is handled with default exception handling.
+
+    .. attribute:: NO_FLAG
+
+       The associated exception is handled with default exception handling but the
+       associated flag is not raised in the context object.
+
+    .. attribute:: MAYBE_FLAG
+
+       The associated exception is handled with default exception handling and the
+       associated flag might be raised in the context object.  It is imagined that
+       determining whether operations should raise a flag, such as :attr:`Flags.INEXACT`,
+       or not might in some cases be expensive.  If the user has indicated with
+       :attr:`MAYBE_FLAG` a lack of interest in the accurate signalling of this condition,
+       then the implementation can take advantage of this fact to not perform the
+       expensive computations required.
+
+       At present no operations in the module take advantage of this leeway, but new ones
+       might do so in future.
+
+    .. attribute:: RECORD_EXCEPTION
+
+       The associated exception is handled with default exception handling, and details of
+       the exception condition are recorded in the :attr:`exceptions` attribute of the
+       context obejct.
+
+    .. attribute:: SUBSTITUTE_VALUE
+
+       The associated exception is handled with default exception handling, but a
+       different value is delivered as the result.  The handler function passed to
+       :meth:`Context.set_handler` is called, which takes two arguments: the *exception*
+       that has been signalled, and the *context* of the operation.  The value returned by
+       the handler will be delivered as the operation's result.  If this is not a value of
+       the correct type and format the behaviour is undefined.
+
+    .. attribute:: SUBSTITUTE_VALUE_XOR
+
+       This associated exception is handled with default exception handling unless it
+       arises from a multiply or divide operation.
+
+       Behaviour is as for :attr:`SUBSTITUTE_VALUE` except the sign of the value to
+       substitue is ignored and instead replaced with the correct sign of the multiply or
+       divide operation (i.e., the exclusive or of the signs of the two operands).  Sign
+       substitution does not happend for :const:`NaN` values.
+
+    .. attribute:: ABRUPT_UNDERFLOW
+
+       This kind can only be associated with exceptions derived from :exc:`Underflow`.
+       When the associated exception is signalled, replace the default result with a zero
+       of the same sign, or the minimum **normal** of the same sign, according to the
+       applicable rounding mode.  Then raise the :attr:`Flag.UNDERFLOW` flag and signal
+       the inexact exception.
+
+    .. attribute:: RAISE
+
+       Immediately raise the associated exception as a Python exception.
+
+
+Here is a silly but illustrative example::
+
+  >>> from ieee754 import *
+  >>> def handler(exception, context):
+  ...     # A generic handler would use exception.result.fmt instead of IEEEdouble
+  ...     return IEEEdouble.from_string('1.25')
+  ...
+  >>> context = get_context()
+  >>> context.set_handler(DivideByZero, HandlerKind.SUBSTITUTE_VALUE_XOR, handler)
+  >>> lhs = IEEEdouble.from_float(1.34)
+  >>> (lhs / -0.0).to_decimal_string()
+  '-1.25'
+  >>> context
+  <Context rounding=ROUND_HALF_EVEN flags=<Flags.DIV_BY_ZERO: 2> tininess_after=True>
+
+The example installs a handler for divison by zero which substitutes with appropriate sign
+the value 1.25.  When a division by negative zero then happens, the substitution results
+in the value -1.25 and the context's flag is raised.
+
+
+NaN Propagation
+===============
+
+So-called `general computational operations` return a quiet :const:`NaN` when any operand
+is a :const:`NaN`.  If any operand is a signalling :const:`NaN` then instead the operation
+signals :exc:`SignallingNaNOperand` with default result the quiet :const:`NaN`.  The only
+exception to this principle is string conversion.  If the :class:`TextFormat` does not
+require conversion of signalling NaNs to quiet ones, then string conversion does not raise
+a signal as the signalling status is not lost.
+
+The **IEEE-754** standard specifies that under default exception handling the delivered
+:const:`NaN` shall be quiet and preserve as much of the payload as possible from the
+operand NaNs.  It does not specify which :const:`NaN` operand provides the payload of the
+delivered :const:`NaN` if there are two or more, nor the means of payload truncation and
+extension to narrower and wider formats.  It does specify that a :const:`NaN` payload
+converted to a wider format, and then back again to the original format, should not
+change.
+
+This implementation behaves as follows:
+
+  * payloads are viewed as unsigned integer values.  For binary interchange formats, the
+    least significant bit of the significand forms the least significant bit of the
+    payload.
+  * when a :const:`NaN` is converted to a narrower format, the payload is truncated by
+    losing its most significant bits.  When converted to a wider format leading zero bits
+    are added.
+  * one *source* :const:`NaN` is chosen from among the operand NaNs.  Its sign provides
+    the sign of the delivered quiet :const:`NaN`, and its payload is converted to the
+    destination format as described above.
+  * the leftmost :const:`NaN` in the list of operands, whether signalling or quiet, whose
+    payload preserves its value when converted to the destination format, is first chosen
+    as the source.
+  * if no :const:`NaN` would preserve its payload value on conversion, then the leftmost
+    :const:`NaN` is chosen as the source.
 
 
 TextFormat objects
@@ -154,7 +743,9 @@ TextFormat objects
 
   .. attribute:: sNaN
 
-     The string to output for a signalling :const:`NaN`.  The default is 'sNaN'.
+     The string to output for a signalling :const:`NaN`.  An empty string means output it
+     as a quiet :const:`NaN` instead, which signals an :exc:`InvalidToString` exception.
+     The default is 'sNaN'.
 
   .. attribute:: nan_payload
 
@@ -191,3 +782,53 @@ TextFormat objects
 
        DefaultDecFormat = TextFormat(exp_digits=-2, rstrip_zeroes=True,
                                      inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
+
+
+.. _Operation Names:
+
+Operation Names
+===============
+
+The following constants are defined in the module and form the first element of the
+:attr:`op_tuple` attribute of exceptions.  Each is a string which is the method name that
+performs the operation.  For example, :data:`OP_DIVIDE` is "divide".
+
+
+.. data:: OP_ABS
+.. data:: OP_ADD
+.. data:: OP_SUBTRACT
+.. data:: OP_MULTIPLY
+.. data:: OP_DIVIDE
+.. data:: OP_FMA
+.. data:: OP_REMAINDER
+.. data:: OP_FMOD
+.. data:: OP_MOD
+.. data:: OP_DIVMOD
+.. data:: OP_FLOORDIV
+.. data:: OP_SQRT
+.. data:: OP_SCALEB
+.. data:: OP_LOGB
+.. data:: OP_LOGB_INTEGRAL
+.. data:: OP_NEXT_UP
+.. data:: OP_NEXT_DOWN
+.. data:: OP_COMPARE
+.. data:: OP_CONVERT
+.. data:: OP_ROUND_TO_INTEGRAL
+.. data:: OP_ROUND_TO_INTEGRAL_EXACT
+.. data:: OP_CONVERT_TO_INTEGER
+.. data:: OP_CONVERT_TO_INTEGER_EXACT
+.. data:: OP_FROM_FLOAT
+.. data:: OP_FROM_INT
+.. data:: OP_FROM_STRING
+.. data:: OP_TO_STRING
+.. data:: OP_TO_DECIMAL_STRING
+.. data:: OP_MAX
+.. data:: OP_MAX_NUM
+.. data:: OP_MIN
+.. data:: OP_MIN_NUM
+.. data:: OP_MAX_MAG_NUM
+.. data:: OP_MAX_MAG
+.. data:: OP_MIN_MAG_NUM
+.. data:: OP_MIN_MAG
+.. data:: OP_UNARY_MINUS
+.. data:: OP_UNARY_PLUS
