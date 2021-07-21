@@ -353,7 +353,7 @@ class IEEEError(ArithmeticError):
         if kind != HandlerKind.NO_FLAG:
             if kind == HandlerKind.ABRUPT_UNDERFLOW:
                 result = result.fmt.make_underflow_value(context.rounding, result.sign, True)
-                context.flags |= Flags.INEXACT
+                context.flags |= Flags.UNDERFLOW
                 return Inexact(self.op_tuple, result).signal(context)
 
             # flag_to_raise can be zero for exact underflow
@@ -771,33 +771,34 @@ class BinaryFormat(NamedTuple):
         return f'BinaryFormat(precision={self.precision}, e_max={self.e_max}, e_min={self.e_min})'
 
     def __eq__(self, other):
-        '''Returns True if two formats are equal.'''
+        '''Return True if two formats are equal.'''
         return (isinstance(other, BinaryFormat) and
                 (self.precision, self.e_max, self.e_min)
                 == (other.precision, other.e_max, other.e_min))
 
     def make_zero(self, sign):
-        '''Returns a zero of the given sign.'''
+        '''Return a zero of the given sign.'''
         return Binary(self, sign, 1, 0)
 
     def make_one(self, sign):
-        '''Returns a one of the given sign.'''
+        '''Return a one of the given sign.'''
         return Binary(self, sign, self.e_bias, self.int_bit)
 
     def make_infinity(self, sign):
-        '''Returns an infinity of the given sign.'''
+        '''Return an infinity of the given sign.'''
         return Binary(self, sign, 0, 0)
 
     def make_largest_finite(self, sign):
-        '''Returns the finite number of maximal magnitude with the given sign.'''
+        '''Return the finite number of maximal magnitude with the given sign.'''
         return Binary(self, sign, self.e_max + self.e_bias, self.max_significand)
 
-    def make_smallest_finite(self, sign, force_normal):
-        '''Returns the finite number of maximal magnitude with the given sign.  This is the
-        smallest subnormal number, unless force_normal is True, in which case it is the
-        smallest normal.
-        '''
-        return Binary(self, sign, 1, self.int_bit if force_normal else 1)
+    def make_smallest_subnormal(self, sign):
+        '''Return the smallest subnormal number with the given sign.'''
+        return Binary(self, sign, 1, 1)
+
+    def make_smallest_normal(self, sign):
+        '''Return the smallest normal number with the given sign.'''
+        return Binary(self, sign, 1, self.int_bit)
 
     def make_NaN(self, sign, is_signalling, payload):
         '''Return a NaN with the given sign and payload and signalling status.
@@ -815,7 +816,7 @@ class BinaryFormat(NamedTuple):
         return Binary(self, sign, 0, payload)
 
     def make_overflow_value(self, rounding, sign):
-        '''Returns the value to deliver when an overflow occurs, because the exponent would be too
+        '''Return the value to deliver when an overflow occurs, because the exponent would be too
         large, delivering a result to this format with the given sign.  rounding is the rounding
         mode to apply.'''
         if round_up(rounding, LF_MORE_THAN_HALF, sign, False):
@@ -826,7 +827,10 @@ class BinaryFormat(NamedTuple):
         '''Returns the value to deliver when a calculation can be determined, typically early, to
         underflow to zero with the given sign.  rounding is the rounding mode to apply.'''
         if round_up(rounding, LF_LESS_THAN_HALF, sign, False):
-            return self.make_smallest_finite(sign, force_normal)
+            if force_normal:
+                return self.make_smallest_normal(sign)
+            else:
+                return self.make_smallest_subnormal(sign)
         else:
             return self.make_zero(sign)
 

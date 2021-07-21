@@ -729,7 +729,7 @@ class TestInvalid:
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
 
         result = invalid_func(context)
-        # Ignored unless one of thse
+        # Ignored unless one of these
         if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
             sign = op_tuple[1].sign ^ op_tuple[2].sign
             assert floats_equal(result, answer.fmt.make_one(sign))
@@ -866,7 +866,7 @@ class TestInexact:
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
 
         result = inexact_func(context)
-        # Ignored unless one of thse
+        # Ignored unless one of these
         if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
             sign = op_tuple[1].sign ^ op_tuple[2].sign
             assert floats_equal(result, result.fmt.make_one(sign))
@@ -978,7 +978,7 @@ class TestOverflow:
         context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
 
         result = overflow_func(context)
-        # Ignored unless one of thse
+        # Ignored unless one of these
         if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
             sign = op_tuple[1].sign ^ op_tuple[2].sign
             assert floats_equal(result, result.fmt.make_one(sign))
@@ -1014,13 +1014,11 @@ class TestOverflow:
     @pytest.mark.parametrize('testcase', overflow_testcases)
     def test_raise_inexact(self, testcase, quiet_context):
         exc_class, handler_class, op_tuple, overflow_func = testcase
-        # Inexact has the raise
-        exc_class = Inexact
 
         context = quiet_context
-        context.set_handler(exc_class, HandlerKind.RAISE)
+        context.set_handler(Inexact, HandlerKind.RAISE)
 
-        with pytest.raises(exc_class) as e:
+        with pytest.raises(Inexact) as e:
             overflow_func(context)
 
         e = e.value
@@ -1028,24 +1026,175 @@ class TestOverflow:
         assert context.flags == Flags.OVERFLOW | Flags.INEXACT
         assert not context.exceptions
 
-#     def test_underflow_to_non_zero(self):
-#         context = Context(traps=Flags.UNDERFLOW)
-#         assert issubclass(Underflow, SubnormalInexact)
-#         with pytest.raises(Underflow):
-#             IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1024', context)
-#         assert result.is_subnormal()
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
 
-#     def test_underflow_to_zero(self):
-#         context = Context(traps=Flags.UNDERFLOW)
-#         with pytest.raises(Underflow):
-#             IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
-#         result = IEEEdouble.from_string('0x1.fffffffffffffp-1200', context)
-#         assert result.is_zero()
-#         assert context.flags == Flags.UNDERFLOW | Flags.SUBNORMAL | Flags.INEXACT
+def underflow_multiply(dst_fmt, index):
+    lhs = dst_fmt.make_smallest_normal(random.choice(signs))
+    rhs = random.choice(all_IEEE_fmts).from_value(0.5)
+    op_tuple = (OP_MULTIPLY, lhs, rhs)
+    handler_class = (UnderflowExact, Underflow, IEEEError)[index]
+    return UnderflowExact, lhs.sign, handler_class, op_tuple, partial(dst_fmt.multiply, lhs, rhs)
+
+
+def underflow_from_string(dst_fmt, index):
+    lhs = random.choice(('1e-200000', '-1e-200000'))
+    op_tuple = (OP_FROM_STRING, lhs)
+    handler_class = (UnderflowInexact, Underflow, IEEEError)[index]
+    return (UnderflowInexact, lhs[0] == '-', handler_class, op_tuple,
+            partial(dst_fmt.from_string, lhs))
+
+
+underflow_testcase_funcs = (underflow_multiply, underflow_from_string)
+underflow_testcases = tuple(testcase_func(fmt, index)
+                            for testcase_func in underflow_testcase_funcs
+                            for index in range(3)
+                            for fmt in all_IEEE_fmts)
+
+
+class TestUnderflow:
+
+    @pytest.mark.parametrize('testcase, kind, inexact_kind', product(
+        underflow_testcases,
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+        (HandlerKind.DEFAULT, HandlerKind.NO_FLAG, HandlerKind.MAYBE_FLAG,
+         HandlerKind.RECORD_EXCEPTION),
+    ))
+    def test_basic_kinds(self, testcase, kind, inexact_kind, quiet_context):
+        exc_class, _sign, handler_class, op_tuple, underflow_func = testcase
+        context = quiet_context
+        context.set_handler(handler_class, kind)
+        context.set_handler(Inexact, inexact_kind)
+
+        underflow_func(context)
+
+        # Underflow handling is a bit messy; checking needs to be precise
+        if exc_class is UnderflowExact or kind == HandlerKind.NO_FLAG:
+            flags = 0
+        else:
+            flags = Flags.UNDERFLOW
+        record_count = 1 if (flags and kind == HandlerKind.RECORD_EXCEPTION) else 0
+
+        if exc_class is UnderflowInexact and inexact_kind != HandlerKind.NO_FLAG:
+            flags |= Flags.INEXACT
+            if inexact_kind == HandlerKind.RECORD_EXCEPTION:
+                record_count += 1
+
+        if record_count:
+            if (flags & Flags.UNDERFLOW and kind == HandlerKind.RECORD_EXCEPTION):
+                assert isinstance(context.exceptions[0], exc_class)
+            if inexact_kind == HandlerKind.RECORD_EXCEPTION and flags & Flags.INEXACT:
+                assert isinstance(context.exceptions[-1], Inexact)
+            assert (exception.op_tuple == op_tuple for exception in context.exceptions)
+        else:
+            assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase, inexact', product(underflow_testcases, (True, False)))
+    def test_substitute_value(self, testcase, inexact, quiet_context):
+        exc_class, _sign, handler_class, op_tuple, underflow_func = testcase
+
+        context = quiet_context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_one)
+        if inexact:
+            context.set_handler(Inexact, HandlerKind.SUBSTITUTE_VALUE, substitute_plus_zero)
+
+        result = underflow_func(context)
+
+        if exc_class is UnderflowExact:
+            assert floats_equal(result, result.fmt.make_one(False))
+            assert context.flags == 0
+        else:
+            if inexact:
+                assert floats_equal(result, result.fmt.make_zero(False))
+            else:
+                assert floats_equal(result, result.fmt.make_one(False))
+            assert context.flags == Flags.UNDERFLOW | Flags.INEXACT
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', underflow_testcases)
+    def test_substitute_value_xor(self, testcase, quiet_context):
+        exc_class, sign, handler_class, op_tuple, underflow_func = testcase
+
+        context = quiet_context
+        context.set_handler(handler_class, HandlerKind.SUBSTITUTE_VALUE_XOR, substitute_plus_one)
+
+        result = underflow_func(context)
+        # Ignored unless one of these
+        if op_tuple[0] in {OP_MULTIPLY, OP_DIVIDE}:
+            assert floats_equal(result, result.fmt.make_one(sign))
+        else:
+            assert result.is_subnormal() or result.is_zero()
+            assert result.sign is sign
+        if exc_class is UnderflowExact:
+            assert context.flags == 0
+        else:
+            assert context.flags == Flags.UNDERFLOW | Flags.INEXACT
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase, rounding', product(underflow_testcases, all_roundings))
+    def test_abrupt_underflow(self, testcase, rounding, quiet_context):
+        exc_class, sign, handler_class, op_tuple, underflow_func = testcase
+        context = quiet_context
+        context.rounding = rounding
+
+        if handler_class is IEEEError:
+            with pytest.raises(TypeError) as e:
+                context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
+        else:
+            assert context.flags == 0
+            context.set_handler(handler_class, HandlerKind.ABRUPT_UNDERFLOW)
+            result = underflow_func(context)
+
+            assert context.flags == Flags.UNDERFLOW | Flags.INEXACT
+            if rounding == ROUND_CEILING:
+                is_zero = sign
+            elif rounding == ROUND_FLOOR:
+                is_zero = not sign
+            else:
+                is_zero = rounding in {ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_HALF_DOWN, ROUND_DOWN}
+            if is_zero:
+                assert result.is_zero()
+                assert result.sign is sign
+            else:
+                assert floats_equal(result, result.fmt.make_smallest_normal(sign))
+
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', underflow_testcases)
+    def test_raise(self, testcase, quiet_context):
+        exc_class, _sign, handler_class, op_tuple, underflow_func = testcase
+
+        context = quiet_context
+        context.set_handler(handler_class, HandlerKind.RAISE)
+
+        with pytest.raises(exc_class) as e:
+            underflow_func(context)
+
+        e = e.value
+        assert e.op_tuple == op_tuple
+        if exc_class is UnderflowExact:
+            assert context.flags == 0
+        else:
+            assert context.flags == Flags.UNDERFLOW  # Inexact has not been signalled
+        assert not context.exceptions
+
+    @pytest.mark.parametrize('testcase', underflow_testcases)
+    def test_raise_inexact(self, testcase, quiet_context):
+        exc_class, _sign, handler_class, op_tuple, underflow_func = testcase
+
+        context = quiet_context
+        context.set_handler(Inexact, HandlerKind.RAISE)
+
+        if exc_class is UnderflowExact:
+            underflow_func(context)
+            assert context.flags == 0
+        else:
+            with pytest.raises(Inexact) as e:
+                underflow_func(context)
+
+            e = e.value
+            assert e.op_tuple == op_tuple
+            assert context.flags == Flags.UNDERFLOW | Flags.INEXACT  # Both have been signalled
+        assert not context.exceptions
 
 
 class TestBinaryFormat:

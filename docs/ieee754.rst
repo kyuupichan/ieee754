@@ -474,7 +474,7 @@ class hierarchy as follows::
 
 .. exception:: Underflow
 
-    The final of the five IEEE-754 signals, :exc:`Underflow` is signalled when a tiny
+    The last of the five IEEE-754 signals, :exc:`Underflow` is signalled when a tiny
     non-zero result is detected.  Tininess means the precise non-zero result computed as
     though with unbounded exponent range would lie strictly between ``± 2^e_min`` where
     :attr:`e_min` is the minimum normalized exponent of the destination format.
@@ -482,8 +482,8 @@ class hierarchy as follows::
     Tininess can be detected before or after rounding, as determined by the operation's
     *context* argument.
 
-    This class should not be raised directly; instead one of its two sub-exceptions should
-    be raised depending on whether the result is exact.
+    This exception must not be raised directly; instead one of its two sub-exceptions
+    should be raised depending on whether the result is exact.
 
 
 .. exception:: UnderflowExact
@@ -583,7 +583,7 @@ At present no support is implemented for the delayed forms of exception handling
 
        The associated exception is handled with default exception handling, and details of
        the exception condition are recorded in the :attr:`exceptions` attribute of the
-       context obejct.
+       context obejct if default exception handling raises a flag.
 
     .. attribute:: SUBSTITUTE_VALUE
 
