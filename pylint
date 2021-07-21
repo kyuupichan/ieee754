@@ -1,1 +1,1 @@
-pylint --rcfile=.pylintrc *.py
+pylint --rcfile=.pylintrc ieee754/ieee754.py

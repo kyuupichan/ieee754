@@ -588,11 +588,11 @@ At present no support is implemented for the delayed forms of exception handling
     .. attribute:: SUBSTITUTE_VALUE
 
        The associated exception is handled with default exception handling, but a
-       different value is delivered as the result.  The handler function passed to
-       :meth:`Context.set_handler` is called, which takes two arguments: the *exception*
-       that has been signalled, and the *context* of the operation.  The value returned by
-       the handler will be delivered as the operation's result.  If this is not a value of
-       the correct type and format the behaviour is undefined.
+       different value is delivered as the result.  The value to deliver is returned by
+       the handler function passed to :meth:`Context.set_handler`, which takes two
+       arguments: the *exception* that has been signalled, and the *context* of the
+       operation.  If the handler does not return a value of the correct type and format
+       the behaviour is undefined.
 
     .. attribute:: SUBSTITUTE_VALUE_XOR
 

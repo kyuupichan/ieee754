@@ -20,7 +20,7 @@ import attr
 __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
            'DefaultDecFormat', 'DefaultHexFormat', 'Dec_g_Format',
            'Flags', 'Compare', 'HandlerKind',
-           'BinaryFormat', 'Binary', 'IntegerFormat', 'TextFormat',
+           'BinaryFormat', 'Binary', 'TextFormat',
            'IEEEError', 'Invalid', 'DivisionByZero', 'Inexact', 'Overflow', 'Underflow',
            'SignallingNaNOperand', 'InvalidAdd', 'InvalidMultiply', 'InvalidDivide',
            'InvalidSqrt', 'InvalidFMA', 'InvalidRemainder', 'InvalidLogBIntegral',
@@ -131,19 +131,14 @@ unpack_double = Struct('<d').unpack
 class TextFormat:
     '''Controls the output of conversion to decimal and hexadecimal strings.'''
 
-    ''' The minimum number of digits to output in the exponent of a finite number.  Defaults
-    to :const:`1`.
-
-    For decimal output :const:`0` suppresses the exponent by adding leading or trailing
-    zeroes to the significand as needed (as for the :func:`printf` **f** format specifier
-    in the **C** programming language).  If negative, apply the rule for the
-    :func:`printf` **g** format specifier to decide whether to display an exponent or not,
-    in which case the minimum number of digits in the exponent is the absolute value.
-
-    Hexadecimal output always has an exponent so the absolute value is used with a minimum
-    of :const:`1`.'''
+    # The minimum number of digits to output in the exponent of a finite number.  Defaults
+    # to 1.  For decimal output 0 suppresses the exponent by adding leading or trailing
+    # zeroes to the significand as needed (as for the printf 'f' format specifier in the C
+    # programming language).  If negative, apply the rule for the printf 'g' format
+    # specifier to decide whether to display an exponent or not, in which case the minimum
+    # number of digits in the exponent is the absolute value.
     exp_digits = attr.ib(default=1)
-    '''If True positive exponents display a '+'.'''
+    # If True positive exponents display a '+'.
     force_exp_sign = attr.ib(default=True)
     # If True, numbers with a clear sign bit are preceded with a '+'.
     force_leading_sign = attr.ib(default=False)
@@ -479,7 +474,7 @@ class Overflow(IEEEError):
     def __init__(self, op_tuple, fmt, rounding, sign):
         super().__init__(op_tuple, fmt.make_overflow_value(rounding, sign))
 
-    def signal(self, context):
+    def signal(self, context=None):
         '''Call to signal the overflow exception.  Defer to the base class for standard handling;
         then signal inexact.'''
         result = super().signal(context)
@@ -507,7 +502,7 @@ class UnderflowInexact(Underflow):
 
     flag_to_raise = Flags.UNDERFLOW
 
-    def signal(self, context):
+    def signal(self, context=None):
         '''Signal an inexact underflow.  Defer to the base class for standard handling; then
         signal inexact.'''
         result = super().signal(context)
@@ -618,34 +613,6 @@ class Context:
                 f'tininess_after={self.tininess_after}>')
 
 
-class IntegerFormat:
-    '''A two's-complement integer, either signed or unsigned.'''
-
-    __slots__ = ('width', 'is_signed', 'min_int', 'max_int')
-
-    def __init__(self, width, is_signed):
-        if not isinstance(width, int):
-            raise TypeError('width must be an integer')
-        if width < 1:
-            raise TypeError('width must be at least 1')
-        self.width = width
-        self.is_signed = is_signed
-        if is_signed:
-            self.min_int = -(1 << (width - 1))
-            self.max_int = (1 << (width - 1)) - 1
-        else:
-            self.min_int = 0
-            self.max_int = (1 << width) - 1
-
-    def __eq__(self, other):
-        '''Returns True if two formats are equal.'''
-        return (isinstance(other, IntegerFormat) and
-                (self.width, self.is_signed) == (other.width, other.is_signed))
-
-    def __repr__(self):
-        return f'IntegerFormat(width={self.width}, is_signed={self.is_signed})'
-
-
 # When precision is lost during a calculation these indicate what fraction of the LSB the
 # lost bits represented.  It essentially combines the roles of 'guard' and 'sticky' bits.
 LF_EXACTLY_ZERO = 0           # 000000
@@ -695,6 +662,8 @@ class BinaryFormat(NamedTuple):
     fmt_width: int
     decimal_precision: int
     logb_inf: int
+
+    _converters = {}
 
     @classmethod
     def from_triple(cls, precision, e_max, e_min):
@@ -1074,7 +1043,7 @@ class BinaryFormat(NamedTuple):
 
         return Binary(self, sign, exponent, significand)
 
-    def _unpack_value(self, binary, context):
+    def _unpack_value(self, binary, _context):
         '''unpack_value but takes a context for from_value dispatch.'''
         return self.unpack_value(binary)
 
@@ -2051,7 +2020,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         Returns a (quot, remainder) pair where quot is a Python int or a NaN.
         '''
         if self.fmt != rhs.fmt:
-            raise ValueError(f'{operation} requires operands of the same format')
+            raise ValueError(f'{op_tuple[0]} requires operands of the same format')
 
         context = context or get_context()
         quot_sign = self.sign ^ rhs.sign     # Sign of the quotient
@@ -2322,34 +2291,39 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self._round_to_integral(OP_ROUND_TO_INTEGRAL_EXACT, context.rounding, context)
 
-    def _to_integer(self, operation, integer_fmt, rounding, context=None):
-        '''Convert this to an integer, as per rounding.  The result fits in the target integer
-        format specified.  If integer_fmt is None, the target integer format is unbounded
-        (as in Python).
+    def _to_integer(self, operation, min_int, max_int, rounding, context=None):
+        '''Convert this to an integer in the given inclusive range, as per rounding.  min_int and
+        max_int are the range of the target integer format and must include zero.  If
+        min_int == max_int == 0 then the target integer format is unbounded (as in
+        Python).
 
-        If the value is a NaN or infinity, or the result cannot be represented in the
-        integer format, invalid operation is signalled.  The result is zero if the source
-        is a NaN, otherwise it is the smallest or largest value in the integer format,
-        whichever is closest to the ideal result.
+        If the value is a NaN or infinity, or the result is out of the integer range,
+        InvalidConvertToInteger is signalled.  For NaNs the default result is 0, for
+        infinites max_int or min_int as appropriate.
 
         If operation is OP_CONVERT_TO_INTEGER_EXACT, and the operand was finite and not an
         integer, signal Inexact.
         '''
-        if integer_fmt is not None and not isinstance(integer_fmt, IntegerFormat):
-            raise TypeError('integer_fmt must be an integer format')
+        if not (isinstance(min_int, int) and isinstance(max_int, int)):
+            raise TypeError('min_int and max_int must be integers')
+        if not min_int <= 0 <= max_int:
+            raise ValueError('zero must lie between min_int and max_int')
 
-        op_tuple = (operation, self, integer_fmt, rounding)
+        op_tuple = (operation, self, min_int, max_int, rounding)
         if self.e_biased == 0:
             is_invalid = True
-            if self.significand or integer_fmt is None:
-                result = 0
-            else:   # An infinity going to a bounded format
-                result = integer_fmt.min_int if self.sign else integer_fmt.max_int
+            if self.significand == 0:
+                result = min_int if self.sign else max_int
+            else:
+                result = 0   # NaN
         else:
             result, is_exact = self._to_int(rounding)
-            unclamped_result = -result if self.sign else result
-            result = min(max(unclamped_result, integer_fmt.min_int), integer_fmt.max_int)
-            is_invalid = result != unclamped_result
+            result = -result if self.sign else result
+            if max_int == min_int:
+                is_invalid = False
+            else:
+                result, unclamped_result = min(max(result, min_int), max_int), result
+                is_invalid = result != unclamped_result
 
         if is_invalid:
             return InvalidConvertToInteger(op_tuple, result).signal(context)
@@ -2357,21 +2331,23 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return Inexact(op_tuple, result).signal(context)
         return result
 
-    def convert_to_integer(self, integer_fmt, rounding, context=None):
-        '''Return the value rounded to the nearest integer in the same BinaryFormat.  The rounding
+    def convert_to_integer(self, min_int, max_int, rounding, context=None):
+        '''Return the value rounded to the nearest integer in the given range.  The rounding
         method is given explicitly; that in context is ignored.
+
+        if max_int <= min_int then the integers are unbounded.
 
         NaNs, infinities and out-of-range values signal InvalidConvertToInteger.
         Inexact is not signalled.
         '''
-        return self._to_integer(OP_CONVERT_TO_INTEGER, integer_fmt, rounding, context)
+        return self._to_integer(OP_CONVERT_TO_INTEGER, min_int, max_int, rounding, context)
 
-    def convert_to_integer_exact(self, integer_fmt, rounding, context=None):
+    def convert_to_integer_exact(self, min_int, max_int, rounding, context=None):
         '''As for convert_to_integer, except that Inexact is signaled if the result is
         in-range and not numerically equal to the original value (i.e. it was not an
         integer).
         '''
-        return self._to_integer(OP_CONVERT_TO_INTEGER_EXACT, integer_fmt, rounding, context)
+        return self._to_integer(OP_CONVERT_TO_INTEGER_EXACT, min_int, max_int, rounding, context)
 
     ##
     ## Signalling computational operations
@@ -2852,7 +2828,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def __int__(self):
         # Same as __trunc__
-        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_DOWN)
+        return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_DOWN)
 
     def __float__(self):
         value = IEEEdouble.convert(self)
@@ -2860,20 +2836,20 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return result
 
     def __trunc__(self):
-        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_DOWN)
+        return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_DOWN)
 
     def __floor__(self):
-        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_FLOOR)
+        return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_FLOOR)
 
     def __ceil__(self):
-        return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_CEILING)
+        return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_CEILING)
 
     def __round__(self, ndigits=None):
         '''If ndigits is None, round to an integer under ROUND_HALF_EVEN.  Otherwise round after
         ndigits binary digits with ROUND_HALF_EVEN and the result is floating-point.
         '''
         if ndigits is None:
-            return self._to_integer(OP_CONVERT_TO_INTEGER, None, ROUND_HALF_EVEN)
+            return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_HALF_EVEN)
         if not isinstance(ndigits, int):
             raise TypeError('ndigits must be an integer')
 
@@ -2968,7 +2944,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             # Follow behaviour of the Decimal package for non-finite values
             if self.significand == 0:
                 return -314159 if self.sign else 314159
-            if self.is_quiet():
+            if self.significand & self.fmt.quiet_bit:
                 return 0
             raise TypeError('cannot hash a signalling NaN')
 

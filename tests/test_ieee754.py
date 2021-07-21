@@ -507,7 +507,6 @@ class TestDivisionByZero:
 
 payloads = [1, 20, 300]
 no_sNaN_text_format = TextFormat(sNaN='')
-nibble_fmt = IntegerFormat(4, False)
 
 
 def random_sNaN(fmt):
@@ -660,10 +659,10 @@ def invalid_convert_to_integer(kind, index):
     else:
         value = dst_fmt.from_value(16)
         result = 15
-    op_tuple = (OP_CONVERT_TO_INTEGER, value, nibble_fmt, ROUND_DOWN)
+    op_tuple = (OP_CONVERT_TO_INTEGER, value, 0, 15, ROUND_DOWN)
     handler_class = (InvalidConvertToInteger, Invalid, IEEEError)[index]
     return (result, InvalidConvertToInteger, handler_class, op_tuple,
-            partial(value.convert_to_integer, nibble_fmt, ROUND_DOWN))
+            partial(value.convert_to_integer, 0, 15, ROUND_DOWN))
 
 
 invalid_testcase_funcs = (invalid_to_decimal_string, invalid_to_string, invalid_convert,
@@ -795,10 +794,10 @@ def inexact_round_to_integral(dst_fmt, index):
 
 def inexact_convert_to_integer(dst_fmt, index):
     lhs = dst_fmt.from_string('0.5')
-    op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, lhs, nibble_fmt, ROUND_DOWN)
+    op_tuple = (OP_CONVERT_TO_INTEGER_EXACT, lhs, 0, 15, ROUND_DOWN)
     handler_class = (Inexact, IEEEError)[index]
     return Inexact, handler_class, op_tuple, partial(lhs.convert_to_integer_exact,
-                                                     nibble_fmt, ROUND_DOWN)
+                                                     0, 15, ROUND_DOWN)
 
 
 def inexact_to_decimal_string(dst_fmt, index):
@@ -1551,31 +1550,6 @@ class TestBinary:
         assert context.flags == 0
 
 
-class TestIntegerFormat:
-
-    @pytest.mark.parametrize('width, is_signed, min_int, max_int', (
-        (8, True, -128, 127),
-        (8, False, 0, 255),
-        (32, True, -(1 << 31), (1 << 31) - 1),
-        (32, False, 0, (1 << 32) - 1)
-    ))
-    def test_integer_format(self, width, is_signed, min_int, max_int):
-        fmt = IntegerFormat(width, is_signed)
-        assert fmt.min_int == min_int
-        assert fmt.max_int == max_int
-        assert fmt.width == width
-        assert fmt.is_signed == is_signed
-
-    def test_repr(self):
-        fmt = IntegerFormat(8, True)
-        assert repr(fmt) == 'IntegerFormat(width=8, is_signed=True)'
-
-    def test_eq(self):
-        assert IntegerFormat(8, True) == IntegerFormat(8, True)
-        assert IntegerFormat(8, True) != IntegerFormat(8, False)
-        assert IntegerFormat(8, True) != 6
-
-
 # Test basic class functions before reading test files
 class TestGeneralNonComputationalOps:
 
@@ -1893,7 +1867,7 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line, kind, exact', product(
         read_lines('round_to_integral.txt'),
-        ('round', (8, True), (8, False), (64, True), (64, False)),
+        ('round', (-128, 127), (0, 255), (-(1 << 63), (1 << 63) - 1), (0, (1 << 64) - 1)),
         (False, True),
     ))
     def test_to_integer(self, line, kind, exact):
@@ -1918,27 +1892,27 @@ class TestUnaryOps:
                 assert floats_equal(result, answer)
                 assert context.flags == status & ~Flags.INEXACT
         else:
-            integer_format = IntegerFormat(*kind)
+            min_int, max_int = kind
             context = Context()
             if answer.is_NaN():
                 status = Flags.INVALID
                 answer = 0
             elif answer.is_infinite():
                 status = Flags.INVALID
-                answer = integer_format.min_int if answer.sign else integer_format.max_int
+                answer = min_int if answer.sign else max_int
             else:
                 answer = int(answer_str)
-                if answer < integer_format.min_int:
-                    answer, status = integer_format.min_int, Flags.INVALID
-                elif answer > integer_format.max_int:
-                    answer, status = integer_format.max_int, Flags.INVALID
+                if answer < min_int:
+                    answer, status = min_int, Flags.INVALID
+                elif answer > max_int:
+                    answer, status = max_int, Flags.INVALID
             if exact:
-                result = value.convert_to_integer_exact(integer_format, rounding_codes[rounding],
-                                                        context)
+                result = value.convert_to_integer_exact(min_int, max_int,
+                                                        rounding_codes[rounding], context)
                 assert result == answer
                 assert context.flags == status
             else:
-                result = value.convert_to_integer(integer_format, rounding_codes[rounding],
+                result = value.convert_to_integer(min_int, max_int, rounding_codes[rounding],
                                                   context)
                 assert result == answer
                 assert context.flags == status & ~Flags.INEXACT
