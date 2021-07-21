@@ -1291,6 +1291,7 @@ class TestBinaryFormat:
             with local_context(context) as ctx2:
                 value2 = fmt.from_decimal(Decimal(text))
 
+            assert value1.fmt is fmt
             assert floats_equal(value1, value2)
             assert ctx1.flags == ctx2.flags
 
@@ -1308,6 +1309,7 @@ class TestBinaryFormat:
         with local_context():
             answer = fmt.from_string(answer)
         result = fmt.from_fraction(fraction)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert quiet_context.flags == flags
 
@@ -1609,6 +1611,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_zero(self, fmt, sign):
         value = fmt.make_zero(sign)
+        assert value.fmt is fmt
         if sign:
             assert value.number_class() == '-Zero'
             assert value.is_negative()
@@ -1631,6 +1634,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_infinity(self, fmt, sign):
         value = fmt.make_infinity(sign)
+        assert value.fmt is fmt
         if sign:
             assert value.number_class() == '-Infinity'
             assert value.is_negative()
@@ -1655,6 +1659,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_make_NaN(self, fmt, sign, is_signalling, payload):
         value = fmt.make_NaN(sign, is_signalling, payload)
+        assert value.fmt is fmt
         if payload == 0 and is_signalling:
             payload = 1
         if is_signalling:
@@ -1701,6 +1706,7 @@ class TestGeneralNonComputationalOps:
         ):
             context = Context(rounding=ROUND_HALF_EVEN)
             value = fmt._normalize(sign, exponent, significand, op_tuple, context)
+            assert value.fmt is fmt
             if exponent < fmt.e_min:
                 assert context.flags == 0
                 # FIXME: test underflow was signalled
@@ -1894,6 +1900,7 @@ class TestUnaryOps:
             fmt = format_codes[fmt]
             context = rounding_string_to_context(context)
             result = fmt.from_string(test_str, context)
+            assert result.fmt is fmt
             status = status_codes[status]
 
             if len(parts) == 5:
@@ -1959,11 +1966,13 @@ class TestUnaryOps:
             if exact:
                 result = value.convert_to_integer_exact(min_int, max_int,
                                                         rounding_codes[rounding], context)
+                assert isinstance(result, int)
                 assert result == answer
                 assert context.flags == status
             else:
                 result = value.convert_to_integer(min_int, max_int, rounding_codes[rounding],
                                                   context)
+                assert isinstance(result, int)
                 assert result == answer
                 assert context.flags == status & ~Flags.INEXACT
 
@@ -1984,6 +1993,7 @@ class TestUnaryOps:
         answer = from_string(dst_fmt, answer)
 
         result = dst_fmt.convert(src_value, context)
+        assert result.fmt is dst_fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2003,6 +2013,7 @@ class TestUnaryOps:
         assert context.flags == 0
 
         result = dst_fmt.from_int(value, context)
+        assert result.fmt is dst_fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2083,6 +2094,7 @@ class TestUnaryOps:
         status = status_codes[status]
 
         result = in_value.scaleb(N, context)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2107,12 +2119,14 @@ class TestUnaryOps:
 
         context = Context()
         result = in_value.logb(context)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
         # Now test logb_integral
         context.flags = 0
         result_integral = in_value.logb_integral(context)
+        assert result.fmt is fmt
         if result.is_finite():
             value = result.significand >> -result.exponent_int()
             if result.sign:
@@ -2143,6 +2157,7 @@ class TestUnaryOps:
         status = status_codes[status]
 
         result = in_value.next_up(context)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2151,6 +2166,7 @@ class TestUnaryOps:
         in_value = in_value.copy_negate()
         answer = answer.copy_negate()
         result = in_value.next_down(context)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2216,6 +2232,7 @@ class TestUnaryOps:
         answer = from_string(dst_fmt, answer)
 
         result = dst_fmt.sqrt(value, context)
+        assert result.fmt is dst_fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2309,6 +2326,7 @@ def min_max_op(line, operation):
     operation = getattr(lhs, operation)
     context = Context()
     result = operation(rhs, context)
+    assert result.fmt is fmt
     assert floats_equal(result, answer)
     assert context.flags == status
 
@@ -2328,6 +2346,7 @@ def binary_operation(line, operation):
 
     operation = getattr(dst_fmt, operation)
     result = operation(lhs, rhs, context)
+    assert result.fmt is dst_fmt
     assert floats_equal(result, answer)
     assert context.flags == status
 
@@ -2413,6 +2432,7 @@ class TestBinaryOps:
 
         context = Context()
         result = lhs.remainder(rhs, context)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2431,6 +2451,7 @@ class TestBinaryOps:
 
         context = Context()
         result = lhs.fmod(rhs, context)
+        assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
 
@@ -2516,5 +2537,6 @@ class TestFMA:
         status = status_codes[status]
 
         result = dst_fmt.fma(lhs, rhs, addend, context)
+        assert result.fmt is dst_fmt
         assert floats_equal(result, answer)
         assert context.flags == status
