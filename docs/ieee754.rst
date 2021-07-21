@@ -60,14 +60,235 @@ To be written.
 BinaryFormat objects
 ====================
 
-A binary format describes the exponent range and precision of a floating point number.
-Many operations on floating point numbers are defined as methods on the `BinaryFormat`
-class, with the instance being the desired format of the floating point result.
+A binary format is specified by its exponent range and precision.  Some binary formats,
+called :dfn:`interchange formats`, have a well-defined encoding as byte strings, which
+enables the exchange of floating point data between implementations with a common
+understanding of byte-order.
 
-Several binary formats are predefined, including the four specified in the IEEE-754
-standard: :const:`IEEEhalf`, :const:`IEEEsingle`, :const:`IEEEdouble` and
-:const:`IEEEquad`.  The user can also create his own formats with control of the minimum
-and maximum exponents of normalized numbers, and the precision in bits.
+Several formats are predefined, including the four specified in the IEEE-754 standard.
+You can also create your own binary formats with the constructors
+:meth:`BinaryFormat.from_triple`, :meth:`BinaryFormat.from_pair`,
+:meth:`BinaryFormat.from_precision` and :meth:`BinaryFormat.from_IEEE`.
+
+
+.. data:: IEEEhalf
+
+   The IEEE-754 half-precision format is 16-bit binary interchange format with a precision
+   of 11 bits and an exponent width of 5 bits.
+
+
+.. data:: IEEEsingle
+
+   The IEEE-754 single-precision format is a 32-bit binary interchange format with a
+   precision of 24 bits and an exponent width of 8 bits.
+
+
+.. data:: IEEEdouble
+
+   The IEEE-754 double-precision format is a 64-bit binary interchange format with a
+   precision of 53 bits and an exponent width of 11 bits.
+
+
+.. data:: IEEEquad
+
+   The IEEE-754 quadruple-precision format is a 128-bit binary interchange format with a
+   precision of 113 bits and an exponent width of 15 bits.
+
+
+.. data:: x87extended
+
+   This is the full-precision format used by Intel x87 compatible CPUs.  It is an 80-bit
+   binary interchange format with a precision of 64 bits and an exponent width of 15 bits.
+
+   Since the format's integer bit is explicit, it admits extra non-canonical encodings
+   (which Intel termed pseudo-NaNs, pseudo-infinities, pseudo-denormals and unnormals)
+   beyond those specified in IEEE-754.  The :meth:`Binary.pack` method never returns such
+   encodings and :meth:`BinaryFormat.unpack` automatically canonicalizes them.
+
+
+.. data:: x87double
+
+   This simulates the operation of x87 compatible CPUs when in round-to-double-precision
+   mode.  It has a precision of 53 bits and an exponent width of 15 bits, and is not a
+   binary interchange format.
+
+
+.. data:: x87single
+
+   This simulates the operation of x87 compatible CPUs when in round-to-single-precision
+   mode.  It has a precision of 24 bits and an exponent width of 15 bits, and is not a
+   binary interchange format.
+
+
+.. class:: BinaryFormat
+
+  Represents a binary format.  Binary formats are immutable.
+
+  .. attribute:: precision
+
+     The precision in bits.
+
+  .. attribute:: e_max
+
+     The maximum exponent of normalized numbers.
+
+  .. attribute:: e_min
+
+     The minimum exponent of normalized numbers.
+
+  .. attribute:: fmt_width
+
+     For binary interchange formats, the format width in bits, otherwise :const:`0`.
+
+  .. classmethod:: from_triple(precision, e_max, e_min)
+
+     This constructor directly initializes the three defining attributes of a binary
+     format.
+
+     *precision* must be at least :const:`3`, *e_max* at least :const:`2` and *e_min*
+     negative.
+
+  .. classmethod:: from_pair(precision, e_width)
+
+      With this constructor you specify the *precision* and *e_width* - the width of the
+      exponent field in bits.  :attr:`e_max` is set to ``2^(e_width - 1) - 1`` and
+      :attr:`e_min` to ``1 - e_max``.
+
+  .. classmethod:: from_precision(precision)
+
+     Only *precision* is specified.  A reasonable exponent range for that precision is
+     chosen.  The exponent range chosen may change in future versions.
+
+  .. classmethod:: from_IEEE(fmt_width)
+
+     The IEEE standard defines binary formats for specific format widths.  This returns
+     the format for *fmt_width*, which must be 16, 32, 64 or a multiple of 32 that is at
+     least 128.
+
+  A binary format offers several methods to conveniently and efficiently create common
+  values in that format.  These methods are quiet.
+
+  .. method:: make_zero(sign)
+
+     Return a zero of the specified sign.
+
+  .. method:: make_one(sign)
+
+     Return a value of one with the specified sign.
+
+  .. method:: make_infinity(sign)
+
+     Return an :const:`Infinity` with the specified sign.
+
+  .. method:: make_largest_finite(sign)
+
+     Return the largest finite value with the specified sign.
+
+  .. method:: make_smallest_subnormal(sign)
+
+     Return the smallest subnormal number with the specified sign.
+
+  .. method:: make_smallest_normal(sign)
+
+     Return the smallest normal number with the specified sign.
+
+  .. method:: make_NaN(sign, is_signalling, payload)
+
+     Return a :const:`NaN` with the specified sign and payload.  *is_signalling*
+     indicates if the :const:`NaN` is signalling or quiet.
+
+     *payload* must be a non-negative integer.  It is truncated to fit the format if it is
+     too large.  Signalling NaNs cannot represent payloads of 0 so 1 is used instead.
+
+  You can convert various datatypes to a binary format via the following constructors.
+  Most take a *context* which determines the rounding mode, and they signal
+  :exc:`Overflow`, :exc:`Underflow` and :exc:`Inexact` as appropriate.
+
+  .. method:: from_value(value, context=None)
+
+     Convert from an arbitrary value.  This function passes *value* on to :meth:`convert`,
+     :meth:`from_string`, :meth:`from_int`, :meth:`from_float`, :meth:`from_decimal`,
+     :meth:`from_fraction` or :meth:`unpack_value` depending on its type.
+
+     If you already know the type of *value* it is more efficient to call the specific
+     method directly.
+
+  .. method:: convert(value, context=None)
+
+     Convert from a :class:`Binary` object.
+
+  .. method:: from_string(string, context=None)
+
+     Convert from a Python string.  Strings representing floating point values encoded in
+     decimal or hexadecimal form, as per C99, are accepted.  See `String Syntax`_ for a
+     detailed specification.
+
+  .. method:: from_int(value, context=None)
+
+     Convert from a Python :class:`int` object.
+
+  .. method:: from_float(value, context=None)
+
+     Convert from a Python :class:`float` object.
+
+  .. method:: from_decimal(value, context=None)
+
+     Convert from a :class:`Decimal` object of the :mod:`decimal` module.
+
+  .. method:: from_fraction(value, context=None)
+
+     Convert from a :class:`Fraction` object of the :mod:`fractions` module.
+
+  .. method:: unpack_value(raw, endianness='little')
+
+     Convert from a packed binary encoding *raw* of a value of this format.  *endiannness*
+     is the byte order of the encoding; valid values are 'little' and 'big'.  Conversion
+     is necessarily exact so there is no *context* parameter.
+
+  The following operations take operands of arbitrary binary formats, and deliver a result
+  in this format.  The *context* parameter controls the rounding and exception handling,
+  as described by the documentation of :class:`Context`.
+
+  .. method:: add(lhs, rhs, context=None)
+
+     Return the sum of *lhs* and *rhs*.
+
+  .. method:: subtract(lhs, rhs, context=None)
+
+     Return the result of subtracting *rhs* from *lhs*.
+
+  .. method:: multiply(lhs, rhs, context=None)
+
+     Return the product of *lhs* and *rhs*.
+
+  .. method:: divide(lhs, rhs, context=None)
+
+     Return the result of dividing *lhs* by *rhs*.
+
+  .. method:: fma(lhs, rhs, addend, context=None)
+
+     Return the result of multiplying *lhs* and *rhs* and then adding *addend*, with a
+     single rounding operation at the end.  This is called a :dfn:`fused-multiply-add`
+     operation.
+
+  .. method:: sqrt(value, context=None)
+
+     Return the square root of *value*.
+
+  .. method:: pack(sign, exponent, significand, endianness='little')
+
+     TODO
+
+  .. method:: unpack(sign, exponent, significand, endianness='little')
+
+     TODO
+
+  .. attribute:: logb_zero
+  .. attribute:: logb_NaN
+  .. attribute:: logb_inf
+
+     These values are returned by the :meth:`Binary.logb_integral` operation on zero,
+     :const:`NaN` and :const:`infinity` values in this format, respectively.
 
 
 Binary objects
@@ -784,6 +1005,10 @@ TextFormat objects
                                      inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
 
 
+String Syntax
+=============
+
+
 .. _Operation Names:
 
 Operation Names
@@ -795,6 +1020,9 @@ performs the operation.  For example, :data:`OP_DIVIDE` is "divide".
 
 
 .. data:: OP_ABS
+
+   '__abs__' representing Python's builtin :func:`abs`.
+
 .. data:: OP_ADD
 .. data:: OP_SUBTRACT
 .. data:: OP_MULTIPLY
@@ -830,5 +1058,10 @@ performs the operation.  For example, :data:`OP_DIVIDE` is "divide".
 .. data:: OP_MAX_MAG
 .. data:: OP_MIN_MAG_NUM
 .. data:: OP_MIN_MAG
-.. data:: OP_UNARY_MINUS
-.. data:: OP_UNARY_PLUS
+.. data:: OP_MINUS
+
+   '__neg__' representing Python's built-in unary minus.
+
+.. data:: OP_PLUS
+
+   '__pos__' representing Python's built-in unary plus.

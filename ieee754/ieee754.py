@@ -28,15 +28,17 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'DivideByZero', 'LogBZero', 'UnderflowExact', 'UnderflowInexact',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
-           'OP_ADD', 'OP_SUBTRACT', 'OP_MULTIPLY', 'OP_DIVIDE', 'OP_FMA', 'OP_SQRT',
+           'OP_ABS', 'OP_ADD', 'OP_SUBTRACT', 'OP_MULTIPLY', 'OP_DIVIDE', 'OP_FMA', 'OP_SQRT',
+           'OP_REMAINDER', 'OP_FMOD', 'OP_MOD', 'OP_DIVMOD', 'OP_FLOORDIV',
+           'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
            'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE',
-           'OP_FROM_INT', 'OP_FROM_FLOAT', 'OP_FROM_STRING',
-           'OP_REMAINDER', 'OP_FMOD', 'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
            'OP_CONVERT', 'OP_CONVERT_TO_INTEGER', 'OP_CONVERT_TO_INTEGER_EXACT',
            'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT',
+           'OP_FROM_INT', 'OP_FROM_FLOAT', 'OP_FROM_STRING',
            'OP_TO_STRING', 'OP_TO_DECIMAL_STRING',
            'OP_MAX', 'OP_MAX_NUM', 'OP_MIN', 'OP_MIN_NUM', 'OP_MAX_MAG_NUM', 'OP_MAX_MAG',
            'OP_MIN_MAG_NUM', 'OP_MIN_MAG',
+           'OP_PLUS', 'OP_MINUS',
            'IEEEhalf', 'IEEEsingle', 'IEEEdouble', 'IEEEquad',
            'x87extended', 'x87double', 'x87single')
 
@@ -52,7 +54,7 @@ ROUND_HALF_UP   = 'ROUND_HALF_UP'       # To nearest with ties away from zero
 
 
 # Operation names
-OP_ABS = 'abs'
+OP_ABS = '__abs__'
 OP_ADD = 'add'
 OP_SUBTRACT = 'subtract'
 OP_MULTIPLY = 'multiply'
@@ -88,8 +90,8 @@ OP_MAX_MAG_NUM = 'max_mag_num'
 OP_MAX_MAG = 'max_mag'
 OP_MIN_MAG_NUM = 'min_mag_num'
 OP_MIN_MAG = 'min_mag'
-OP_UNARY_MINUS = 'minus'
-OP_UNARY_PLUS = 'plus'
+OP_MINUS = '__neg__'
+OP_PLUS = '__pos__'
 
 
 class MinMaxFlags(IntFlag):
@@ -669,6 +671,8 @@ class BinaryFormat(NamedTuple):
     def from_triple(cls, precision, e_max, e_min):
         '''Make a BinaryFormat with pre-calculated values.   All constructors ultimately
         call this one.'''
+        if not all(isinstance(arg, int) for arg in (precision, e_max, e_min)):
+            raise TypeError('precision, e_max and e_min must be integers')
         if precision < 3:
             raise ValueError('precision must be at least 3 bits')
         if e_max < 2:
@@ -695,38 +699,38 @@ class BinaryFormat(NamedTuple):
         if e_min == 1 - e_max and (e_max + 1) & e_max == 0:
             e_width = e_max.bit_length() + 1
             test_fmt_width = 1 + e_width + precision   # With integer bit
-            if 0 <= test_fmt_width % 16 <= 1:
+            if test_fmt_width % 8 == 1 or (precision == 64 and e_width == 15):
                 fmt_width = test_fmt_width
         return cls(precision, e_max, e_min, e_bias, int_bit, quiet_bit, max_significand,
                    fmt_width, decimal_precision, logb_inf)
 
     @classmethod
-    def from_precision_e_width(cls, precision, e_width):
+    def from_pair(cls, precision, e_width):
         '''Construct from the specified precision and exponent width.'''
         e_max = (1 << (e_width - 1)) - 1
         return cls.from_triple(precision, e_max, 1 - e_max)
 
     @classmethod
-    def from_precision_extended(cls, precision):
+    def from_precision(cls, precision):
         '''Construct an extended precison format from the specified precision.'''
         if precision >= 128:
             e_width = round(4 * log2(precision)) - 11
         else:
             e_width = round(4 * log2(precision) + 0.5) - 9
-        return cls.from_precision_e_width(precision, e_width)
+        return cls.from_pair(precision, e_width)
 
     @classmethod
-    def from_IEEE(cls, width):
+    def from_IEEE(cls, fmt_width):
         '''The IEEE-754 required format for the given width.'''
-        if width == 16:
+        if fmt_width == 16:
             precision = 11
-        elif width == 32:
+        elif fmt_width == 32:
             precision = 24
-        elif width == 64 or (width >= 128 and width % 32 == 0):
-            precision = width - round(4 * log2(width)) + 13
+        elif fmt_width == 64 or (fmt_width >= 128 and fmt_width % 32 == 0):
+            precision = fmt_width - round(4 * log2(fmt_width)) + 13
         else:
-            raise ValueError('IEEE-754 does not define a standard format for width {width}')
-        return BinaryFormat.from_precision_e_width(precision, width - precision)
+            raise ValueError('IEEE-754 does not define a standard format for width {fmt_width}')
+        return BinaryFormat.from_pair(precision, fmt_width - precision)
 
     @property
     def logb_zero(self):
@@ -1008,7 +1012,7 @@ class BinaryFormat(NamedTuple):
         value = (value << lshift) + significand
         return value.to_bytes(self.fmt_width // 8, endianness)
 
-    def unpack(self, binary, endianness='little'):
+    def unpack(self, raw, endianness='little'):
         '''Decode a binary encoding and return a BinaryTuple.
 
         Exponent is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and
@@ -1018,9 +1022,9 @@ class BinaryFormat(NamedTuple):
         if not self.fmt_width:
             raise RuntimeError('not an interchange format')
         size = self.fmt_width // 8
-        if len(binary) != size:
-            raise ValueError(f'expected {size} bytes to unpack; got {len(binary)}')
-        value = int.from_bytes(binary, endianness)
+        if len(raw) != size:
+            raise ValueError(f'expected {size} bytes to unpack; got {len(raw)}')
+        value = int.from_bytes(raw, endianness)
 
         # Extract the parts from the encoding
         implicit_integer_bit = self.fmt_width % 8 == 1
@@ -1031,9 +1035,9 @@ class BinaryFormat(NamedTuple):
 
         return BinaryTuple(sign, exponent, significand)
 
-    def unpack_value(self, binary, endianness='little'):
+    def unpack_value(self, raw, endianness='little'):
         '''Decode a binary encoding and return a Binary floating point value.'''
-        sign, exponent, significand = self.unpack(binary, endianness)
+        sign, exponent, significand = self.unpack(raw, endianness)
         if exponent == 0:
             exponent = 1
         elif exponent == self.e_max * 2 + 1:
@@ -1079,7 +1083,7 @@ class BinaryFormat(NamedTuple):
         '''Returns an integer as a floating point value.  A wide format is used if necessary
         so that this is exact.  If an IEEEdouble suffices, that format is used.'''
         size = value.bit_length()
-        fmt = IEEEdouble if size <= IEEEdouble.precision else cls.from_precision_extended(size)
+        fmt = IEEEdouble if size <= IEEEdouble.precision else cls.from_precision(size)
         return fmt.from_int(value)
 
     def from_int(self, value, context=None):
@@ -1101,6 +1105,8 @@ class BinaryFormat(NamedTuple):
 
     def from_string(self, string, context=None):
         '''Convert a string to a rounded floating number of this format.'''
+        if not isinstance(string, str):
+            raise TypeError('from_string requires a string')
         context = context or get_context()
         op_tuple = (OP_FROM_STRING, string)
 
@@ -1235,7 +1241,7 @@ class BinaryFormat(NamedTuple):
             # The loops are expensive; optimistically the above starts with a low
             # precision and iteratively increases it until we can guarantee the answer is
             # correctly rounded.  Perform this loop in this format.
-            calc_fmt = BinaryFormat.from_precision_e_width(parts_count * 64, e_width)
+            calc_fmt = BinaryFormat.from_pair(parts_count * 64, e_width)
             bits_to_round = calc_fmt.precision - self.precision
 
             # With this many digits, an increment of one is strictly less than one ULP in
@@ -2776,14 +2782,14 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     def __neg__(self):
         '''Return this value with the opposite sign (unary minus).'''
         if self.is_signalling():
-            op_tuple = (OP_UNARY_MINUS, self)
+            op_tuple = (OP_MINUS, self)
             return self.fmt._propagate_NaN(op_tuple)
         return self.set_sign(not self.sign)
 
     def __pos__(self):
         '''Return this value (unary plus).'''
         if self.is_signalling():
-            op_tuple = (OP_UNARY_PLUS, self)
+            op_tuple = (OP_PLUS, self)
             return self.fmt._propagate_NaN(op_tuple)
         return self
 
@@ -3146,9 +3152,9 @@ IEEEquad = BinaryFormat.from_IEEE(128)
 
 # 80387 floating point takes place with a wide exponent range but rounds to single, double
 # or extended precision.  It also has an explicit integer bit.
-x87extended = BinaryFormat.from_precision_e_width(64, 15)
-x87double = BinaryFormat.from_precision_e_width(53, 15)
-x87single = BinaryFormat.from_precision_e_width(24, 15)
+x87extended = BinaryFormat.from_pair(64, 15)
+x87double = BinaryFormat.from_pair(53, 15)
+x87single = BinaryFormat.from_pair(24, 15)
 
 
 _positive_zero = IEEEdouble.make_zero(False)

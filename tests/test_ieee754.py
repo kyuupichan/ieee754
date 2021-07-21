@@ -1228,8 +1228,34 @@ class TestBinaryFormat:
         (128, 65535),
         (237, 1048575),
     ))
-    def test_from_precision_extended(self, precision, e_max):
-        assert BinaryFormat.from_precision_extended(precision).e_max == e_max
+    def test_from_precision(self, precision, e_max):
+        assert BinaryFormat.from_precision(precision).e_max == e_max
+
+    @pytest.mark.parametrize('triple', (
+        (2, 5, -5),
+        (3, 1, -5),
+        (3, 2, 0),
+    ))
+    def test_from_triple_bad(self, triple):
+        with pytest.raises(ValueError):
+            BinaryFormat.from_triple(*triple)
+
+    @pytest.mark.parametrize('triple', (
+        (16.0, 15, -15),
+        (16, 15.0, -15),
+        (16, 15, -15.0),
+    ))
+    def test_from_triple_bad_type(self, triple):
+        with pytest.raises(TypeError):
+            BinaryFormat.from_triple(*triple)
+
+    @pytest.mark.parametrize('triple', (
+        (3, 2, -1),
+        (16, 15, -15),
+    ))
+    def test_from_triple_good(self, triple):
+        fmt = BinaryFormat.from_triple(*triple)
+        assert (fmt.precision, fmt.e_max, fmt.e_min) == triple
 
     @pytest.mark.parametrize('width', (-1, 0, 40, 80, 96))
     def test_IEEE_bad(self, width):
@@ -1307,6 +1333,30 @@ class TestBinaryFormat:
         assert get_context().flags == flags
         # Test binary is accepted too.
         assert floats_equal(fmt.from_value(answer.pack()), answer)
+
+    def test_from_value_type(self):
+        with pytest.raises(TypeError):
+            IEEEdouble.from_value(complex(1, 2))
+
+    def test_from_decimal_type(self):
+        with pytest.raises(TypeError):
+            IEEEdouble.from_decimal(1.2)
+
+    def test_from_fraction_type(self):
+        with pytest.raises(TypeError):
+            IEEEdouble.from_fraction(1)
+
+    def test_from_int_type(self):
+        with pytest.raises(TypeError):
+            IEEEdouble.from_int(1.0)
+
+    def test_from_float_type(self):
+        with pytest.raises(TypeError):
+            IEEEdouble.from_float(1)
+
+    def test_from_string_type(self):
+        with pytest.raises(TypeError):
+            IEEEdouble.from_string(b'')
 
     def test_repr(self):
         assert repr(IEEEdouble) == 'BinaryFormat(precision=53, e_max=1023, e_min=-1022)'
