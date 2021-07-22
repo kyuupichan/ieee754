@@ -1283,6 +1283,10 @@ class TestBinaryFormat:
         assert floats_equal(result, answer)
         assert get_context().flags == flags
 
+    def test_from_string_overflow(self, quiet_context):
+        fmt = BinaryFormat.from_triple(24, 66, -66)
+        fmt.from_string('9' * 21, quiet_context)
+
     @pytest.mark.parametrize('text', ('+0', '-0', 'Inf', '-Inf', '1.1', '-1.25', 'NaN'))
     def test_from_decimal(self, text, context):
         for fmt in all_IEEE_fmts:
@@ -1743,7 +1747,7 @@ class TestGeneralNonComputationalOps:
                              ))
     def test_normalize_zero_significand(self, fmt, sign, exponent, context):
         # Test that a zero significand gives a zero regardless of exponent
-        value = fmt._normalize(sign, exponent, 0, context)
+        value = fmt._normalize(sign, exponent, 0, None, context)
         assert context.flags == 0
         assert value.is_zero()
         assert value.sign is sign

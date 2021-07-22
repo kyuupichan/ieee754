@@ -827,7 +827,7 @@ class BinaryFormat(NamedTuple):
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
-    def _normalize(self, sign, exponent, significand, op_tuple, context=None):
+    def _normalize(self, sign, exponent, significand, op_tuple, context):
         '''Return a normalized floating point number that is the correctly-rounded (by the
         context) value of the infinitely precise result
 
@@ -1228,20 +1228,21 @@ class BinaryFormat(NamedTuple):
             value = self.make_underflow_value(context.rounding, sign, False)
             return UnderflowInexact(op_tuple, value).signal(context)
 
-        # Start with a precision a multiple of 64 bits with some room over the format
-        # precision, and always an exponent range 1 bit larger - we eliminate obviously
-        # out-of-range exponents above.  Our intermediate calculations must not overflow
-        # nor use subnormal numbers.
         parts_count = (self.precision + 10) // 64 + 1
-        e_width = (max(self.e_max, abs(self.e_min)) * 2 + 2).bit_length() + 1
-
         signal_inexact = False
 
         while True:
             # The loops are expensive; optimistically the above starts with a low
             # precision and iteratively increases it until we can guarantee the answer is
-            # correctly rounded.  Perform this loop in this format.
-            calc_fmt = BinaryFormat.from_pair(parts_count * 64, e_width)
+            # correctly rounded.  Use precision a multiple of 64 bits with some room over
+            # the format precision, and always an exponent range at least 1 larger - we
+            # eliminate obviously out-of-range exponents above.  Intermediate calculations
+            # must not overflow nor use subnormal numbers.
+            precision = parts_count * 64
+            # 7 is ceil(log2(10^2)) where 2 comes from the decimal_precision formula
+            calc_e_max = max(self.e_max, -self.e_min, precision) + 7
+
+            calc_fmt = BinaryFormat.from_triple(precision, calc_e_max, -calc_e_max)
             bits_to_round = calc_fmt.precision - self.precision
 
             # With this many digits, an increment of one is strictly less than one ULP in
@@ -1263,25 +1264,34 @@ class BinaryFormat(NamedTuple):
                 sig_err = 0
 
             calc_context = Context(rounding=ROUND_HALF_EVEN)
-            sig = calc_fmt._normalize(sign, 0, significand, calc_context)
+            sig = calc_fmt._normalize(sign, 0, significand, None, calc_context)
             if calc_context.flags & Flags.INEXACT:
                 sig_err += 1
             calc_context.flags &= ~Flags.INEXACT
 
             pow5_int = pow(5, abs(sig_exponent))
-            pow5 = calc_fmt._normalize(False, 0, pow5_int, calc_context)
-            pow5_err = 1 if calc_context.flags & Flags.INEXACT else 0
+            pow5 = calc_fmt._normalize(False, 0, pow5_int, None, calc_context)
+            if calc_context.flags & Flags.INEXACT:
+                pow5_err = 1
+            else:
+                pow5_err = 0
             calc_context.flags &= ~Flags.INEXACT
 
             # Call scaleb() since we scaled by 5^n and actually want 10^n
             if sig_exponent >= 0:
                 scaled_sig = calc_fmt._multiply_finite(sig, pow5, op_tuple, calc_context)
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
-                scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
+                if calc_context.flags & Flags.INEXACT:
+                    scaling_err = 1
+                else:
+                    scaling_err = 0
             else:
                 scaled_sig = calc_fmt._divide_finite(sig, pow5, op_tuple, calc_context)
                 scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
-                scaling_err = 1 if calc_context.flags & Flags.INEXACT else 0
+                if calc_context.flags & Flags.INEXACT:
+                    scaling_err = 1
+                else:
+                    scaling_err = 0
                 # If the exponent is below our e_min, the number is subnormal, and so
                 # during convert() more bits are rounded
                 bits_to_round += max(0, self.e_min - scaled_sig.exponent())
@@ -2274,8 +2284,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         result, is_exact = self._to_int(rounding)
 
-        # This should not raise any signals
-        result = self.fmt._normalize(self.sign, 0, result, op_tuple)
+        # This should not raise any signals - FIXME
+        result = self.fmt._normalize(self.sign, 0, result, op_tuple, context)
         if operation == OP_ROUND_TO_INTEGRAL_EXACT and not is_exact:
             result = Inexact(op_tuple, result).signal(context)
         return result
