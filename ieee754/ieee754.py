@@ -1220,11 +1220,11 @@ class BinaryFormat(NamedTuple):
 
         # Test for obviously over-large exponents
         frac_exp = exponent + len(sig_str)
-        if frac_exp - 1 >= (self.e_max + 1) / log2_10:
+        if (frac_exp - 1) * log2_10 >= self.e_max + 1:
             return Overflow(op_tuple, self, context.rounding, sign).signal(context)
 
         # Test for obviously over-small exponents
-        if frac_exp < (self.e_min - self.precision) / log2_10:
+        if frac_exp * log2_10 <= self.e_min - self.precision:
             value = self.make_underflow_value(context.rounding, sign, False)
             return UnderflowInexact(op_tuple, value).signal(context)
 
