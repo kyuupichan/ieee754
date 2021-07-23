@@ -327,7 +327,7 @@ class IEEEError(ArithmeticError):
     example, DivisionByZero.
     '''
 
-    flag_to_raise = NotImplementedError
+    flag_to_raise = 'Nope! Fix your bug.'
 
     @property
     def op_tuple(self):
@@ -472,9 +472,6 @@ class Overflow(IEEEError):
        depending on the rounding mode and sign.'''
 
     flag_to_raise = Flags.OVERFLOW
-
-    def __init__(self, op_tuple, fmt, rounding, sign):
-        super().__init__(op_tuple, fmt.make_overflow_value(rounding, sign))
 
     def signal(self, context=None):
         '''Call to signal the overflow exception.  Defer to the base class for standard handling;
@@ -862,7 +859,8 @@ class BinaryFormat(NamedTuple):
 
         # If the new exponent would be too big, then signal overflow.
         if exponent > self.e_max:
-            return Overflow(op_tuple, self, context.rounding, sign).signal(context)
+            value = self.make_overflow_value(context.rounding, sign)
+            return Overflow(op_tuple, value).signal(context)
 
         if context.tininess_after:
             is_tiny = significand < self.int_bit
@@ -1225,7 +1223,8 @@ class BinaryFormat(NamedTuple):
         # Test for obviously over-large exponents
         frac_exp = exponent + len(sig_str)
         if (frac_exp - 1) * log2_10 >= self.e_max + 1:
-            return Overflow(op_tuple, self, context.rounding, sign).signal(context)
+            value = self.make_overflow_value(context.rounding, sign)
+            return Overflow(op_tuple, value).signal(context)
 
         # Test for obviously over-small exponents
         if frac_exp * log2_10 <= self.e_min - self.precision:
@@ -1352,10 +1351,11 @@ class BinaryFormat(NamedTuple):
             # Increase precision and try again
             parts_count *= 2
 
-        # FIXME: overflow, underflow etc.
-        context.flags |= (convert_context.flags & (Flags.OVERFLOW | Flags.UNDERFLOW))
-        if signal_inexact:
-            result = Inexact(op_tuple, result).signal(context)
+        if convert_context.flags & Flags.OVERFLOW:
+            result = Overflow(op_tuple, result).signal(context)
+        elif signal_inexact:
+            exc = UnderflowInexact if convert_context.flags & Flags.UNDERFLOW else Inexact
+            result = exc(op_tuple, result).signal(context)
 
         return result
 

@@ -675,10 +675,7 @@ class hierarchy as follows::
    Under default exception handling this signal raises the :attr:`INEXACT` flag.
 
 
-.. exception:: Overflow(op_tuple, fmt, rounding, sign)
-
-   *op_tuple* is as decribed for :exc:`IEEEError`.  *fmt* is the destination format,
-   *rounding* is the rounding mode to apply, and *sign* is the sign of the result.
+.. exception:: Overflow
 
    Overflow is one of the five IEEE-754 signals.  It is raised, after rounding, when the
    result would have an exponent exceeding the destination format's :attr:`e_max`
