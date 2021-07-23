@@ -1324,10 +1324,10 @@ class BinaryFormat(NamedTuple):
                 convert_context = Context(rounding=context.rounding)
                 result = self.convert(scaled_sig, convert_context)
 
-                # Now work out distance of the result from our estimate; if it's too
-                # close we need to try harder to determine if the result is exact
-                exact_distance = abs((result.significand << bits_to_round)
-                                     - scaled_sig.significand)
+                # Now work out distance of the result from our estimate; if it's too close
+                # we need to try harder to determine if the result is exact
+                lshift = scaled_sig.significand.bit_length() - result.significand.bit_length()
+                exact_distance = abs((result.significand << lshift) - scaled_sig.significand)
 
                 # Guaranteed inexact?
                 if err < exact_distance:
