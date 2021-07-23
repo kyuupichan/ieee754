@@ -1207,7 +1207,7 @@ class BinaryFormat(NamedTuple):
         # changes so the boundary has all zeroes with the next MSB 0 or 1.
         # Round-to-nearest has a boundary of a half - i.e. 1 followed by bits-1 zeroes.
         def ulps_from_boundary(significand, bits, context):
-            assert bits > 0
+            assert bits >= 0
             boundary = 1 << bits
             rounded_bits = significand & (boundary - 1)
             if context.round_to_nearest():
@@ -1250,6 +1250,7 @@ class BinaryFormat(NamedTuple):
             # must not overflow nor use subnormal numbers.
             precision = parts_count * 64
             calc_fmt = BinaryFormat.from_triple(precision, e_max, e_min)
+            # Numbers that will be subnormal round more bits
             bits_to_round = calc_fmt.precision - self.precision
 
             # With this many digits, an increment of one is strictly less than one ULP in
