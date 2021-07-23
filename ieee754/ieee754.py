@@ -11,7 +11,7 @@ from collections import namedtuple
 from decimal import Decimal
 from enum import IntFlag, IntEnum
 from fractions import Fraction
-from math import floor, log2, sqrt
+from math import ceil, floor, log2, sqrt
 from typing import NamedTuple
 from struct import Struct
 
@@ -1228,6 +1228,13 @@ class BinaryFormat(NamedTuple):
             value = self.make_underflow_value(context.rounding, sign, False)
             return UnderflowInexact(op_tuple, value).signal(context)
 
+        # Figure out what exponent range we must have for our intermediate calculations
+        # Each is sig_conversion, final_result, pow5_conversion
+        e_max = ceil(max(max(len(sig_str), frac_exp) * log2_10,
+                         abs(exponent) * (log2_10) - 1)) - 1
+        # Need to be able to represent the smallest number as normal
+        e_min = min(-2, floor((frac_exp - 1) * log2_10))
+
         parts_count = (self.precision + 10) // 64 + 1
         signal_inexact = False
 
@@ -1239,10 +1246,7 @@ class BinaryFormat(NamedTuple):
             # eliminate obviously out-of-range exponents above.  Intermediate calculations
             # must not overflow nor use subnormal numbers.
             precision = parts_count * 64
-            # 7 is ceil(log2(10^2)) where 2 comes from the decimal_precision formula
-            calc_e_max = max(self.e_max, -self.e_min, precision) + 7
-
-            calc_fmt = BinaryFormat.from_triple(precision, calc_e_max, -calc_e_max)
+            calc_fmt = BinaryFormat.from_triple(precision, e_max, e_min)
             bits_to_round = calc_fmt.precision - self.precision
 
             # With this many digits, an increment of one is strictly less than one ULP in
