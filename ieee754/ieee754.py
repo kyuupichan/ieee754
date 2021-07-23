@@ -1218,6 +1218,10 @@ class BinaryFormat(NamedTuple):
             else:
                 return min(rounded_bits, boundary - rounded_bits)
 
+        # Exponent doesn't matter if zero
+        if sig_str == '0':
+            return self.make_zero(sign)
+
         # Test for obviously over-large exponents
         frac_exp = exponent + len(sig_str)
         if (frac_exp - 1) * log2_10 >= self.e_max + 1:
