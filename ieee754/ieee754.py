@@ -1173,9 +1173,9 @@ class BinaryFormat(NamedTuple):
 
             # Combine them into sig_str removing all insignificant zeroes.  Viewing that
             # as an integer, calculate the exponent adjustment to the true decimal point.
-            int_str = int_str.lstrip('0')
-            sig_str = (int_str + frac_str).rstrip('0') or '0'
+            sig_str = int_str + frac_str.rstrip('0')
             exponent += len(int_str) - len(sig_str)
+            sig_str = sig_str.lstrip('0') or '0'
 
             # Now the value is significand * 10^exponent.
             return self._decimal_to_binary(sign, exponent, sig_str, op_tuple, context)
@@ -1296,8 +1296,8 @@ class BinaryFormat(NamedTuple):
                     scaling_err = 1
                 else:
                     scaling_err = 0
-                # If the exponent is below our e_min, the number is subnormal, and so
-                # during convert() more bits are rounded
+                # Lemma 2 requires a normal number
+                assert not scaled_sig.is_subnormal()
                 bits_to_round += max(0, self.e_min - scaled_sig.exponent())
                 # An extra half-ulp is lost in reciprocal of pow5.  FIXME: verify
                 if pow5_err or scaling_err:
@@ -1310,7 +1310,8 @@ class BinaryFormat(NamedTuple):
             # and HUE2 half-ulps, is strictly less than err (when non-zero).
             #
             # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
-            # Clinger.
+            # Clinger.  It assumes the product of normalized numbers with a normalized
+            # result.
             if sig_err + pow5_err == 0:
                 # If there is a scaling error it is at most 1 half-ULP, which is < 2
                 err = scaling_err * 2
