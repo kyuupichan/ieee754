@@ -663,6 +663,7 @@ class BinaryFormat(NamedTuple):
     logb_inf: int
 
     _converters = {}
+    debug = False
 
     @classmethod
     def from_triple(cls, precision, e_max, e_min):
@@ -1238,17 +1239,17 @@ class BinaryFormat(NamedTuple):
         # Need to be able to represent the smallest number as normal
         e_min = min(-2, floor((frac_exp - 1) * log2_10))
 
-        parts_count = (self.precision + 10) // 64 + 1
-        signal_inexact = False
-
+        precision = self.precision
         while True:
+            if not self.debug:
+                precision = (precision + 63) // 64 * 64
+
             # The loops are expensive; optimistically the above starts with a low
             # precision and iteratively increases it until we can guarantee the answer is
             # correctly rounded.  Use precision a multiple of 64 bits with some room over
             # the format precision, and always an exponent range at least 1 larger - we
             # eliminate obviously out-of-range exponents above.  Intermediate calculations
             # must not overflow nor use subnormal numbers.
-            precision = parts_count * 64
             calc_fmt = BinaryFormat.from_triple(precision, e_max, e_min)
             # Numbers that will be subnormal round more bits
             bits_to_round = calc_fmt.precision - self.precision
@@ -1302,6 +1303,7 @@ class BinaryFormat(NamedTuple):
                     scaling_err = 0
                 # Lemma 2 requires a normal number
                 assert not scaled_sig.is_subnormal()
+                # Numbers that will be subnormal round more bits
                 bits_to_round += max(0, self.e_min - scaled_sig.exponent())
                 # An extra half-ulp is lost in reciprocal of pow5.  FIXME: verify
                 if pow5_err or scaling_err:
@@ -1333,32 +1335,33 @@ class BinaryFormat(NamedTuple):
                 convert_context = Context(rounding=context.rounding)
                 result = self.convert(scaled_sig, convert_context)
 
-                # Now work out distance of the result from our estimate; if it's too close
-                # we need to try harder to determine if the result is exact
-                lshift = scaled_sig.significand.bit_length() - result.significand.bit_length()
-                exact_distance = abs((result.significand << lshift) - scaled_sig.significand)
+                # It remains to determine exactness. Exit early and avoid the is_finite()
+                # assertion in result.exponent()
+                if convert_context.flags & Flags.OVERFLOW:
+                    return Overflow(op_tuple, result).signal(context)
+
+                # Work out distance of the result from our estimate; if too close we need
+                # more precision to determine exactness.  It's simplest to look at the
+                # rounded bits than at the shifted significand which can change, e.g. from
+                # 0xffff to 0x8000, when rounding.
+                rounded_bits = scaled_sig.significand & ((1 << bits_to_round) - 1)
+                exact_distance = min(rounded_bits, (1 << bits_to_round) - rounded_bits)
 
                 # Guaranteed inexact?
                 if err < exact_distance:
-                    signal_inexact = True
-                    break
+                    # Don't test is_subnormal() as result could be a zero.
+                    exc = Inexact if result.is_normal() else UnderflowInexact
+                    return exc(op_tuple, result).signal(context)
 
                 # Guaranteed exact?
                 if err == 0:
-                    break
-
+                    if result.is_subnormal():
+                        return UnderflowExact(op_tuple, result).signal(context)
+                    return result
                 # We can't be sure as to exactness - loop again with more precision
 
             # Increase precision and try again
-            parts_count *= 2
-
-        if convert_context.flags & Flags.OVERFLOW:
-            result = Overflow(op_tuple, result).signal(context)
-        elif signal_inexact:
-            exc = UnderflowInexact if convert_context.flags & Flags.UNDERFLOW else Inexact
-            result = exc(op_tuple, result).signal(context)
-
-        return result
+            precision += 1 if self.debug else precision // 2
 
     def to_string(self, value, text_format=None, context=None):
         '''Return text, with a hexadecimal significand for finite numbers, that is a

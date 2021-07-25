@@ -1283,10 +1283,6 @@ class TestBinaryFormat:
         assert floats_equal(result, answer)
         assert get_context().flags == flags
 
-    def test_from_string_overflow(self, quiet_context):
-        fmt = BinaryFormat.from_triple(24, 66, -66)
-        fmt.from_string('9' * 21, quiet_context)
-
     @pytest.mark.parametrize('text', ('+0', '-0', 'Inf', '-Inf', '1.1', '-1.25', 'NaN'))
     def test_from_decimal(self, text, context):
         for fmt in all_IEEE_fmts:
@@ -1890,6 +1886,15 @@ class TestGeneralNonComputationalOps:
 
 
 class TestUnaryOps:
+
+    def test_from_string_overflow(self, quiet_context):
+        fmt = BinaryFormat.from_triple(24, 66, -66)
+        fmt.from_string('9' * 21, quiet_context)
+
+    def test_from_string_exact_underflow(self, quiet_context):
+        quiet_context.set_handler(UnderflowExact, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact):
+            IEEEhalf.from_string('.000030517578125')
 
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
