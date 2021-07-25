@@ -42,6 +42,7 @@ format_codes = {
     'D': IEEEdouble,
     'Q': IEEEquad,
     'x': x87extended,
+    'xd': x87double,
 }
 
 rounding_codes = {

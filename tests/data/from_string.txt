@@ -276,6 +276,21 @@ D E -1.7976931348623157e+308 I -0x1.fffffffffffffp+1023
 D E -1.8e+308 VI -Inf
 D D -1.8e+308 VI -0x1.fffffffffffffp+1023
 
+# Wrong conversion if short_sig_err is 0
+D E 10000000000000001024.01 I 0x1.158e460913d01p+63
+
+# Wrong conversion if scaling_err_pos is 0
+D E 17345678901238842e5 I 0x1.781fdc47bb83bp+70
+
+# Wrong conversion if scaling_err_neg is 0
+D E 17345678901238584e-21 I 0x1.23031fa4c1b3bp-16
+
+# Wrong conversion if pow5_err is 0
+D E 6159.0e+54 I 0x1.f65debb2ec231p+191
+
+# Wrong conversion if pow5_recip_err is 0
+D E 9505e-66 I 0x1.f47f25835bf94p-207
+
 ############
 ##
 ## Subnormals

@@ -18,7 +18,7 @@ from struct import Struct
 import attr
 
 __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_context',
-           'DefaultDecFormat', 'DefaultHexFormat', 'Dec_g_Format',
+           'DefaultDecFormat', 'DefaultHexFormat', 'Dec_g_Format', 'DecimalToBinary',
            'Flags', 'Compare', 'HandlerKind',
            'BinaryFormat', 'Binary', 'TextFormat',
            'IEEEError', 'Invalid', 'DivisionByZero', 'Inexact', 'Overflow', 'Underflow',
@@ -663,7 +663,6 @@ class BinaryFormat(NamedTuple):
     logb_inf: int
 
     _converters = {}
-    debug = False
 
     @classmethod
     def from_triple(cls, precision, e_max, e_min):
@@ -1106,17 +1105,16 @@ class BinaryFormat(NamedTuple):
         '''Convert a string to a rounded floating number of this format.'''
         if not isinstance(string, str):
             raise TypeError('from_string requires a string')
-        context = context or get_context()
-        op_tuple = (OP_FROM_STRING, string)
 
         if HEX_SIGNIFICAND_PREFIX.match(string):
-            return self._from_hex_significand_string(op_tuple, string, context)
-        return self._from_decimal_string(op_tuple, string, context)
+            return self._from_hex_significand_string(string, context)
+        return decimal_to_binary.convert(self, string, context)
 
-    def _from_hex_significand_string(self, op_tuple, string, context):
+    def _from_hex_significand_string(self, string, context):
         '''Convert a string with hexadecimal significand to a rounded floating number of this
         format.
         '''
+        op_tuple = (OP_FROM_STRING, string)
         match = HEX_SIGNIFICAND_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid hexadecimal float: {string}')
@@ -1136,234 +1134,6 @@ class BinaryFormat(NamedTuple):
             exponent -= len(fraction) * 4
 
         return self._normalize(sign, exponent, significand, op_tuple, context)
-
-    def _from_decimal_string(self, op_tuple, string, context):
-        '''Converts a string with a hexadecimal significand to a floating number of the
-        required format.
-
-        A quiet NaN with no specificed payload has payload 0, a signalling NaN has payload
-        1.  If the specified payload is too wide to be stored without loss, the most
-        significant bits are dropped.  If the resulting signalling NaN payload is 0 it
-        becomes 1.  If the payload of the returned NaN does not equal the given payload
-        INEXACT is flagged.
-        '''
-        match = DEC_FLOAT_REGEX.match(string)
-        if match is None:
-            raise SyntaxError(f'invalid floating point number: {string}')
-
-        sign = string[0] == '-'
-        groups = match.groups()
-
-        # Decimal float?
-        if groups[1] is not None:
-            # Read the optional exponent first.  It is in groups[6].
-            exponent = 0 if groups[6] is None else int(groups[6])
-
-            # If a fraction was specified, the integer and fraction parts are in
-            # groups[2], groups[3].  If no fraction was specified the integer is in
-            # groups[4].
-            assert groups[2] is not None or groups[4]
-
-            # Get the integer and fraction strings
-            if groups[2] is None:
-                int_str, frac_str = groups[4], ''
-            else:
-                int_str, frac_str = groups[2], groups[3]
-
-            # Combine them into sig_str removing all insignificant zeroes.  Viewing that
-            # as an integer, calculate the exponent adjustment to the true decimal point.
-            sig_str = int_str + frac_str.rstrip('0')
-            exponent += len(int_str) - len(sig_str)
-            sig_str = sig_str.lstrip('0') or '0'
-
-            # Now the value is significand * 10^exponent.
-            return self._decimal_to_binary(sign, exponent, sig_str, op_tuple, context)
-
-        # groups[7] matches infinities
-        if groups[7] is not None:
-            return self.make_infinity(sign)
-
-        # groups[9] matches NaNs.  groups[10] is 's', 'S' or ''; the s indicates a
-        # signalling NaN.  The payload is in groups[11], and duplicated in groups[12] if
-        # hex or groups[13] if decimal
-        assert groups[9] is not None
-        is_signalling = groups[10] != ''
-        if groups[12] is not None:
-            payload = int(groups[12], 16)
-        elif groups[13] is not None:
-            payload = int(groups[13])
-        else:
-            payload = int(is_signalling)
-        return self.make_NaN(sign, is_signalling, payload)
-
-    def _decimal_to_binary(self, sign, exponent, sig_str, op_tuple, context):
-        '''Return a correctly-rounded binary value of
-
-             (-1)^sign * int(sig_str) * 10^exponent
-        '''
-        # We have done a calculation in whose lowest bits will be rounded.  We want to
-        # know how far away the value of theese rounded bits is, in ULPs, from the
-        # rounding boundary - the boundary is where the rounding changes the value, so
-        # that we can determine if it is safe to round now.  Directed rounding never
-        # changes so the boundary has all zeroes with the next MSB 0 or 1.
-        # Round-to-nearest has a boundary of a half - i.e. 1 followed by bits-1 zeroes.
-        def ulps_from_boundary(significand, bits, context):
-            assert bits >= 0
-            boundary = 1 << bits
-            rounded_bits = significand & (boundary - 1)
-            if context.round_to_nearest():
-                boundary >>= 1
-                return abs(boundary - rounded_bits)
-            else:
-                return min(rounded_bits, boundary - rounded_bits)
-
-        # Exponent doesn't matter if zero
-        if sig_str == '0':
-            return self.make_zero(sign)
-
-        # Test for obviously over-large exponents
-        frac_exp = exponent + len(sig_str)
-        if (frac_exp - 1) * log2_10 >= self.e_max + 1:
-            value = self.make_overflow_value(context.rounding, sign)
-            return Overflow(op_tuple, value).signal(context)
-
-        # Test for obviously over-small exponents
-        if frac_exp * log2_10 <= self.e_min - self.precision:
-            value = self.make_underflow_value(context.rounding, sign, False)
-            return UnderflowInexact(op_tuple, value).signal(context)
-
-        # Figure out what exponent range we must have for our intermediate calculations
-        # Each is sig_conversion, final_result, pow5_conversion
-        e_max = ceil(max(max(len(sig_str), frac_exp) * log2_10,
-                         abs(exponent) * (log2_10) - 1)) - 1
-        # Need to be able to represent the smallest number as normal
-        e_min = min(-2, floor((frac_exp - 1) * log2_10))
-
-        precision = self.precision
-        while True:
-            if not self.debug:
-                precision = (precision + 63) // 64 * 64
-
-            # The loops are expensive; optimistically the above starts with a low
-            # precision and iteratively increases it until we can guarantee the answer is
-            # correctly rounded.  Use precision a multiple of 64 bits with some room over
-            # the format precision, and always an exponent range at least 1 larger - we
-            # eliminate obviously out-of-range exponents above.  Intermediate calculations
-            # must not overflow nor use subnormal numbers.
-            calc_fmt = BinaryFormat.from_triple(precision, e_max, e_min)
-            # Numbers that will be subnormal round more bits
-            bits_to_round = calc_fmt.precision - self.precision
-
-            # With this many digits, an increment of one is strictly less than one ULP in
-            # the binary format.
-            digit_count = min(calc_fmt.decimal_precision, len(sig_str))
-
-            # We want to calculate significand * 10^sig_exponent.  sig_exponent may differ
-            # from exponent because not all sig_str digits are used.
-            significand = int(sig_str[:digit_count])
-            sig_exponent = exponent + (len(sig_str) - digit_count)
-
-            # All err variables are upper bounds and in half-ULPs
-            if digit_count < len(sig_str):
-                # The error is strictly less than a half-ULP if we round based on the next digit
-                if int(sig_str[digit_count]) >= 5:
-                    significand += 1
-                sig_err = 1
-            else:
-                sig_err = 0
-
-            calc_context = Context(rounding=ROUND_HALF_EVEN)
-            sig = calc_fmt._normalize(sign, 0, significand, None, calc_context)
-            if calc_context.flags & Flags.INEXACT:
-                sig_err += 1
-            calc_context.flags &= ~Flags.INEXACT
-
-            pow5_int = pow(5, abs(sig_exponent))
-            pow5 = calc_fmt._normalize(False, 0, pow5_int, None, calc_context)
-            if calc_context.flags & Flags.INEXACT:
-                pow5_err = 1
-            else:
-                pow5_err = 0
-            calc_context.flags &= ~Flags.INEXACT
-
-            # Call scaleb() since we scaled by 5^n and actually want 10^n
-            if sig_exponent >= 0:
-                scaled_sig = calc_fmt._multiply_finite(sig, pow5, op_tuple, calc_context)
-                scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
-                if calc_context.flags & Flags.INEXACT:
-                    scaling_err = 1
-                else:
-                    scaling_err = 0
-            else:
-                scaled_sig = calc_fmt._divide_finite(sig, pow5, op_tuple, calc_context)
-                scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
-                if calc_context.flags & Flags.INEXACT:
-                    scaling_err = 1
-                else:
-                    scaling_err = 0
-                # Lemma 2 requires a normal number
-                assert not scaled_sig.is_subnormal()
-                # Numbers that will be subnormal round more bits
-                bits_to_round += max(0, self.e_min - scaled_sig.exponent())
-                # An extra half-ulp is lost in reciprocal of pow5.  FIXME: verify
-                if pow5_err or scaling_err:
-                    pow5_err = 2
-
-            assert calc_context.flags & Flags.OVERFLOW == 0
-
-            # The error from the true value, in half-ulps, on multiplying two floating
-            # point numbers, which differ from the value they approximate by at most HUE1
-            # and HUE2 half-ulps, is strictly less than err (when non-zero).
-            #
-            # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
-            # Clinger.  It assumes the product of normalized numbers with a normalized
-            # result.
-            if sig_err + pow5_err == 0:
-                # If there is a scaling error it is at most 1 half-ULP, which is < 2
-                err = scaling_err * 2
-            else:
-                # Note that 0 <= sig_err <= 2, 0 <= pow5_err <= 2, and 0 <= scaling_err <=
-                # 1.  If sig_err is 2 it is actually strictly less than 2.  Hance per the
-                # lemma the error is strictly less than this.
-                err = scaling_err + 2 * (sig_err + pow5_err)
-
-            rounding_distance = 2 * ulps_from_boundary(scaled_sig.significand, bits_to_round,
-                                                       context)
-
-            # If we round now are we guaranteed to round correctly?
-            if err <= rounding_distance:
-                # Convert with context's rounding and tininess detection
-                convert_context = Context(rounding=context.rounding,
-                                          tininess_after=context.tininess_after)
-                result = self.convert(scaled_sig, convert_context)
-
-                # It remains to determine exactness. Exit early and avoid the is_finite()
-                # assertion in result.exponent()
-                if convert_context.flags & Flags.OVERFLOW:
-                    return Overflow(op_tuple, result).signal(context)
-
-                # Work out distance of the result from our estimate; if too close we need
-                # more precision to determine exactness.  It's simplest to look at the
-                # rounded bits than at the shifted significand which can change, e.g. from
-                # 0xffff to 0x8000, when rounding.
-                rounded_bits = scaled_sig.significand & ((1 << bits_to_round) - 1)
-                exact_distance = min(rounded_bits, (1 << bits_to_round) - rounded_bits)
-
-                # Guaranteed inexact?
-                if err < exact_distance:
-                    if convert_context.flags & Flags.UNDERFLOW:
-                        return UnderflowInexact(op_tuple, result).signal(context)
-                    return Inexact(op_tuple, result).signal(context)
-
-                # Guaranteed exact?
-                if err == 0:
-                    if result.is_subnormal():
-                        return UnderflowExact(op_tuple, result).signal(context)
-                    return result
-                # We can't be sure as to exactness - loop again with more precision
-
-            # Increase precision and try again
-            precision += 1 if self.debug else precision // 2
 
     def to_string(self, value, text_format=None, context=None):
         '''Return text, with a hexadecimal significand for finite numbers, that is a
@@ -2982,6 +2752,267 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return hash(Fraction(*self.as_integer_ratio()))
 
 #
+# Core decimal-to-binary conversion logic
+#
+
+class DecimalToBinary:
+    '''Core decimal-to-binary conversion logic.  Parameterize some values to allow finding
+    of corner cases that require them.'''
+
+    def __init__(self, debug=False, short_sig_err=1, scaling_err_pos=1, scaling_err_neg=1,
+                 pow5_err=1, pow5_recip_err=2):
+        self.debug = debug
+        self.short_sig_err = short_sig_err
+        self.scaling_err_pos = scaling_err_pos
+        self.scaling_err_neg = scaling_err_neg
+        self.pow5_err = pow5_err
+        self.pow5_recip_err = pow5_recip_err
+
+    def convert(self, fmt, string, context):
+        '''Converts a string with a hexadecimal significand to a floating number of the
+        required format.
+
+        A quiet NaN with no specificed payload has payload 0, a signalling NaN has payload
+        1.  If the specified payload is too wide to be stored without loss, the most
+        significant bits are dropped.  If the resulting signalling NaN payload is 0 it
+        becomes 1.  If the payload of the returned NaN does not equal the given payload
+        INEXACT is flagged.
+        '''
+        match = DEC_FLOAT_REGEX.match(string)
+        if match is None:
+            raise SyntaxError(f'invalid floating point number: {string}')
+
+        sign = string[0] == '-'
+        groups = match.groups()
+        context = context or get_context()
+        op_tuple = (OP_FROM_STRING, string)
+
+        # Decimal float?
+        if groups[1] is not None:
+            # Read the optional exponent first.  It is in groups[6].
+            exponent = 0 if groups[6] is None else int(groups[6])
+
+            # If a fraction was specified, the integer and fraction parts are in
+            # groups[2], groups[3].  If no fraction was specified the integer is in
+            # groups[4].
+            assert groups[2] is not None or groups[4]
+
+            # Get the integer and fraction strings
+            if groups[2] is None:
+                int_str, frac_str = groups[4], ''
+            else:
+                int_str, frac_str = groups[2], groups[3]
+
+            # Combine them into sig_str removing all insignificant zeroes.  Viewing that
+            # as an integer, calculate the exponent adjustment to the true decimal point.
+            sig_str = int_str + frac_str.rstrip('0')
+            exponent += len(int_str) - len(sig_str)
+            sig_str = sig_str.lstrip('0') or '0'
+
+            # Now the value is significand * 10^exponent.
+            result, exc = self.try_many(sign, exponent, sig_str, fmt, context)
+            if exc:
+                return exc(op_tuple, result).signal(context)
+            return result
+
+        # groups[7] matches infinities
+        if groups[7] is not None:
+            return fmt.make_infinity(sign)
+
+        # groups[9] matches NaNs.  groups[10] is 's', 'S' or ''; the s indicates a
+        # signalling NaN.  The payload is in groups[11], and duplicated in groups[12] if
+        # hex or groups[13] if decimal
+        assert groups[9] is not None
+        is_signalling = groups[10] != ''
+        if groups[12] is not None:
+            payload = int(groups[12], 16)
+        elif groups[13] is not None:
+            payload = int(groups[13])
+        else:
+            payload = int(is_signalling)
+        return fmt.make_NaN(sign, is_signalling, payload)
+
+    def try_many(self, sign, exponent, sig_str, fmt, context):
+        '''Return a pair(result, exc).  Result is the correctly-rounded binary value of
+
+             (-1)^sign * int(sig_str) * 10^exponent
+
+        and exc is the exception to signal (or None).'''
+        # Exponent doesn't matter if zero
+        if sig_str == '0':
+            return fmt.make_zero(sign), None
+
+        # Test for obviously over-large exponents
+        frac_exp = exponent + len(sig_str)
+        if (frac_exp - 1) * log2_10 >= fmt.e_max + 1:
+            return fmt.make_overflow_value(context.rounding, sign), Overflow
+
+        # Test for obviously over-small exponents
+        if frac_exp * log2_10 <= fmt.e_min - fmt.precision:
+            return fmt.make_underflow_value(context.rounding, sign, False), UnderflowInexact
+
+        # Figure out what exponent range we must have for our intermediate calculations
+        # Each is sig_conversion, final_result, pow5_conversion
+        e_max = ceil(max(max(len(sig_str), frac_exp) * log2_10,
+                         abs(exponent) * (log2_10) - 1)) - 1
+        # Need to be able to represent the smallest number as normal
+        e_min = min(-2, floor((frac_exp - 1) * log2_10))
+
+        # The loops are expensive; optimistically the above starts with a low precision
+        # and iteratively increases it until we can guarantee the answer is correctly
+        # rounded.  Use precision a multiple of 64 bits with some room over the format
+        # precision, and always an exponent range at least 1 larger - we eliminate
+        # obviously out-of-range exponents above.  Intermediate calculations must not
+        # overflow nor use subnormal numbers.
+        precision = fmt.precision
+        while True:
+            if not self.debug:
+                precision = (precision + 63) & ~63
+
+            calc_fmt = BinaryFormat.from_triple(precision, e_max, e_min)
+
+            result, exc = self.try_once(sign, exponent, sig_str, fmt, calc_fmt, context)
+            if result is None:
+                # The result and/or the signal to raise cannot be determined.  Increase
+                # precision and retry.
+                precision += 1 if self.debug else precision // 2
+                continue
+
+            return result, exc
+
+    def try_once(self, sign, exponent, sig_str, fmt, calc_fmt, context):
+        # We have done a calculation in whose lowest bits will be rounded.  We want to
+        # know how far away the value of theese rounded bits is, in ULPs, from the
+        # rounding boundary - the boundary is where the rounding changes the value, so
+        # that we can determine if it is safe to round now.  Directed rounding never
+        # changes so the boundary has all zeroes with the next MSB 0 or 1.
+        # Round-to-nearest has a boundary of a half - i.e. 1 followed by bits-1 zeroes.
+        def ulps_from_boundary(significand, bits, context):
+            assert bits >= 0
+            boundary = 1 << bits
+            rounded_bits = significand & (boundary - 1)
+            if context.round_to_nearest():
+                boundary >>= 1
+                return abs(boundary - rounded_bits)
+            else:
+                return min(rounded_bits, boundary - rounded_bits)
+
+        # Numbers that will be subnormal round more bits
+        bits_to_round = calc_fmt.precision - fmt.precision
+
+        # With this many digits, an increment of one is strictly less than one ULP in
+        # the binary format.
+        digit_count = min(calc_fmt.decimal_precision, len(sig_str))
+
+        # We want to calculate significand * 10^sig_exponent.  sig_exponent may differ
+        # from exponent because not all sig_str digits are used.
+        significand = int(sig_str[:digit_count])
+        sig_exponent = exponent + (len(sig_str) - digit_count)
+
+        # All err variables are upper bounds and in half-ULPs
+        if digit_count < len(sig_str):
+            # The error is strictly less than a half-ULP if we round based on the next digit
+            if int(sig_str[digit_count]) >= 5:
+                significand += 1
+            sig_err = self.short_sig_err
+        else:
+            sig_err = 0
+
+        calc_context = Context(rounding=ROUND_HALF_EVEN)
+        sig = calc_fmt._normalize(sign, 0, significand, None, calc_context)
+        if calc_context.flags & Flags.INEXACT:
+            sig_err += 1
+        calc_context.flags &= ~Flags.INEXACT
+
+        pow5_int = pow(5, abs(sig_exponent))
+        pow5 = calc_fmt._normalize(False, 0, pow5_int, None, calc_context)
+        if calc_context.flags & Flags.INEXACT:
+            pow5_err = self.pow5_err
+        else:
+            pow5_err = 0
+        calc_context.flags &= ~Flags.INEXACT
+
+        # Call scaleb() since we scaled by 5^n and actually want 10^n
+        if sig_exponent >= 0:
+            scaled_sig = calc_fmt._multiply_finite(sig, pow5, None, calc_context)
+            scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
+            if calc_context.flags & Flags.INEXACT:
+                scaling_err = self.scaling_err_pos
+            else:
+                scaling_err = 0
+        else:
+            scaled_sig = calc_fmt._divide_finite(sig, pow5, None, calc_context)
+            scaled_sig = scaled_sig.scaleb(sig_exponent, calc_context)
+            if calc_context.flags & Flags.INEXACT:
+                scaling_err = self.scaling_err_neg
+            else:
+                scaling_err = 0
+            # Lemma 2 requires a normal number
+            assert not scaled_sig.is_subnormal()
+            # Numbers that will be subnormal round more bits
+            bits_to_round += max(0, fmt.e_min - scaled_sig.exponent())
+            # An extra half-ulp is lost in reciprocal of pow5.  FIXME: prove.  No test
+            # fails if this condition is removed.
+            if pow5_err or scaling_err:
+                pow5_err = self.pow5_recip_err
+
+        assert calc_context.flags & Flags.OVERFLOW == 0
+
+        # The error from the true value, in half-ulps, on multiplying two floating point
+        # numbers, which differ from the value they approximate by at most HUE1 and HUE2
+        # half-ulps, is strictly less than err (when non-zero).
+        #
+        # See Lemma 2 in "How to Read Floating Point Numbers Accurately" by William D
+        # Clinger.  It assumes the product of normalized numbers with a normalized result.
+        if sig_err + pow5_err == 0:
+            # If there is a scaling error it is at most 1 half-ULP, which is < 2
+            err = scaling_err * 2
+        else:
+            # Note that 0 <= sig_err <= 2, 0 <= pow5_err <= 2, and 0 <= scaling_err <=
+            # 1.  If sig_err is 2 it is actually strictly less than 2.  Hance per the
+            # lemma the error is strictly less than this.
+            err = scaling_err + 2 * (sig_err + pow5_err)
+
+        rounding_distance = 2 * ulps_from_boundary(scaled_sig.significand, bits_to_round,
+                                                   context)
+
+        # If we round now are we guaranteed to round correctly?
+        if err <= rounding_distance:
+            # Convert with context's rounding and tininess detection
+            convert_context = Context(rounding=context.rounding,
+                                      tininess_after=context.tininess_after)
+            result = fmt.convert(scaled_sig, convert_context)
+
+            # It remains to determine exactness.  Overflow is inexact; exit early.
+            if convert_context.flags & Flags.OVERFLOW:
+                return result, Overflow
+
+            # Work out distance of the result from our estimate; if too close we need
+            # more precision to determine exactness.  It's simplest to look at the
+            # rounded bits than at the shifted significand which can change, e.g. from
+            # 0xffff to 0x8000, when rounding.
+            rounded_bits = scaled_sig.significand & ((1 << bits_to_round) - 1)
+            exact_distance = min(rounded_bits, (1 << bits_to_round) - rounded_bits)
+
+            # Guaranteed inexact?
+            if err < exact_distance:
+                if convert_context.flags & Flags.UNDERFLOW:
+                    return result, UnderflowInexact
+                return result, Inexact
+
+            # Guaranteed exact?
+            if err == 0:
+                if result.is_subnormal():
+                    return result, UnderflowExact
+                return result, None
+
+            # We can't be sure as to exactness - loop again with more precision
+
+        # We can't be sure as to the result
+        return None, None
+
+
+#
 # Useful internal helper routines
 #
 
@@ -3137,10 +3168,24 @@ class LocalContext:
 local_context = LocalContext
 
 #
-# Internal constants
+# Constants are predefined formats.
 #
 
 log2_10 = log2(10)
+
+IEEEhalf = BinaryFormat.from_IEEE(16)
+IEEEsingle = BinaryFormat.from_IEEE(32)
+IEEEdouble = BinaryFormat.from_IEEE(64)
+IEEEquad = BinaryFormat.from_IEEE(128)
+
+# 80387 floating point takes place with a wide exponent range but rounds to single, double
+# or extended precision.  It also has an explicit integer bit.
+x87extended = BinaryFormat.from_pair(64, 15)
+x87double = BinaryFormat.from_pair(53, 15)
+x87single = BinaryFormat.from_pair(24, 15)
+
+decimal_to_binary = DecimalToBinary()
+_positive_zero = IEEEdouble.make_zero(False)
 
 HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
 HEX_SIGNIFICAND_REGEX = re.compile(
@@ -3165,21 +3210,3 @@ DEC_FLOAT_REGEX = re.compile(
     '((s?)nan((0x[0-9a-f]+)|([0-9]+))?))$',
     re.ASCII | re.IGNORECASE
 )
-
-#
-# Well-known predefined formats
-#
-
-IEEEhalf = BinaryFormat.from_IEEE(16)
-IEEEsingle = BinaryFormat.from_IEEE(32)
-IEEEdouble = BinaryFormat.from_IEEE(64)
-IEEEquad = BinaryFormat.from_IEEE(128)
-
-# 80387 floating point takes place with a wide exponent range but rounds to single, double
-# or extended precision.  It also has an explicit integer bit.
-x87extended = BinaryFormat.from_pair(64, 15)
-x87double = BinaryFormat.from_pair(53, 15)
-x87single = BinaryFormat.from_pair(24, 15)
-
-
-_positive_zero = IEEEdouble.make_zero(False)
