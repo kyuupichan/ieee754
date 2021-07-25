@@ -1332,7 +1332,9 @@ class BinaryFormat(NamedTuple):
 
             # If we round now are we guaranteed to round correctly?
             if err <= rounding_distance:
-                convert_context = Context(rounding=context.rounding)
+                # Convert with context's rounding and tininess detection
+                convert_context = Context(rounding=context.rounding,
+                                          tininess_after=context.tininess_after)
                 result = self.convert(scaled_sig, convert_context)
 
                 # It remains to determine exactness. Exit early and avoid the is_finite()
@@ -1349,9 +1351,9 @@ class BinaryFormat(NamedTuple):
 
                 # Guaranteed inexact?
                 if err < exact_distance:
-                    # Don't test is_subnormal() as result could be a zero.
-                    exc = Inexact if result.is_normal() else UnderflowInexact
-                    return exc(op_tuple, result).signal(context)
+                    if convert_context.flags & Flags.UNDERFLOW:
+                        return UnderflowInexact(op_tuple, result).signal(context)
+                    return Inexact(op_tuple, result).signal(context)
 
                 # Guaranteed exact?
                 if err == 0:

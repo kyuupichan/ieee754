@@ -24,6 +24,11 @@ boolean_codes = {
     'N': False,
 }
 
+tininess_after_codes = {
+    'A': True,
+    'B': False
+}
+
 compare_codes = {
     'L': Compare.LESS_THAN,
     'E': Compare.EQUAL,
@@ -91,7 +96,11 @@ def read_lines(filename):
 
 
 def rounding_string_to_context(rounding):
-    return Context(rounding=rounding_codes[rounding])
+    tininess_after = True
+    if len(rounding) == 2:
+        tininess_after = tininess_after_codes[rounding[1]]
+        rounding = rounding[0]
+    return Context(rounding=rounding_codes[rounding], tininess_after=tininess_after)
 
 
 def read_significand(significand):
