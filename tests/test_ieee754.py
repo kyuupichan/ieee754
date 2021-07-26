@@ -66,7 +66,7 @@ status_codes = {
     'X': Flags.INVALID,
 }
 
-sNaN_codes = {
+snan_codes = {
     'Y': 'sNaN',
     'N': '',
 }
@@ -136,7 +136,7 @@ def to_text_format(hex_format):
         force_leading_sign=boolean_codes[hex_format[0]],
         force_exp_sign=boolean_codes[hex_format[1]],
         rstrip_zeroes=boolean_codes[hex_format[2]],
-        sNaN = sNaN_codes[hex_format[3]],
+        snan = snan_codes[hex_format[3]],
         nan_payload=nan_payload_codes[hex_format[4]],
     )
 
@@ -516,36 +516,36 @@ class TestDivisionByZero:
 
 
 payloads = [1, 20, 300]
-no_sNaN_text_format = TextFormat(sNaN='')
+no_snan_text_format = TextFormat(snan='')
 
 
-def random_sNaN(fmt):
-    return fmt.make_NaN(random.choice(signs), True, random.choice(payloads))
+def random_snan(fmt):
+    return fmt.make_nan(random.choice(signs), True, random.choice(payloads))
 
 
 def invalid_to_decimal_string(dst_fmt, index):
-    value = random_sNaN(dst_fmt)
+    value = random_snan(dst_fmt)
     sign = '-' if value.sign else ''
-    result = f'{sign}NaN0x{value.NaN_payload():x}'
+    result = f'{sign}NaN0x{value.nan_payload():x}'
     op_tuple = (OP_TO_DECIMAL_STRING, value, -1)
     handler_class = (InvalidToString, Invalid, IEEEError)[index]
     return (result, InvalidToString, handler_class, op_tuple,
-            partial(value.to_decimal_string, -1, no_sNaN_text_format))
+            partial(value.to_decimal_string, -1, no_snan_text_format))
 
 
 def invalid_to_string(dst_fmt, index):
-    value = random_sNaN(dst_fmt)
+    value = random_snan(dst_fmt)
     sign = '-' if value.sign else ''
-    result = f'{sign}NaN0x{value.NaN_payload():x}'
+    result = f'{sign}NaN0x{value.nan_payload():x}'
     op_tuple = (OP_TO_STRING, value)
     handler_class = (InvalidToString, Invalid, IEEEError)[index]
     return (result, InvalidToString, handler_class, op_tuple,
-            partial(value.to_string, no_sNaN_text_format))
+            partial(value.to_string, no_snan_text_format))
 
 
 def invalid_convert(dst_fmt, index):
-    value = random_sNaN(random.choice(all_IEEE_fmts))
-    result = dst_fmt.make_NaN(value.sign, False, value.NaN_payload())
+    value = random_snan(random.choice(all_IEEE_fmts))
+    result = dst_fmt.make_nan(value.sign, False, value.nan_payload())
     op_tuple = (OP_CONVERT, value)
     handler_class = (SignallingNaNOperand, Invalid, IEEEError)[index]
     return result, SignallingNaNOperand, handler_class, op_tuple, partial(dst_fmt.convert, value)
@@ -554,7 +554,7 @@ def invalid_convert(dst_fmt, index):
 def invalid_add(dst_fmt, index):
     lhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
     rhs = random.choice(all_IEEE_fmts).make_infinity(not lhs.sign)
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_ADD, lhs, rhs)
     handler_class = (InvalidAdd, Invalid, IEEEError)[index]
     return result, InvalidAdd, handler_class, op_tuple, partial(dst_fmt.add, lhs, rhs)
@@ -563,7 +563,7 @@ def invalid_add(dst_fmt, index):
 def invalid_subtract(dst_fmt, index):
     lhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
     rhs = random.choice(all_IEEE_fmts).make_infinity(lhs.sign)
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_SUBTRACT, lhs, rhs)
     handler_class = (InvalidAdd, Invalid, IEEEError)[index]
     return result, InvalidAdd, handler_class, op_tuple, partial(dst_fmt.subtract, lhs, rhs)
@@ -573,7 +573,7 @@ def invalid_multiply(dst_fmt, index):
     zero = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
     inf = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
     lhs, rhs = random.choice(((zero, inf), (inf, zero)))
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_MULTIPLY, lhs, rhs)
     handler_class = (InvalidMultiply, Invalid, IEEEError)[index]
     return result, InvalidMultiply, handler_class, op_tuple, partial(dst_fmt.multiply, lhs, rhs)
@@ -582,7 +582,7 @@ def invalid_multiply(dst_fmt, index):
 def invalid_divide_zero(dst_fmt, index):
     lhs = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
     rhs = random.choice(all_IEEE_fmts).make_zero(random.choice(signs))
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_DIVIDE, lhs, rhs)
     handler_class = (InvalidDivide, Invalid, IEEEError)[index]
     return result, InvalidDivide, handler_class, op_tuple, partial(dst_fmt.divide, lhs, rhs)
@@ -591,7 +591,7 @@ def invalid_divide_zero(dst_fmt, index):
 def invalid_divide_inf(dst_fmt, index):
     lhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
     rhs = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_DIVIDE, lhs, rhs)
     handler_class = (InvalidDivide, Invalid, IEEEError)[index]
     return result, InvalidDivide, handler_class, op_tuple, partial(dst_fmt.divide, lhs, rhs)
@@ -599,7 +599,7 @@ def invalid_divide_inf(dst_fmt, index):
 
 def invalid_sqrt(dst_fmt, index):
     lhs = getattr(dst_fmt, random.choice(('make_one', 'make_infinity')))(True)
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_SQRT, lhs)
     handler_class = (InvalidSqrt, Invalid, IEEEError)[index]
     return result, InvalidSqrt, handler_class, op_tuple, partial(dst_fmt.sqrt, lhs)
@@ -609,7 +609,7 @@ def invalid_fma(dst_fmt, index):
     inf = random.choice(all_IEEE_fmts).make_infinity(random.choice(signs))
     lhs, rhs = random.choice(((zero, inf), (inf, zero)))
     addend = random.choice(all_IEEE_fmts).make_one(random.choice(signs))
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (OP_FMA, lhs, rhs, addend)
     handler_class = (InvalidFMA, Invalid, IEEEError)[index]
     return result, InvalidFMA, handler_class, op_tuple, partial(dst_fmt.fma, lhs, rhs, addend)
@@ -623,7 +623,7 @@ def invalid_remainder(dst_fmt, index):
         lhs = dst_fmt.make_one(random.choice(signs))
         rhs = dst_fmt.make_zero(random.choice(signs))
     op, op_name = random.choice(((lhs.remainder, OP_REMAINDER), (lhs.fmod, OP_FMOD)))
-    result = dst_fmt.make_NaN(False, False, 0)
+    result = dst_fmt.make_nan(False, False, 0)
     op_tuple = (op_name, lhs, rhs)
     handler_class = (InvalidRemainder, Invalid, IEEEError)[index]
     return result, InvalidRemainder, handler_class, op_tuple, partial(op, rhs)
@@ -632,8 +632,8 @@ def invalid_remainder(dst_fmt, index):
 def invalid_logb_integral(dst_fmt, index):
     kind = random.choice(range(3))
     if kind == 0:
-        value = dst_fmt.make_NaN(False, False, 0)
-        result = dst_fmt.logb_NaN
+        value = dst_fmt.make_nan(False, False, 0)
+        result = dst_fmt.logb_nan
     elif kind == 1:
         value = dst_fmt.make_zero(random.choice(signs))
         result = dst_fmt.logb_zero
@@ -647,7 +647,7 @@ def invalid_logb_integral(dst_fmt, index):
 
 def invalid_comparison(dst_fmt, index):
     lhs = dst_fmt.make_zero(random.choice(signs))
-    rhs = dst_fmt.make_NaN(False, False, 0)
+    rhs = dst_fmt.make_nan(False, False, 0)
     lhs, rhs = random.choice(((lhs, rhs), (rhs, lhs)))
     result = Compare.UNORDERED
     op_tuple = (OP_COMPARE, lhs, rhs)
@@ -658,7 +658,7 @@ def invalid_comparison(dst_fmt, index):
 def invalid_convert_to_integer(kind, index):
     dst_fmt = random.choice(all_IEEE_fmts)
     if kind == 0:
-        value = dst_fmt.make_NaN(False, False, 0)
+        value = dst_fmt.make_nan(False, False, 0)
         result = 0
     elif kind == 1:
         value = dst_fmt.make_one(True)
@@ -1401,7 +1401,7 @@ class TestBinary:
     @pytest.mark.parametrize('fmt, is_signalling', product(all_IEEE_fmts, signs))
     def test_as_integer_ratio_inf(self, fmt, is_signalling):
         with pytest.raises(ValueError):
-            fmt.make_NaN(False, is_signalling, 0).as_integer_ratio()
+            fmt.make_nan(False, is_signalling, 0).as_integer_ratio()
 
     @pytest.mark.parametrize('fmt, testcase', product(
         all_IEEE_fmts, (
@@ -1632,7 +1632,7 @@ class TestGeneralNonComputationalOps:
         assert value.is_finite()
         assert not value.is_subnormal()
         assert not value.is_infinite()
-        assert not value.is_NaN()
+        assert not value.is_nan()
         assert not value.is_signalling()
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
@@ -1655,7 +1655,7 @@ class TestGeneralNonComputationalOps:
         assert not value.is_finite()
         assert not value.is_subnormal()
         assert value.is_infinite()
-        assert not value.is_NaN()
+        assert not value.is_nan()
         assert not value.is_signalling()
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
@@ -1667,8 +1667,8 @@ class TestGeneralNonComputationalOps:
                                      (False, True),
                                      (0, 1, 24),
                              ))
-    def test_make_NaN(self, fmt, sign, is_signalling, payload):
-        value = fmt.make_NaN(sign, is_signalling, payload)
+    def test_make_nan(self, fmt, sign, is_signalling, payload):
+        value = fmt.make_nan(sign, is_signalling, payload)
         assert value.fmt is fmt
         if payload == 0 and is_signalling:
             payload = 1
@@ -1684,7 +1684,7 @@ class TestGeneralNonComputationalOps:
         assert not value.is_finite()
         assert not value.is_subnormal()
         assert not value.is_infinite()
-        assert value.is_NaN()
+        assert value.is_nan()
         assert value.is_signalling() is is_signalling
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
@@ -1692,11 +1692,11 @@ class TestGeneralNonComputationalOps:
         assert value.as_tuple()[-1] == payload
 
         with pytest.raises(ValueError):
-            fmt.make_NaN(sign, is_signalling, -1)
+            fmt.make_nan(sign, is_signalling, -1)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, is_signalling, 1.2)
+            fmt.make_nan(sign, is_signalling, 1.2)
         with pytest.raises(TypeError):
-            fmt.make_NaN(sign, is_signalling, 1.2)
+            fmt.make_nan(sign, is_signalling, 1.2)
 
     @pytest.mark.parametrize('fmt, sign',
                              product(all_IEEE_fmts, (False, True),
@@ -1740,7 +1740,7 @@ class TestGeneralNonComputationalOps:
                 assert not value.is_negative()
             assert value.is_finite()
             assert not value.is_infinite()
-            assert not value.is_NaN()
+            assert not value.is_nan()
             assert not value.is_signalling()
             assert value.is_canonical()
             assert value.is_finite_non_zero()
@@ -1970,7 +1970,7 @@ class TestUnaryOps:
         else:
             min_int, max_int = kind
             context = Context()
-            if answer.is_NaN():
+            if answer.is_nan():
                 status = Flags.INVALID
                 answer = 0
             elif answer.is_infinite():
@@ -2072,8 +2072,8 @@ class TestUnaryOps:
         status = status_codes[status]
         text_format = TextFormat(exp_digits=-2, force_exp_sign=True)
         # Abuse meaning of rounding field for NaNs in this test only
-        if value.is_NaN() and context.rounding != ROUND_HALF_EVEN:
-            text_format.sNaN = ''
+        if value.is_nan() and context.rounding != ROUND_HALF_EVEN:
+            text_format.snan = ''
         result = value.to_decimal_string(precision, text_format, context)
         assert result == answer
         assert context.flags == status
@@ -2120,7 +2120,7 @@ class TestUnaryOps:
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_logb_specials(self, fmt):
         # Test all 3 values are different
-        values = {fmt.logb_zero, fmt.logb_inf, fmt.logb_NaN}
+        values = {fmt.logb_zero, fmt.logb_inf, fmt.logb_nan}
         assert len(values) == 3
         extremity = 2 * (max(fmt.e_max, abs(fmt.e_min)) + fmt.precision - 1)
         assert min(abs(value) for value in values) > extremity
@@ -2159,7 +2159,7 @@ class TestUnaryOps:
                 else:
                     assert result_integral == fmt.logb_inf
             else:
-                assert result_integral == fmt.logb_NaN
+                assert result_integral == fmt.logb_nan
             assert context.flags == Flags.INVALID
 
     @pytest.mark.parametrize('line', read_lines('next_up.txt'))
@@ -2274,9 +2274,9 @@ class TestUnaryOps:
         # set.  Test clearing it (a pseudo-NaN) gives the right answer.
         for hex_str in ('7fffc000000000000000', '7fff4000000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
-            assert value.is_NaN()
+            assert value.is_nan()
             assert not value.is_signalling()
-            assert value.NaN_payload() == 0
+            assert value.nan_payload() == 0
 
         # 7fff8000000000000000 is the canonical representation of +Inf with integer bit
         # set.  Test clearing it gives the right answer.
@@ -2495,7 +2495,7 @@ class TestBinaryOps:
         # Compare singalling
         context = Context()
         result = lhs.compare_signal(rhs, context)
-        op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
+        op_status = Flags.INVALID if lhs.is_nan() or rhs.is_nan() else 0
         assert result == answer
         assert context.flags == op_status
 
@@ -2513,7 +2513,7 @@ class TestBinaryOps:
             # Test the singalling form:
             if op not in {'un', 'or'}:
                 op_name = f'compare_{op}_signal'
-                op_status = Flags.INVALID if lhs.is_NaN() or rhs.is_NaN() else 0
+                op_status = Flags.INVALID if lhs.is_nan() or rhs.is_nan() else 0
                 context = Context()
                 result = getattr(lhs, op_name)(rhs, context)
                 assert result == op_result

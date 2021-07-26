@@ -140,6 +140,13 @@ You can also create your own binary formats with the constructors
 
      For binary interchange formats, the format width in bits, otherwise :const:`0`.
 
+  .. attribute:: logb_zero
+  .. attribute:: logb_nan
+  .. attribute:: logb_inf
+
+     These values are returned by the :meth:`Binary.logb_integral` operation on zero,
+     :const:`NaN` and :const:`infinity` values in this format, respectively.
+
   .. classmethod:: from_triple(precision, e_max, e_min)
 
      This constructor directly initializes the three defining attributes of a binary
@@ -192,7 +199,7 @@ You can also create your own binary formats with the constructors
 
      Return the smallest normal number with the specified sign.
 
-  .. method:: make_NaN(sign, is_signalling, payload)
+  .. method:: make_nan(sign, is_signalling, payload)
 
      Return a :const:`NaN` with the specified sign and payload.  *is_signalling*
      indicates if the :const:`NaN` is signalling or quiet.
@@ -282,13 +289,6 @@ You can also create your own binary formats with the constructors
   .. method:: unpack(sign, exponent, significand, endianness='little')
 
      TODO
-
-  .. attribute:: logb_zero
-  .. attribute:: logb_NaN
-  .. attribute:: logb_inf
-
-     These values are returned by the :meth:`Binary.logb_integral` operation on zero,
-     :const:`NaN` and :const:`infinity` values in this format, respectively.
 
 
 Binary objects
@@ -616,7 +616,7 @@ class hierarchy as follows::
 .. exception:: InvalidToString
 
     This signal is raised when a decimal or hexadecimal string conversion operation is
-    passed a signalling :const:`NaN` and the :class:`TextFormat` :attr:`sNaN` attribute is
+    passed a signalling :const:`NaN` and the :class:`TextFormat` :attr:`snan` attribute is
     empty, indicating to output it as a quiet :const:`NaN`.
 
 
@@ -948,18 +948,18 @@ TextFormat objects
      :attr:`nan_payload` is 'X') in upper case.  For hexadecimal strings output the hex
      indicator '0x' and hexadecimal digits in upper case.
 
-     This attribute does not affect :attr:`inf`, :attr:`qNaN` and :attr:`sNaN` which
+     This attribute does not affect :attr:`inf`, :attr:`qnan` and :attr:`snan` which
      appear in the output string verbatim.
 
   .. attribute:: inf
 
      The string to output for infinities.  The default is 'Infinity'.
 
-  .. attribute:: qNaN
+  .. attribute:: qnan
 
      The string to output for a quiet :const:`NaN`.  The default is 'NaN'.
 
-  .. attribute:: sNaN
+  .. attribute:: snan
 
      The string to output for a signalling :const:`NaN`.  An empty string means output it
      as a quiet :const:`NaN` instead, which signals an :exc:`InvalidToString` exception.
@@ -990,7 +990,7 @@ TextFormat objects
      :class:`float` values::
 
        DefaultDecFormat = TextFormat(exp_digits=-2, force_point=True,
-                                     inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
+                                     inf='inf', qnan='nan', snan='snan', nan_payload='N')
 
 
 .. data:: Dec_G_Format
@@ -999,7 +999,7 @@ TextFormat objects
      the specified precisions are the same::
 
        DefaultDecFormat = TextFormat(exp_digits=-2, rstrip_zeroes=True,
-                                     inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
+                                     inf='inf', qnan='nan', snan='snan', nan_payload='N')
 
 
 String Syntax

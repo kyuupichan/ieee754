@@ -150,17 +150,17 @@ class TextFormat:
     # If True, the exponent character ('p' or 'e') is in upper case, and for hexadecimal
     # output, the hex indicator 'x' and hexadecimal digits are in upper case.  For NaN
     # output, hexadecimal payloads are in upper case.  This does not affect the text of
-    # the inf, qNaN and sNaN indicators below which are copied unmodified.
+    # the inf, qnan and snan indicators below which are copied unmodified.
     upper_case = attr.ib(default=False)
     # If True, trailing insignificant zeroes are stripped
     rstrip_zeroes = attr.ib(default=False)
     # The string output for infinity
     inf = attr.ib(default='Infinity')
     # The string output for quiet NaNs
-    qNaN = attr.ib(default='NaN')
+    qnan = attr.ib(default='NaN')
     # The string output for signalling NaNs.  The empty string means flag an invalid
     # operation and output as a quiet NaN instead.
-    sNaN = attr.ib(default='sNaN')
+    snan = attr.ib(default='sNaN')
     # Controls the display of NaN payloads.  If N, NaN payloads are omitted.  If X, they
     # are output in hexadecimal.  If 'D' in decimal.  Examples of all 3 formats are: nan,
     # nan255 and nan0xff for a quiet NaN with payload 255, respectively.
@@ -181,25 +181,25 @@ class TextFormat:
         '''Returns the output text for infinities and NaNs.
 
         Signals InvalidToString if a signalling NaN is output as a quiet NaN.'''
-        lost_sNaN = False
+        lost_snan = False
         # Infinity
         if value.is_infinite():
             special = self.inf
         else:
             # NaNs
-            special = self.qNaN
+            special = self.qnan
             if value.is_signalling():
-                if self.sNaN:
-                    special = self.sNaN
+                if self.snan:
+                    special = self.snan
                 else:
-                    lost_sNaN = True
+                    lost_snan = True
             if self.nan_payload == 'D':
-                special += str(value.NaN_payload())
+                special += str(value.nan_payload())
             elif self.nan_payload == 'X':
-                special += hex(value.NaN_payload())
+                special += hex(value.nan_payload())
 
         result = self.leading_sign(value) + special
-        if lost_sNaN:
+        if lost_snan:
             result = InvalidToString(op_tuple, result).signal(context)
         return result
 
@@ -293,7 +293,7 @@ class TextFormat:
 
 # Default format for decimal output
 DefaultDecFormat = TextFormat(exp_digits=-2, force_point=True,
-                              inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
+                              inf='inf', qnan='nan', snan='snan', nan_payload='N')
 
 # Default format for hexadecimal output
 DefaultHexFormat = TextFormat(force_point=True, nan_payload='N')
@@ -302,7 +302,7 @@ DefaultHexFormat = TextFormat(force_point=True, nan_payload='N')
 # This instance is intended to match the output of Python's **g** format specifier when
 # the specified precisions are the same.
 Dec_g_Format = TextFormat(exp_digits=-2, rstrip_zeroes=True,
-                          inf='inf', qNaN='nan', sNaN='snan', nan_payload='N')
+                          inf='inf', qnan='nan', snan='snan', nan_payload='N')
 
 
 #
@@ -364,7 +364,7 @@ class IEEEError(ArithmeticError):
             result = handler(self, context)
         elif kind == HandlerKind.SUBSTITUTE_VALUE_XOR and self.is_multiply_divide():
             result = handler(self, context)
-            if not result.is_NaN():
+            if not result.is_nan():
                 result = result.set_sign(self.op_tuple[1].sign ^ self.op_tuple[2].sign)
 
         return result
@@ -384,7 +384,7 @@ class Invalid(IEEEError):
     def __init__(self, op_tuple, result):
         '''If result is a BinaryFormat its canonical quiet NaN is used.'''
         if isinstance(result, BinaryFormat):
-            result = result.make_NaN(False, False, 0)
+            result = result.make_nan(False, False, 0)
         super().__init__(op_tuple, result)
 
 
@@ -734,7 +734,7 @@ class BinaryFormat(NamedTuple):
         return -self.logb_inf
 
     @property
-    def logb_NaN(self):
+    def logb_nan(self):
         return -self.logb_inf - 1
 
     def __repr__(self):
@@ -770,7 +770,7 @@ class BinaryFormat(NamedTuple):
         '''Return the smallest normal number with the given sign.'''
         return Binary(self, sign, 1, self.int_bit)
 
-    def make_NaN(self, sign, is_signalling, payload):
+    def make_nan(self, sign, is_signalling, payload):
         '''Return a NaN with the given sign and payload and signalling status.
 
         Payload changes, either through loss of most significand bits, or because the payload
@@ -804,23 +804,23 @@ class BinaryFormat(NamedTuple):
         else:
             return self.make_zero(sign)
 
-    def _propagate_NaN(self, op_tuple, context=None):
+    def _propagate_nan(self, op_tuple, context=None):
         '''Return the result of an operation with at least one NaN.
 
         This implementation returns the leftmost NaN whose payload can fit in the
         destination format (or the leftmost one if none can), as a quiet NaN.  Signal
         SignallingNaNOperand if any NaNs are signalling.
         '''
-        NaNs = [item for item in op_tuple if isinstance(item, Binary) and item.is_NaN()]
+        nans = [item for item in op_tuple if isinstance(item, Binary) and item.is_nan()]
 
-        for NaN in NaNs:
-            if NaN.NaN_payload() < self.quiet_bit:
+        for nan in nans:
+            if nan.nan_payload() < self.quiet_bit:
                 break
         else:
-            NaN = NaNs[0]
+            nan = nans[0]
 
-        result = self.make_NaN(NaN.sign, False, NaN.NaN_payload())
-        if any(NaN.is_signalling() for NaN in NaNs):
+        result = self.make_nan(nan.sign, False, nan.nan_payload())
+        if any(nan.is_signalling() for nan in nans):
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
@@ -916,7 +916,7 @@ class BinaryFormat(NamedTuple):
                     e_biased = self.e_max + self.e_bias
             # Signalling NaNs are converted to quiet.
             elif significand < self.quiet_bit:
-                return self._propagate_NaN(op_tuple, context)
+                return self._propagate_nan(op_tuple, context)
 
         result = Binary(self, sign ^ flip_sign, e_biased, significand)
         if result.is_subnormal():
@@ -930,10 +930,10 @@ class BinaryFormat(NamedTuple):
         op_tuple = (OP_CONVERT, value)
         return self._convert(value, op_tuple, context, False)
 
-    def _convert(self, value, op_tuple, context, preserve_sNaN):
+    def _convert(self, value, op_tuple, context, preserve_snan):
         '''Return the value converted to this format, rounding if necessary.
 
-        If value is a signalling NaN and preserve_sNaN is false, signal
+        If value is a signalling NaN and preserve_snan is false, signal
         SignallingNaNOperand and return a quiet NaN.'''
         context = context or get_context()
 
@@ -953,10 +953,10 @@ class BinaryFormat(NamedTuple):
 
         if value.significand:
             # NaNs
-            if preserve_sNaN:
-                return self.make_NaN(value.sign, value.is_signalling(), value.NaN_payload())
+            if preserve_snan:
+                return self.make_nan(value.sign, value.is_signalling(), value.nan_payload())
 
-            result = self.make_NaN(value.sign, False, value.NaN_payload())
+            result = self.make_nan(value.sign, False, value.nan_payload())
             if value.is_signalling():
                 result = SignallingNaNOperand(op_tuple, result).signal(context)
             return result
@@ -1185,7 +1185,7 @@ class BinaryFormat(NamedTuple):
                     return self.make_infinity(lhs.sign)
 
             # Propagate the NaN in the LHS
-            return self._propagate_NaN(op_tuple, context)
+            return self._propagate_nan(op_tuple, context)
 
         # Both operations are finite.  Determine if the operation on the absolute values
         # is effectively an addition or subtraction of shifted significands.
@@ -1245,10 +1245,10 @@ class BinaryFormat(NamedTuple):
                     return InvalidMultiply(op_tuple, self).signal(context)
                 # infinity * infinity -> infinity
                 # infinity * finite-non-zero -> infinity
-                if not rhs.is_NaN():
+                if not rhs.is_nan():
                     return self.make_infinity(lhs.sign ^ rhs.sign)
 
-            return self._propagate_NaN(op_tuple, context)
+            return self._propagate_nan(op_tuple, context)
 
         return self._multiply_finite(lhs, rhs, op_tuple, context)
 
@@ -1294,7 +1294,7 @@ class BinaryFormat(NamedTuple):
                 return InvalidDivide(op_tuple, self).signal(context)
             # infinity / NaN propagates the NaN.
 
-        return self._propagate_NaN(op_tuple, context)
+        return self._propagate_nan(op_tuple, context)
 
     def _divide_finite(self, lhs, rhs, op_tuple, context):
         '''Calculate LHS / RHS, where both are finite and RHS is non-zero.
@@ -1368,7 +1368,7 @@ class BinaryFormat(NamedTuple):
         if value.e_biased == 0:
             if value.significand:
                 # Propagate NaNs
-                return self._propagate_NaN(op_tuple, context)
+                return self._propagate_nan(op_tuple, context)
             # -Inf -> invalid operation
             if value.sign:
                 return InvalidSqrt(op_tuple, self).signal(context)
@@ -1478,8 +1478,8 @@ class BinaryFormat(NamedTuple):
         # multiplication might signal an invalid operation early.  There are two: any
         # (signalling) NaN, and if the first two operands are some combination of zero and
         # infinity.
-        if any(value.is_NaN() for value in (lhs, rhs, addend)):
-            return self._propagate_NaN(op_tuple, context)
+        if any(value.is_nan() for value in (lhs, rhs, addend)):
+            return self._propagate_nan(op_tuple, context)
 
         if (lhs.is_zero() and rhs.is_infinite()) or (rhs.is_zero() and lhs.is_infinite()):
             return InvalidFMA(op_tuple, self).signal(context)
@@ -1618,10 +1618,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             significand -= self.fmt.int_bit
         return self.fmt.pack(self.sign, ieee_exponent, significand, endianness)
 
-    def NaN_payload(self):
+    def nan_payload(self):
         '''Returns the NaN payload.  Raises RuntimeError if the value is not a NaN.'''
-        if not self.is_NaN():
-            raise RuntimeError('NaN_payload called on non-NaN')
+        if not self.is_nan():
+            raise RuntimeError('nan_payload called on non-NaN')
         return self.significand & (self.fmt.quiet_bit - 1)
 
     def is_negative(self):
@@ -1648,13 +1648,13 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Return True if the value is infinite.'''
         return self.e_biased == 0 and not self.significand
 
-    def is_NaN(self):
+    def is_nan(self):
         '''Return True if this is a NaN of any kind.'''
         return self.e_biased == 0 and self.significand
 
     def is_signalling(self):
         '''Return True if and only if this is a signalling NaN.'''
-        return self.is_NaN() and not (self.significand & self.fmt.quiet_bit)
+        return self.is_nan() and not (self.significand & self.fmt.quiet_bit)
 
     def is_canonical(self):
         '''We only have canonical values.'''
@@ -1727,7 +1727,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Return the payload of a NaN as a non-negative floating point integer, or -1
         if not a NaN.'''
         try:
-            payload = self.NaN_payload()
+            payload = self.nan_payload()
         except RuntimeError:
             return self.fmt.make_one(True)
         bits = payload.bit_length()
@@ -1755,7 +1755,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         payload = payload_from_int()
         if is_signalling <= payload < self.fmt.quiet_bit:
-            return self.fmt.make_NaN(False, is_signalling, payload)
+            return self.fmt.make_nan(False, is_signalling, payload)
         return self.fmt.make_zero(False)
 
     def set_payload(self):
@@ -1828,8 +1828,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         rem_sign = self.sign                 # Rounding up always flips rem_sign
 
         # NaNs?
-        if self.is_NaN() or rhs.is_NaN():
-            result = self.fmt._propagate_NaN(op_tuple, context)
+        if self.is_nan() or rhs.is_nan():
+            result = self.fmt._propagate_nan(op_tuple, context)
             return result, result
 
         # remainder (infinity, non-NaN) is an invalid operation
@@ -1946,7 +1946,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if self.e_biased == 0:
             # NaNs and infinities are unchanged (but NaNs are made quiet)
             if self.significand:
-                return self.fmt._propagate_NaN(op_tuple, context)
+                return self.fmt._propagate_nan(op_tuple, context)
             return self
         return self.fmt._normalize(self.sign, self.exponent_int() + N, self.significand,
                                    op_tuple, context)
@@ -1979,7 +1979,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if result == 'Inf':
             result = self.fmt.logb_inf
         elif result == 'NaN':
-            result = self.fmt.logb_NaN
+            result = self.fmt.logb_nan
         else:
             result = self.fmt.logb_zero
 
@@ -1999,7 +1999,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return self.fmt._normalize(result < 0, 0, abs(result), op_tuple, context)
 
         if result == 'NaN':
-            return self.fmt._propagate_NaN(op_tuple, context)
+            return self.fmt._propagate_nan(op_tuple, context)
         if result == 'Zero':
             return LogBZero(op_tuple, self.fmt.make_infinity(True)).signal(context)
         return self.fmt.make_infinity(False)
@@ -2063,8 +2063,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         if self.e_biased == 0:
             # NaNs and infinities are unchanged (but NaNs are made quiet)
-            if self.is_NaN():
-                return self.fmt._propagate_NaN(op_tuple, context)
+            if self.is_nan():
+                return self.fmt._propagate_nan(op_tuple, context)
             return self
 
         result, is_exact = self._to_int(rounding)
@@ -2323,15 +2323,15 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         comp = self._compare_quiet(rhs, True)
         if comp == Compare.UNORDERED:
             # At least one is a NaN
-            if rhs.is_NaN():
-                if self.is_NaN():
+            if rhs.is_nan():
+                if self.is_nan():
                     if self.sign != rhs.sign:
                         return self.sign
                     if self.is_signalling() != rhs.is_signalling():
                         return self.is_signalling() ^ self.sign
-                    if self.NaN_payload() < rhs.NaN_payload():
+                    if self.nan_payload() < rhs.nan_payload():
                         return not self.sign
-                    if self.NaN_payload() > rhs.NaN_payload():
+                    if self.nan_payload() > rhs.nan_payload():
                         return self.sign
                     return True
                 return not rhs.sign
@@ -2363,17 +2363,17 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         # Propagate NaNs if it not a NUM operation
         op_tuple = (flags.op_name(), self, rhs)
         if not flags & MinMaxFlags.NUM:
-            return self.fmt._propagate_NaN(op_tuple, context)
+            return self.fmt._propagate_nan(op_tuple, context)
 
         # The result is the number; if both are NaNs return the leftmost.  Signals invalid
         # if either is signalling.
-        if rhs.is_NaN():
+        if rhs.is_nan():
             result = self
         else:
             result = rhs
         if self.is_signalling() or rhs.is_signalling():
             if result.is_signalling():
-                result = result.fmt.make_NaN(result.sign, False, result.NaN_payload())
+                result = result.fmt.make_nan(result.sign, False, result.nan_payload())
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
@@ -2571,21 +2571,21 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Return this value with sign False (positive).'''
         if self.is_signalling():
             op_tuple = (OP_ABS, self)
-            return self.fmt._propagate_NaN(op_tuple)
+            return self.fmt._propagate_nan(op_tuple)
         return self.set_sign(False)
 
     def __neg__(self):
         '''Return this value with the opposite sign (unary minus).'''
         if self.is_signalling():
             op_tuple = (OP_MINUS, self)
-            return self.fmt._propagate_NaN(op_tuple)
+            return self.fmt._propagate_nan(op_tuple)
         return self.set_sign(not self.sign)
 
     def __pos__(self):
         '''Return this value (unary plus).'''
         if self.is_signalling():
             op_tuple = (OP_PLUS, self)
-            return self.fmt._propagate_NaN(op_tuple)
+            return self.fmt._propagate_nan(op_tuple)
         return self
 
     def __eq__(self, other):
@@ -2830,7 +2830,7 @@ class DecimalToBinary:
             payload = int(groups[13])
         else:
             payload = int(is_signalling)
-        return fmt.make_NaN(sign, is_signalling, payload)
+        return fmt.make_nan(sign, is_signalling, payload)
 
     def try_many(self, sign, exponent, sig_str, fmt, context):
         '''Return a pair(result, exc).  Result is the correctly-rounded binary value of
