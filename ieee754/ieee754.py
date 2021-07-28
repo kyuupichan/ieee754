@@ -125,8 +125,8 @@ class Flags(IntFlag):
 
 
 BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
-pack_double = Struct('<d').pack
-unpack_double = Struct('<d').unpack
+pack_double = Struct('=d').pack
+unpack_double = Struct('=d').unpack
 
 
 @attr.s(slots=True, kw_only=True, cmp=False)
@@ -979,8 +979,10 @@ class BinaryFormat(NamedTuple):
             return self.from_int(value)
         return None
 
-    def pack(self, sign, exponent, significand, endianness='little'):
+    def pack(self, sign, exponent, significand, endianness=None):
         '''Packs the IEEE parts of a floating point number as bytes of the given endianness.
+
+        Endianness can be 'big' or 'little'.  If None, host-native endianness is used.
 
         exponent is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and
         subnormals and e_max * 2 + 1 for NaNs and infinites.  significand must not include
@@ -1008,10 +1010,12 @@ class BinaryFormat(NamedTuple):
         if sign:
             value += (self.e_max + 1) * 2
         value = (value << lshift) + significand
-        return value.to_bytes(self.fmt_width // 8, endianness)
+        return value.to_bytes(self.fmt_width // 8, endianness or host_endianness)
 
-    def unpack(self, raw, endianness='little'):
+    def unpack(self, raw, endianness=None):
         '''Decode a binary encoding and return a BinaryTuple.
+
+        Endianness can be 'big' or 'little'.  If None, host-native endianness is used.
 
         Exponent is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and
         subnormals and e_max * 2 + 1 for NaNs and infinites.  significand does not include
@@ -1022,7 +1026,8 @@ class BinaryFormat(NamedTuple):
         size = self.fmt_width // 8
         if len(raw) != size:
             raise ValueError(f'expected {size} bytes to unpack; got {len(raw)}')
-        value = int.from_bytes(raw, endianness)
+
+        value = int.from_bytes(raw, endianness or host_endianness)
 
         # Extract the parts from the encoding
         implicit_integer_bit = self.fmt_width % 8 == 1
@@ -1033,8 +1038,10 @@ class BinaryFormat(NamedTuple):
 
         return BinaryTuple(sign, exponent, significand)
 
-    def unpack_value(self, raw, endianness='little'):
-        '''Decode a binary encoding and return a Binary floating point value.'''
+    def unpack_value(self, raw, endianness=None):
+        '''Decode a binary encoding and return a Binary floating point value.
+
+        Endianness can be 'big' or 'little'.  If None, host-native endianness is used.'''
         sign, exponent, significand = self.unpack(raw, endianness)
         if exponent == 0:
             exponent = 1
@@ -1606,8 +1613,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
         return BinaryTuple(self.sign, exponent, significand)
 
-    def pack(self, endianness='little'):
-        '''Packs this value to bytes of the given endianness.'''
+    def pack(self, endianness=None):
+        '''Packs this value to bytes of the given endianness.
+
+        Endianness can be 'big' or 'little'.  If None, host-native endianness is used.'''
         significand = self.significand
         if self.e_biased == 0:
             ieee_exponent = self.fmt.e_max * 2 + 1
@@ -3172,6 +3181,7 @@ local_context = LocalContext
 #
 
 log2_10 = log2(10)
+host_endianness = 'little' if Struct('<d').pack(-0.0)[0] == 0 else 'big'
 
 IEEEhalf = BinaryFormat.from_IEEE(16)
 IEEEsingle = BinaryFormat.from_IEEE(32)

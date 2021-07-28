@@ -7,6 +7,7 @@ from math import isfinite
 from fractions import Fraction
 from functools import partial
 from itertools import product
+from struct import pack
 
 import pytest
 
@@ -17,6 +18,7 @@ HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
 all_IEEE_fmts = (IEEEhalf, IEEEsingle, IEEEdouble, IEEEquad)
 all_roundings = (ROUND_CEILING, ROUND_FLOOR, ROUND_DOWN, ROUND_UP,
                  ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_HALF_DOWN)
+native = 'little' if pack('d', -0.0)[-1] == 0x80 else 'big'
 
 
 boolean_codes = {
@@ -2255,10 +2257,10 @@ class TestUnaryOps:
         assert floats_equal(result, answer)
         assert context.flags == status
 
-    @pytest.mark.parametrize('endianness', ('big', 'little'))
+    @pytest.mark.parametrize('endianness', ('big', 'little', None))
     def test_pack_unpack_round_trip(self, endianness):
         for value in range(0, 65536):
-            binary = value.to_bytes(2, endianness)
+            binary = value.to_bytes(2, endianness or native)
             parts = IEEEhalf.unpack(binary, endianness)
             packed_value = IEEEhalf.pack(*parts, endianness)
             assert binary == packed_value
@@ -2326,9 +2328,11 @@ class TestUnaryOps:
         le_packing = value.pack('little')
         assert bytes(reversed(result)) == le_packing
         # Test big-endian unpacking
-        assert floats_equal(value,  value.fmt.unpack_value(result, 'big'))
+        assert floats_equal(value, value.fmt.unpack_value(result, 'big'))
         # Test little-endian unpacking
-        assert floats_equal(value,  value.fmt.unpack_value(le_packing, 'little'))
+        assert floats_equal(value, value.fmt.unpack_value(le_packing, 'little'))
+        assert floats_equal(value.fmt.unpack_value(le_packing, native),
+                            value.fmt.unpack_value(le_packing, None))
 
 
 def min_max_op(line, operation):

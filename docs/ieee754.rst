@@ -246,11 +246,12 @@ You can also create your own binary formats with the constructors
 
      Convert from a :class:`Fraction` object of the :mod:`fractions` module.
 
-  .. method:: unpack_value(raw, endianness='little')
+  .. method:: unpack_value(raw, endianness=None)
 
      Convert from a packed binary encoding *raw* of a value of this format.  *endiannness*
-     is the byte order of the encoding; valid values are 'little' and 'big'.  Conversion
-     is necessarily exact so there is no *context* parameter.
+     is the byte order of the encoding, valid values are 'little', 'big' and :const:`None`
+     which will use the native endianness of the host machine.  Conversion is necessarily
+     exact so there is no *context* parameter.
 
   The following operations take operands of arbitrary binary formats, and deliver a result
   in this format.  The *context* parameter controls the rounding and exception handling,
@@ -282,11 +283,11 @@ You can also create your own binary formats with the constructors
 
      Return the square root of *value*.
 
-  .. method:: pack(sign, exponent, significand, endianness='little')
+  .. method:: pack(sign, exponent, significand, endianness=None)
 
      TODO
 
-  .. method:: unpack(sign, exponent, significand, endianness='little')
+  .. method:: unpack(sign, exponent, significand, endianness=None)
 
      TODO
 
