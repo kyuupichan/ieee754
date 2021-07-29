@@ -177,6 +177,9 @@ C S 0x1.7e5p0 S 0x1.3bbp0 S 0x1.0p-25 S I 0x1.d77348p0
 E S 0x1p-128 S 0x1p-128 S 1 S I 1
 C S 0x1p-128 S 0x1p-128 S 1 S I 0x1.000002p0
 
+E S 0x0.000002p-126 S 0x0.000002p-126 S 1 S I 1
+E S 0x1.fffffep+127 S 0x1.fffffep+127 H 1 D I 0x1.fffffc0000020p+255
+
 E D 0x1.fffff5fc5cfecp-128 D 0x1.fffff5fc5cfecp-128 D 12 D I 12
 
 # Generated cases

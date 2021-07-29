@@ -1163,15 +1163,14 @@ class BinaryFormat(NamedTuple):
 
     def add(self, lhs, rhs, context=None):
         '''Return the sum LHS + RHS in this format.'''
-        return self._add_sub((OP_ADD, lhs, rhs), context)
+        return self._add_sub((OP_ADD, lhs, rhs), lhs, rhs, False, context)
 
     def subtract(self, lhs, rhs, context=None):
         '''Return the difference LHS - RHS in this format.'''
-        return self._add_sub((OP_SUBTRACT, lhs, rhs), context)
+        return self._add_sub((OP_SUBTRACT, lhs, rhs), lhs, rhs, True, context)
 
-    def _add_sub(self, op_tuple, context):
+    def _add_sub(self, op_tuple, lhs, rhs, is_subtract, context):
         context = context or get_context()
-        op_name, lhs, rhs = op_tuple
 
         # Handle either being non-finite
         if lhs.e_biased == 0 or rhs.e_biased == 0:
@@ -1183,9 +1182,9 @@ class BinaryFormat(NamedTuple):
             if lhs.significand == 0:
                 # infinity + finite -> infinity
                 if rhs.is_finite():
-                    return self.make_infinity(lhs.sign ^ (op_name == OP_SUBTRACT and flipped))
+                    return self.make_infinity(lhs.sign ^ (is_subtract and flipped))
                 if rhs.significand == 0:
-                    if (op_name == OP_SUBTRACT) == (lhs.sign == rhs.sign):
+                    if is_subtract == (lhs.sign == rhs.sign):
                         # Subtraction of like-signed infinities is an invalid op
                         return InvalidAdd(op_tuple, self).signal(context)
                     # Addition of like-signed infinites preserves its sign
@@ -1196,7 +1195,7 @@ class BinaryFormat(NamedTuple):
 
         # Both operations are finite.  Determine if the operation on the absolute values
         # is effectively an addition or subtraction of shifted significands.
-        is_sub = (op_name == OP_SUBTRACT) ^ lhs.sign ^ rhs.sign
+        is_sub = is_subtract ^ lhs.sign ^ rhs.sign
         sign = lhs.sign
 
         # How much the LHS significand needs to be shifted left for exponents to match
@@ -1488,21 +1487,20 @@ class BinaryFormat(NamedTuple):
         if any(value.is_nan() for value in (lhs, rhs, addend)):
             return self._propagate_nan(op_tuple, context)
 
+        # Note we cannot, in general, defer to the multiply below, because any substituted
+        # result would then be added.  The FMA as a whole must be a single atomic
+        # operation.
         if (lhs.is_zero() and rhs.is_infinite()) or (rhs.is_zero() and lhs.is_infinite()):
             return InvalidFMA(op_tuple, self).signal(context)
 
         # Perform the multiplication in a format where it is exact and there are no
-        # subnormals.  Then the only invalid operation can be signalled.
+        # subnormals.  Then there can be no signals.
         product_fmt = BinaryFormat.from_triple(lhs.fmt.precision + rhs.fmt.precision,
                                                lhs.fmt.e_max + rhs.fmt.e_max + 1,
                                                lhs.fmt.e_min - (lhs.fmt.precision - 1)
                                                + rhs.fmt.e_min - (rhs.fmt.precision - 1))
-        # FIXME: when tests are complete, use context not product_context
-        product_context = Context()
-        product = product_fmt.multiply(lhs, rhs, product_context)
-        assert not product_context.flags
-
-        return self.add(product, addend, context)
+        product = product_fmt.multiply(lhs, rhs, context)
+        return self._add_sub(op_tuple, product, addend, False, context)
 
 
 BinaryFormat._converters = {

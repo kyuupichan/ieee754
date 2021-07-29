@@ -2563,3 +2563,57 @@ class TestFMA:
         assert result.fmt is dst_fmt
         assert floats_equal(result, answer)
         assert context.flags == status
+
+    def test_fma_op_tuple(self):
+        # Test the op_tuple is an OP_FMA one and not an OP_ADD one
+        context = Context()
+        context.set_handler(Inexact, HandlerKind.RAISE)
+        zero = IEEEhalf.make_zero(False)
+        epsilon = IEEEdouble.make_smallest_normal(False)
+        with pytest.raises(Inexact) as e:
+            IEEEhalf.fma(zero, zero, epsilon, context)
+        assert e.value.op_tuple == (OP_FMA, zero, zero, epsilon)
+
+    def test_fma_sNaNs(self, context):
+        snan = IEEEhalf.make_nan(False, True, 1)
+        epsilon = IEEEhalf.make_smallest_normal(False)
+        with pytest.raises(Invalid) as e:
+            IEEEhalf.fma(epsilon, epsilon, snan, context)
+        assert e.value.op_tuple == (OP_FMA, epsilon, epsilon, snan)
+        assert e.value.default_result.is_nan() and not e.value.default_result.is_signalling()
+        # Not inexact
+        assert context.flags == Flags.INVALID
+
+        context.flags = 0
+        with pytest.raises(Invalid) as e:
+            IEEEhalf.fma(snan, epsilon, epsilon, context)
+        assert e.value.op_tuple == (OP_FMA, snan, epsilon, epsilon)
+        assert context.flags == Flags.INVALID
+        assert e.value.default_result.is_nan() and not e.value.default_result.is_signalling()
+
+    def test_fma_invalid(self, context):
+        def handler(exception, context):
+            assert exception.op_tuple == (OP_FMA, zero, inf, one)
+            assert exception.default_result.is_nan()
+            return one
+
+        context.set_handler(InvalidFMA, HandlerKind.SUBSTITUTE_VALUE, handler)
+        zero = IEEEhalf.make_zero(False)
+        one = IEEEhalf.make_one(False)
+        inf = IEEEhalf.make_infinity(True)
+        result = IEEEhalf.fma(zero, inf, one, context)
+        # Result is -1; no addition happens
+        assert context.flags == Flags.INVALID
+        assert result is one
+
+    def test_fma_invalid_xor(self, context):
+        def handler(exception, context):
+            assert False
+
+        context.set_handler(InvalidFMA, HandlerKind.SUBSTITUTE_VALUE_XOR, handler)
+        zero = IEEEhalf.make_zero(False)
+        one = IEEEhalf.make_one(False)
+        inf = IEEEhalf.make_infinity(True)
+        result = IEEEhalf.fma(zero, inf, one, context)
+        assert context.flags == Flags.INVALID
+        assert result.is_nan()
