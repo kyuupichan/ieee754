@@ -1635,7 +1635,8 @@ class TestGeneralNonComputationalOps:
         assert not value.is_subnormal()
         assert not value.is_infinite()
         assert not value.is_nan()
-        assert not value.is_signalling()
+        assert not value.is_qnan()
+        assert not value.is_snan()
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
@@ -1658,7 +1659,8 @@ class TestGeneralNonComputationalOps:
         assert not value.is_subnormal()
         assert value.is_infinite()
         assert not value.is_nan()
-        assert not value.is_signalling()
+        assert not value.is_qnan()
+        assert not value.is_snan()
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
@@ -1687,7 +1689,8 @@ class TestGeneralNonComputationalOps:
         assert not value.is_subnormal()
         assert not value.is_infinite()
         assert value.is_nan()
-        assert value.is_signalling() is is_signalling
+        assert value.is_qnan() is not is_signalling
+        assert value.is_snan() is is_signalling
         assert value.is_canonical()
         assert not value.is_finite_non_zero()
         assert value.radix() == 2
@@ -1743,7 +1746,8 @@ class TestGeneralNonComputationalOps:
             assert value.is_finite()
             assert not value.is_infinite()
             assert not value.is_nan()
-            assert not value.is_signalling()
+            assert not value.is_qnan()
+            assert not value.is_snan()
             assert value.is_canonical()
             assert value.is_finite_non_zero()
             assert value.radix() == 2
@@ -2277,7 +2281,7 @@ class TestUnaryOps:
         for hex_str in ('7fffc000000000000000', '7fff4000000000000000'):
             value = x87extended.unpack_value(bytes.fromhex(hex_str), 'big')
             assert value.is_nan()
-            assert not value.is_signalling()
+            assert not value.is_snan()
             assert value.nan_payload() == 0
 
         # 7fff8000000000000000 is the canonical representation of +Inf with integer bit
@@ -2508,7 +2512,7 @@ class TestBinaryOps:
             # Test the quiet form:
             op_name = f'compare_{op}'
             op_result = answer_code in true_set
-            op_status = Flags.INVALID if lhs.is_signalling() or rhs.is_signalling() else 0
+            op_status = Flags.INVALID if lhs.is_snan() or rhs.is_snan() else 0
             context = Context()
             result = getattr(lhs, op_name)(rhs, context)
             assert result == op_result
@@ -2580,7 +2584,7 @@ class TestFMA:
         with pytest.raises(Invalid) as e:
             IEEEhalf.fma(epsilon, epsilon, snan, context)
         assert e.value.op_tuple == (OP_FMA, epsilon, epsilon, snan)
-        assert e.value.default_result.is_nan() and not e.value.default_result.is_signalling()
+        assert e.value.default_result.is_qnan()
         # Not inexact
         assert context.flags == Flags.INVALID
 
@@ -2589,7 +2593,7 @@ class TestFMA:
             IEEEhalf.fma(snan, epsilon, epsilon, context)
         assert e.value.op_tuple == (OP_FMA, snan, epsilon, epsilon)
         assert context.flags == Flags.INVALID
-        assert e.value.default_result.is_nan() and not e.value.default_result.is_signalling()
+        assert e.value.default_result.is_qnan()
 
     def test_fma_invalid(self, context):
         def handler(exception, context):

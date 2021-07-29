@@ -188,7 +188,7 @@ class TextFormat:
         else:
             # NaNs
             special = self.qnan
-            if value.is_signalling():
+            if value.is_snan():
                 if self.snan:
                     special = self.snan
                 else:
@@ -820,7 +820,7 @@ class BinaryFormat(NamedTuple):
             nan = nans[0]
 
         result = self.make_nan(nan.sign, False, nan.nan_payload())
-        if any(nan.is_signalling() for nan in nans):
+        if any(nan.is_snan() for nan in nans):
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
 
@@ -954,10 +954,10 @@ class BinaryFormat(NamedTuple):
         if value.significand:
             # NaNs
             if preserve_snan:
-                return self.make_nan(value.sign, value.is_signalling(), value.nan_payload())
+                return self.make_nan(value.sign, value.is_snan(), value.nan_payload())
 
             result = self.make_nan(value.sign, False, value.nan_payload())
-            if value.is_signalling():
+            if value.is_snan():
                 result = SignallingNaNOperand(op_tuple, result).signal(context)
             return result
 
@@ -1659,7 +1659,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Return True if this is a NaN of any kind.'''
         return self.e_biased == 0 and self.significand
 
-    def is_signalling(self):
+    def is_qnan(self):
+        '''Return True if and only if this is a quiet NaN.'''
+        return self.e_biased == 0 and (self.significand & self.fmt.quiet_bit)
+
+    def is_snan(self):
         '''Return True if and only if this is a signalling NaN.'''
         return self.is_nan() and not (self.significand & self.fmt.quiet_bit)
 
@@ -2239,8 +2243,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         result = self._compare_quiet(rhs, False)
         # Comparisons involving at least one NaN.
-        if result == Compare.UNORDERED and (signalling or self.is_signalling()
-                                            or rhs.is_signalling()):
+        if result == Compare.UNORDERED and (signalling or self.is_snan() or rhs.is_snan()):
             context = context or get_context()
             op_tuple = (OP_COMPARE, self, rhs)
             cls = InvalidComparison if signalling else SignallingNaNOperand
@@ -2334,8 +2337,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                 if self.is_nan():
                     if self.sign != rhs.sign:
                         return self.sign
-                    if self.is_signalling() != rhs.is_signalling():
-                        return self.is_signalling() ^ self.sign
+                    if self.is_snan() != rhs.is_snan():
+                        return self.is_snan() ^ self.sign
                     if self.nan_payload() < rhs.nan_payload():
                         return not self.sign
                     if self.nan_payload() > rhs.nan_payload():
@@ -2378,8 +2381,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             result = self
         else:
             result = rhs
-        if self.is_signalling() or rhs.is_signalling():
-            if result.is_signalling():
+        if self.is_snan() or rhs.is_snan():
+            if result.is_snan():
                 result = result.fmt.make_nan(result.sign, False, result.nan_payload())
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
@@ -2576,21 +2579,21 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def __abs__(self):
         '''Return this value with sign False (positive).'''
-        if self.is_signalling():
+        if self.is_snan():
             op_tuple = (OP_ABS, self)
             return self.fmt._propagate_nan(op_tuple)
         return self.set_sign(False)
 
     def __neg__(self):
         '''Return this value with the opposite sign (unary minus).'''
-        if self.is_signalling():
+        if self.is_snan():
             op_tuple = (OP_MINUS, self)
             return self.fmt._propagate_nan(op_tuple)
         return self.set_sign(not self.sign)
 
     def __pos__(self):
         '''Return this value (unary plus).'''
-        if self.is_signalling():
+        if self.is_snan():
             op_tuple = (OP_PLUS, self)
             return self.fmt._propagate_nan(op_tuple)
         return self
