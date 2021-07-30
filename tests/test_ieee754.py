@@ -1473,6 +1473,21 @@ class TestBinaryFormat:
         with pytest.raises(TypeError):
             IEEEdouble.from_string(b'')
 
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_from_string_stripping(self, fmt):
+        assert fmt.from_string('  _1_00__ ') == fmt.from_int(100)
+        assert fmt.from_string(' _0_X_1A_P0_ ') == fmt.from_int(26)
+
+    @pytest.mark.parametrize('fmt, string', product(all_IEEE_fmts, ('_ 1 _', '0x0', 'l')))
+    def test_from_string_bad(self, fmt, string, context):
+        with pytest.raises(InvalidFromString) as e:
+            fmt.from_string(string, context)
+        assert e.value.op_tuple == (OP_FROM_STRING, string)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_from_string_unicode(self, fmt):
+        assert fmt.from_string(' ０x１＿０２p0 ') == fmt.from_int(0x102)
+
     def test_repr(self):
         assert repr(IEEEdouble) == 'BinaryFormat(precision=53, e_max=1023, e_min=-1022)'
 
@@ -2019,8 +2034,11 @@ class TestUnaryOps:
         parts = line.split()
         if len(parts) == 1:
             hex_str, = parts
-            with pytest.raises(SyntaxError):
-                IEEEsingle.from_string(hex_str, Context())
+            context = Context()
+            context.set_handler(Invalid, HandlerKind.RAISE)
+            with pytest.raises(InvalidFromString) as e:
+                IEEEsingle.from_string(hex_str, context)
+            assert e.value.op_tuple == (OP_FROM_STRING, hex_str)
         elif len(parts) in (5, 7):
             fmt, context, test_str, status = parts[:4]
             fmt = format_codes[fmt]

@@ -1025,6 +1025,35 @@ TextFormat objects
 String Syntax
 =============
 
+:meth:`BinaryFormat.from_string` accepts a broad class of strings.  After removing leading
+and trailing whitespace, and underscores throughout, it should conform to the following
+syntax::
+
+      sign            ::=  '+' | '-'
+      digit           ::=  '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+      hex-digit       ::=  digit | 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
+      dec-exp-char    ::=  'e'
+      hex-exp-char    ::=  'p'
+      hex-specifier   ::=  '0x'
+      nan-specifier   ::=  'nan' | 'snan'
+      infinity        ::=  'infinity' | 'inf'
+      exponent        ::=  [sign] digits
+      digits          ::=  digit [digit]...
+      hex-digits      ::=  hex-digit [hex-digit]...
+      dec-significand ::=  digits '.' [digits] | ['.'] digits
+      hex-significand ::=  hex-digits '.' [hex-digits] | ['.'] hex-digits
+      dec-exponent    ::=  dec-exp-char exponent
+      hex-exponent    ::=  hex-exp-char exponent
+      nan-payload     ::=  hex-specifier hex-digits | digits
+      nan             ::=  nan-specifier [nan-payload]
+      dec-value       ::=  dec-significand [dec-exponent]
+      hex-value       ::=  hex-significand hex-exponent
+      numeric-value   ::=  hex-specifier hex-value | dec-value
+      numeric-string  ::=  [sign] numeric-value | [sign] nan | [sign] infinity
+
+Case is ignored and other Unicode decimal digits are permitted where ASCII digits appear
+above.
+
 
 .. _Operation Names:
 

@@ -14,6 +14,7 @@ from fractions import Fraction
 from math import ceil, floor, log2, sqrt
 from typing import NamedTuple
 from struct import Struct
+from unicodedata import normalize
 
 import attr
 
@@ -24,7 +25,7 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'IEEEError', 'Invalid', 'DivisionByZero', 'Inexact', 'Overflow', 'Underflow',
            'SignallingNaNOperand', 'InvalidAdd', 'InvalidMultiply', 'InvalidDivide',
            'InvalidSqrt', 'InvalidFMA', 'InvalidRemainder', 'InvalidLogBIntegral',
-           'InvalidConvertToInteger', 'InvalidComparison', 'InvalidToString',
+           'InvalidConvertToInteger', 'InvalidComparison', 'InvalidFromString', 'InvalidToString',
            'DivideByZero', 'LogBZero', 'UnderflowExact', 'UnderflowInexact',
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
@@ -422,6 +423,10 @@ class InvalidSqrt(Invalid):
 
 class InvalidToString(Invalid):
     '''Signalled if to_string() converts a singalling NaN to a quiet NaN.'''
+
+
+class InvalidFromString(Invalid):
+    '''Signalled if from_string() is passed a syntactically invalid string.'''
 
 
 class InvalidConvertToInteger(Invalid):
@@ -1126,6 +1131,8 @@ class BinaryFormat(NamedTuple):
             raise TypeError('from_string requires a string')
 
         op_tuple = (OP_FROM_STRING, string)
+        # Canonicalize, remove leading and trailing whitespace, then underscores, lower-case
+        string = normalize('NFKC', string).strip().replace('_', '')
         if HEX_SIGNIFICAND_PREFIX.match(string):
             return self._from_hex_significand_string(op_tuple, string, context)
         return decimal_to_binary.convert(op_tuple, self, string, context)
@@ -1136,7 +1143,7 @@ class BinaryFormat(NamedTuple):
         '''
         match = HEX_SIGNIFICAND_REGEX.match(string)
         if match is None:
-            raise SyntaxError(f'invalid hexadecimal float: {string}')
+            return InvalidFromString(op_tuple, self).signal(context)
 
         sign = string[0] == '-'
         groups = match.groups()
@@ -2804,7 +2811,7 @@ class DecimalToBinary:
         '''
         match = DEC_FLOAT_REGEX.match(string)
         if match is None:
-            raise SyntaxError(f'invalid floating point number: {string}')
+            return InvalidFromString(op_tuple, self).signal(context)
 
         sign = string[0] == '-'
         groups = match.groups()
@@ -3211,7 +3218,7 @@ x87single = BinaryFormat.from_pair(24, 15)
 decimal_to_binary = DecimalToBinary()
 _positive_zero = IEEEdouble.make_zero(False)
 
-HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.ASCII | re.IGNORECASE)
+HEX_SIGNIFICAND_PREFIX = re.compile('[-+]?0x', re.IGNORECASE)
 HEX_SIGNIFICAND_REGEX = re.compile(
     # sign[opt] hex-sig-prefix
     '[-+]?0x'
@@ -3219,7 +3226,7 @@ HEX_SIGNIFICAND_REGEX = re.compile(
     '(([0-9a-f]*)\\.([0-9a-f]+)|([0-9a-f]+)\\.?)'
     # p exp-sign[opt]dec-exponent
     'p([-+]?[0-9]+)$',
-    re.ASCII | re.IGNORECASE
+    re.IGNORECASE
 )
 DEC_FLOAT_REGEX = re.compile(
     # sign[opt]
@@ -3232,5 +3239,5 @@ DEC_FLOAT_REGEX = re.compile(
     '(inf(inity)?)|'
     # nan-or-snan hex-payload-or-dec-payload[opt]
     '((s?)nan((0x[0-9a-f]+)|([0-9]+))?))$',
-    re.ASCII | re.IGNORECASE
+    re.IGNORECASE
 )
