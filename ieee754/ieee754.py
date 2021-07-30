@@ -33,8 +33,8 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
            'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE',
            'OP_CONVERT', 'OP_CONVERT_TO_INTEGER', 'OP_CONVERT_TO_INTEGER_EXACT',
-           'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT',
-           'OP_FROM_INT', 'OP_FROM_FLOAT', 'OP_FROM_STRING',
+           'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT', 'OP_UNPACK_VALUE',
+           'OP_FROM_INT', 'OP_FROM_FLOAT', 'OP_FROM_STRING', 'OP_FROM_DECIMAL', 'OP_FROM_FRACTION',
            'OP_TO_STRING', 'OP_TO_DECIMAL_STRING',
            'OP_MAX', 'OP_MAX_NUM', 'OP_MIN', 'OP_MIN_NUM', 'OP_MAX_MAG_NUM', 'OP_MAX_MAG',
            'OP_MIN_MAG_NUM', 'OP_MIN_MAG',
@@ -73,6 +73,7 @@ OP_NEXT_UP = 'next_up'
 OP_NEXT_DOWN = 'next_down'
 OP_COMPARE = 'compare'
 OP_CONVERT = 'convert'
+OP_UNPACK_VALUE = 'unpack_value'
 OP_ROUND_TO_INTEGRAL = 'round_to_integral'
 OP_ROUND_TO_INTEGRAL_EXACT = 'round_to_integral_exact'
 OP_CONVERT_TO_INTEGER = 'convert_to_integer'
@@ -80,6 +81,8 @@ OP_CONVERT_TO_INTEGER_EXACT = 'convert_to_integer_exact'
 OP_FROM_FLOAT = 'from_float'
 OP_FROM_INT = 'from_int'
 OP_FROM_STRING = 'from_string'
+OP_FROM_DECIMAL = 'from_decimal'
+OP_FROM_FRACTION = 'from_fraction'
 OP_TO_STRING = 'to_string'
 OP_TO_DECIMAL_STRING = 'to_decimal_string'
 OP_MAX = 'max'
@@ -935,8 +938,6 @@ class BinaryFormat(NamedTuple):
 
         If value is a signalling NaN and preserve_snan is false, signal
         SignallingNaNOperand and return a quiet NaN.'''
-        context = context or get_context()
-
         if value.e_biased:
             # Avoid expensive normalisation to same format; copy and check for subnormals
             if value.fmt is self:
@@ -974,7 +975,7 @@ class BinaryFormat(NamedTuple):
         if isinstance(value, Binary):
             return value
         if isinstance(value, float):
-            return IEEEdouble_from_float(value)
+            return IEEEdouble_from_float_quiet(value)
         if isinstance(value, int):
             return self.from_int(value)
         return None
@@ -1038,7 +1039,18 @@ class BinaryFormat(NamedTuple):
 
         return BinaryTuple(sign, exponent, significand)
 
-    def unpack_value(self, raw, endianness=None):
+    def unpack_value(self, raw, endianness=None, context=None):
+        '''Decode a binary encoding and return a Binary floating point value.  Might signal
+        UnderflowExact.
+
+        Endianness can be 'big' or 'little'.  If None, host-native endianness is used.'''
+        result = self._unpack_value_quiet(raw, endianness)
+        if result.is_subnormal():
+            op_tuple = (OP_UNPACK_VALUE, raw, endianness)
+            result = UnderflowExact(op_tuple, result).signal(context)
+        return result
+
+    def _unpack_value_quiet(self, raw, endianness=None):
         '''Decode a binary encoding and return a Binary floating point value.
 
         Endianness can be 'big' or 'little'.  If None, host-native endianness is used.'''
@@ -1052,9 +1064,9 @@ class BinaryFormat(NamedTuple):
 
         return Binary(self, sign, exponent, significand)
 
-    def _unpack_value(self, binary, _context):
+    def _unpack_value_native(self, binary, context):
         '''unpack_value but takes a context for from_value dispatch.'''
-        return self.unpack_value(binary)
+        return self.unpack_value(binary, None, context)
 
     ##
     ## General computational operations.  The operand(s) can be different formats;
@@ -1073,15 +1085,17 @@ class BinaryFormat(NamedTuple):
         '''Return the decimal converted to this format, rounding if necessary.'''
         if not isinstance(value, Decimal):
             raise TypeError('from_decimal requires a Decimal instance')
-        return self.from_string(str(value), context)
+        op_tuple = (OP_FROM_DECIMAL, value)
+        return decimal_to_binary.convert(op_tuple, self, str(value), context)
 
     def from_fraction(self, value, context=None):
         '''Return the decimal converted to this format, rounding if necessary.'''
         if not isinstance(value, Fraction):
             raise TypeError('from_fraction requires a Fraction instance')
+        op_tuple = (OP_FROM_FRACTION, value)
         numerator = self._from_int_exact(value.numerator)
         denominator = self._from_int_exact(value.denominator)
-        return self.divide(numerator, denominator, context)
+        return self._divide_finite(numerator, denominator, op_tuple, context)
 
     @classmethod
     def _from_int_exact(cls, value):
@@ -1102,9 +1116,7 @@ class BinaryFormat(NamedTuple):
         '''Return the float value converted to this format, rounding if necessary.'''
         if not isinstance(value, float):
             raise TypeError('from_float requires a float')
-        result = IEEEdouble_from_float(value)
-        if self is IEEEdouble:
-            return result
+        result = IEEEdouble_from_float_quiet(value)
         op_tuple = (OP_FROM_FLOAT, value)
         return self._convert(result, op_tuple, context, True)
 
@@ -1113,15 +1125,15 @@ class BinaryFormat(NamedTuple):
         if not isinstance(string, str):
             raise TypeError('from_string requires a string')
 
+        op_tuple = (OP_FROM_STRING, string)
         if HEX_SIGNIFICAND_PREFIX.match(string):
-            return self._from_hex_significand_string(string, context)
-        return decimal_to_binary.convert(self, string, context)
+            return self._from_hex_significand_string(op_tuple, string, context)
+        return decimal_to_binary.convert(op_tuple, self, string, context)
 
-    def _from_hex_significand_string(self, string, context):
+    def _from_hex_significand_string(self, op_tuple, string, context):
         '''Convert a string with hexadecimal significand to a rounded floating number of this
         format.
         '''
-        op_tuple = (OP_FROM_STRING, string)
         match = HEX_SIGNIFICAND_REGEX.match(string)
         if match is None:
             raise SyntaxError(f'invalid hexadecimal float: {string}')
@@ -1403,7 +1415,7 @@ class BinaryFormat(NamedTuple):
         n = 1
         while True:
             print(n, "EST", est.as_tuple(), est)
-            assert est.significand
+            assert est.significand     # FIXME: needn't hold
 
             nearest_context.flags = 0
             div = self.divide(value, est, nearest_context)
@@ -1507,9 +1519,9 @@ BinaryFormat._converters = {
     int: BinaryFormat.from_int,
     float: BinaryFormat.from_float,
     str: BinaryFormat.from_string,
-    bytes: BinaryFormat._unpack_value,
-    bytearray: BinaryFormat._unpack_value,
-    memoryview: BinaryFormat._unpack_value,
+    bytes: BinaryFormat._unpack_value_native,
+    bytearray: BinaryFormat._unpack_value_native,
+    memoryview: BinaryFormat._unpack_value_native,
     Decimal: BinaryFormat.from_decimal,
     Fraction: BinaryFormat.from_fraction,
 }
@@ -2420,10 +2432,12 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self._max_min(MinMaxFlags.MIN | MinMaxFlags.MAG | MinMaxFlags.NUM, rhs, context)
 
     def __repr__(self):
-        return self.to_string()
+        return str(self)
 
     def __str__(self):
-        return self.to_string()
+        # Pass a temporary context to avoid polluting the default context, and infinite
+        # loops printing exceptions
+        return self.to_string(context=Context())
 
     def to_string(self, text_format=None, context=None):
         '''Return text, with a hexadecimal significand for finite numbers, that is a
@@ -2778,7 +2792,7 @@ class DecimalToBinary:
         self.pow5_err = pow5_err
         self.pow5_recip_err = pow5_recip_err
 
-    def convert(self, fmt, string, context):
+    def convert(self, op_tuple, fmt, string, context):
         '''Converts a string with a hexadecimal significand to a floating number of the
         required format.
 
@@ -2795,7 +2809,6 @@ class DecimalToBinary:
         sign = string[0] == '-'
         groups = match.groups()
         context = context or get_context()
-        op_tuple = (OP_FROM_STRING, string)
 
         # Decimal float?
         if groups[1] is not None:
@@ -3081,9 +3094,9 @@ def round_up(rounding, lost_fraction, sign, is_odd):
         return lost_fraction != LF_LESS_THAN_HALF
 
 
-def IEEEdouble_from_float(value):
+def IEEEdouble_from_float_quiet(value):
     '''Return an IEEEdouble converted from a Python float value.'''
-    return IEEEdouble.unpack_value(pack_double(value))
+    return IEEEdouble._unpack_value_quiet(pack_double(value))
 
 
 def compare_any_eq(value, other):
@@ -3102,7 +3115,7 @@ def compare_any(value, other):
     if isinstance(other, Binary):
         return value.compare(other)
     if isinstance(other, float):
-        return value.compare(IEEEdouble_from_float(other))
+        return value.compare(IEEEdouble_from_float_quiet(other))
     if isinstance(other, Decimal):
         # Deal with infinites and NaNs only here.  Let finite decimals fall through.
         if other.is_nan():

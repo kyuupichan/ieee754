@@ -1207,6 +1207,107 @@ class TestUnderflow:
             assert context.flags == Flags.UNDERFLOW | Flags.INEXACT  # Both have been signalled
         assert not context.exceptions
 
+    def test_ue_convert(self, quiet_context):
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        value = IEEEdouble.from_string('0x1.000000p-127')
+        with pytest.raises(UnderflowExact) as e:
+            IEEEsingle.convert(value, quiet_context)
+        assert e.value.op_tuple == (OP_CONVERT, value)
+
+
+    @pytest.mark.parametrize('string', ('0x1.000000p-15', '0.000030517578125'))
+    def test_ue_from_string(self, string, quiet_context):
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            IEEEhalf.from_string(string)
+        assert e.value.op_tuple == (OP_FROM_STRING, string)
+
+    @pytest.mark.parametrize('fmt', (IEEEhalf, IEEEsingle, IEEEdouble))
+    def test_ue_from_float(self, fmt, quiet_context):
+        value =  pow(2, fmt.e_min - 1)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.from_float(value)
+        assert e.value.op_tuple == (OP_FROM_FLOAT, value)
+
+    def test_ue_from_decimal(self, quiet_context):
+        value = Decimal('0.000030517578125')
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            IEEEhalf.from_decimal(value)
+        assert e.value.op_tuple == (OP_FROM_DECIMAL, value)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_from_fraction(self, fmt, quiet_context):
+        value = Fraction(1, 1 << fmt.e_max)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.from_fraction(value)
+        assert e.value.op_tuple == (OP_FROM_FRACTION, value)
+
+    def test_ue_unpack_value(self, quiet_context):
+        value = bytes((0, 2))
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            IEEEhalf.unpack_value(value, None, quiet_context)
+        assert e.value.op_tuple == (OP_UNPACK_VALUE, value, None)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_add(self, fmt, quiet_context):
+        lhs = fmt.make_zero(False)
+        rhs = fmt.make_smallest_subnormal(False)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.add(lhs, rhs, quiet_context)
+        assert e.value.op_tuple == (OP_ADD, lhs, rhs)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_subtract(self, fmt, quiet_context):
+        lhs = fmt.make_smallest_subnormal(False)
+        rhs = fmt.make_zero(False)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.subtract(lhs, rhs, quiet_context)
+        assert e.value.op_tuple == (OP_SUBTRACT, lhs, rhs)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_multiply(self, fmt, quiet_context):
+        lhs = fmt.make_smallest_subnormal(False)
+        rhs = fmt.make_one(False)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.multiply(lhs, rhs, quiet_context)
+        assert e.value.op_tuple == (OP_MULTIPLY, lhs, rhs)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_divide(self, fmt, quiet_context):
+        lhs = fmt.make_smallest_normal(False)
+        rhs = fmt.from_int(2)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.divide(lhs, rhs, quiet_context)
+        assert e.value.op_tuple == (OP_DIVIDE, lhs, rhs)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_fma(self, fmt, quiet_context):
+        lhs = fmt.make_smallest_normal(False)
+        rhs = fmt.make_one(False).scaleb(-1)
+        addend = fmt.make_zero(True)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.fma(lhs, rhs, addend, quiet_context)
+        assert e.value.op_tuple == (OP_FMA, lhs, rhs, addend)
+
+    @pytest.mark.parametrize('fmt', (IEEEhalf, IEEEsingle, IEEEdouble))
+    def test_ue_sqrt(self, fmt, quiet_context):
+        # To get an exact sqrt underflow we need a custom format
+        string = f'0x1.088p{fmt.e_min * 2 - 1}'
+        value = IEEEquad.from_string(string, quiet_context)
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            fmt.sqrt(value, quiet_context)
+        assert e.value.op_tuple == (OP_SQRT, value)
+
 
 class TestBinaryFormat:
 

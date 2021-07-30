@@ -57,6 +57,8 @@ Quick-start Tutorial
 To be written.
 
 
+.. _interchange format:
+
 BinaryFormat objects
 ====================
 
@@ -73,32 +75,33 @@ You can also create your own binary formats with the constructors
 
 .. data:: IEEEhalf
 
-   The IEEE-754 half-precision format is 16-bit binary interchange format with a precision
-   of 11 bits and an exponent width of 5 bits.
+   The IEEE-754 half-precision format is 16-bit binary `interchange format`_ with a
+   precision of 11 bits and an exponent width of 5 bits.
 
 
 .. data:: IEEEsingle
 
-   The IEEE-754 single-precision format is a 32-bit binary interchange format with a
+   The IEEE-754 single-precision format is a 32-bit binary `interchange format`_ with a
    precision of 24 bits and an exponent width of 8 bits.
 
 
 .. data:: IEEEdouble
 
-   The IEEE-754 double-precision format is a 64-bit binary interchange format with a
+   The IEEE-754 double-precision format is a 64-bit binary `interchange format`_ with a
    precision of 53 bits and an exponent width of 11 bits.
 
 
 .. data:: IEEEquad
 
-   The IEEE-754 quadruple-precision format is a 128-bit binary interchange format with a
-   precision of 113 bits and an exponent width of 15 bits.
+   The IEEE-754 quadruple-precision format is a 128-bit binary `interchange format`_ with
+   a precision of 113 bits and an exponent width of 15 bits.
 
 
 .. data:: x87extended
 
    This is the full-precision format used by Intel x87 compatible CPUs.  It is an 80-bit
-   binary interchange format with a precision of 64 bits and an exponent width of 15 bits.
+   binary `interchange format`_ with a precision of 64 bits and an exponent width of 15
+   bits.
 
    Since the format's integer bit is explicit, it admits extra non-canonical encodings
    (which Intel termed pseudo-NaNs, pseudo-infinities, pseudo-denormals and unnormals)
@@ -138,7 +141,7 @@ You can also create your own binary formats with the constructors
 
   .. attribute:: fmt_width
 
-     For binary interchange formats, the format width in bits, otherwise :const:`0`.
+     For a binary `interchange format`_, the format width in bits, otherwise :const:`0`.
 
   .. attribute:: logb_zero
   .. attribute:: logb_nan
@@ -246,16 +249,18 @@ You can also create your own binary formats with the constructors
 
      Convert from a :class:`Fraction` object of the :mod:`fractions` module.
 
-  .. method:: unpack_value(raw, endianness=None)
+  .. method:: unpack_value(raw, endianness=None, context=None)
 
-     Convert from a packed binary encoding *raw* of a value of this format.  *endiannness*
-     is the byte order of the encoding, valid values are 'little', 'big' and :const:`None`
-     which will use the native endianness of the host machine.  Conversion is necessarily
-     exact so there is no *context* parameter.
+     Convert from a packed binary encoding *raw* of a value of this `interchange format`_.
+     *endiannness* is the byte order of the encoding, valid values are 'little', 'big' and
+     :const:`None` which will use the native endianness of the host machine.  sNaNs are
+     preserved and Conversion is necessarily exact so only :exc:`UnderflowExact` can be
+     signalled.
 
   The following operations take operands of arbitrary binary formats, and deliver a result
   in this format.  The *context* parameter controls the rounding and exception handling,
-  as described by the documentation of :class:`Context`.
+  as described by the documentation of :class:`Context`.  Each operation signals at most
+  one exception.
 
   .. method:: add(lhs, rhs, context=None)
 
@@ -283,13 +288,27 @@ You can also create your own binary formats with the constructors
 
      Return the square root of *value*.
 
+  The following two methods convert to and from binary encodings and are only applicable
+  if the format is an `interchange format`_.
+
   .. method:: pack(sign, exponent, significand, endianness=None)
 
-     TODO
+     Encode the three parts of a floating point number to `bytes`.  *endiannness* is the
+     byte order of the encoding, valid values are 'little', 'big' and :const:`None` which
+     will use the native endianness of the host machine.  *exponent* is the biased
+     exponent in the IEEE sense, i.e., it is zero for zeroes and subnormals and e_max *
+     2 + 1 for NaNs and infinites.  *significand* must not include the integer bit.
 
-  .. method:: unpack(sign, exponent, significand, endianness=None)
+  .. method:: unpack(raw, endianness=None)
 
-     TODO
+     *raw* is a a binary encoding of a value; decode it and return a ``(sign, exponent,
+     significand)`` tuple.
+
+     *endiannness* is the byte order of the encoding, valid values are 'little', 'big' and
+     :const:`None` which will use the native endianness of the host machine.  *exponent*
+     is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and subnormals
+     and e_max * 2 + 1 for NaNs and infinites.  *significand* does not include the integer
+     bit.
 
 
 Binary objects
