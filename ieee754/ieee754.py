@@ -2660,6 +2660,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return compare == Compare.GREATER_THAN
 
     def __bool__(self):
+        '''Conversion to bool is a quiet operation.'''
         return not self.is_zero()
 
     def __int__(self):

@@ -319,9 +319,10 @@ directly, but through helper methods or class methods on the :class:`BinaryForma
 Once constructed, :class:`Binary` objects are immutable.
 
 Binary objects share many properties with other built-in numeric types such as `float` and
-`int`.  The usual mathematical operations and special methods apply.  Likewise Binary
-objects can be copied, pickled, printed, used as dictionary keys, used as set elements,
-compared, sorted and coerced to another type (such as `float` and `int`).
+`int`.  The usual mathematical operations and special methods apply; the thread's default
+context is used as the context.  Likewise Binary objects can be copied, pickled, printed,
+used as dictionary keys, used as set elements, compared, sorted and coerced to another
+type (such as `float` and `int`).  Conversion to `bool` is a quiet operation.
 
 Binary objects behave the same as `float` object for the ``%`` and ``//`` operators::
 
@@ -341,22 +342,6 @@ instance with any other numeric type.
 
 Unless noted otherwise :const:`NaN` operands are propagated as descibed in the section
 `NaN propagation`_.
-
-
-.. method:: __abs__:
-
-   Return the absolute value, i.e., with sign :const:`False`.
-
-
-.. method:: __neg__:
-
-   The unary minus operator - return the same value with opposite sign.
-
-
-.. method:: __pos__:
-
-   The unary plus operator - return the same value.
-
 
 
 

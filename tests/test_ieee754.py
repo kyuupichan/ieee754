@@ -1753,6 +1753,29 @@ class TestBinary:
             assert -third < -frac
         assert context.flags == 0
 
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_comparisons_unimplemented(self, fmt, context):
+        one = fmt.from_int(1)
+        with pytest.raises(TypeError):
+            one <= 'a'
+        with pytest.raises(TypeError):
+            one < 'a'
+        with pytest.raises(TypeError):
+            one > 'a'
+        with pytest.raises(TypeError):
+            one >= 'a'
+        assert not one == 'a'
+        assert one != 'a'
+
+    @pytest.mark.parametrize('fmt, sign', product(all_IEEE_fmts, (False, True)))
+    def test_bool(self, fmt, sign, context):
+        assert not bool(fmt.make_zero(sign))
+        assert bool(fmt.make_one(sign))
+        assert bool(fmt.make_infinity(sign))
+        assert bool(fmt.make_nan(sign, False, 0))
+        assert bool(fmt.make_nan(sign, True, 0))
+        assert context.flags == 0
+
 
 # Test basic class functions before reading test files
 class TestGeneralNonComputationalOps:
