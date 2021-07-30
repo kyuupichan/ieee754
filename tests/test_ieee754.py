@@ -1300,7 +1300,6 @@ class TestUnderflow:
 
     @pytest.mark.parametrize('fmt', (IEEEhalf, IEEEsingle, IEEEdouble))
     def test_ue_sqrt(self, fmt, quiet_context):
-        # To get an exact sqrt underflow we need a custom format
         string = f'0x1.088p{fmt.e_min * 2 - 1}'
         value = IEEEquad.from_string(string, quiet_context)
         quiet_context.set_handler(Underflow, HandlerKind.RAISE)
@@ -1539,27 +1538,36 @@ class TestBinary:
         pi =  IEEEdouble.from_string('3.141592653589793')
         assert pi.as_integer_ratio() == (884279719003555, 281474976710656)
 
-    def test_abs(self, context):
-        d = IEEEdouble.from_int(1)
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_abs(self, fmt, context):
+        d = fmt.from_int(1)
         assert abs(d) is d
 
-        e = IEEEdouble.from_int(-1)
+        e = fmt.from_int(-1)
         assert floats_equal(abs(e), d)
 
-        f = IEEEdouble.from_string('-NaN1')
-        g = IEEEdouble.from_string('NaN1')
-        assert floats_equal(abs(f), g)
+        f = fmt.from_string('-NaN1')
+        g = fmt.from_string('NaN1')
+        assert abs(f) is f
+        assert abs(g) is g
 
         context = get_context()
         assert context.flags == 0
 
-        h = IEEEdouble.from_string('-sNaN')
-        with pytest.raises(SignallingNaNOperand) as exc:
+        h = fmt.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as e:
             abs(h)
-        exc = exc.value
+        assert e.value.op_tuple == (OP_ABS, h)
         # The NaN is quietened; sign is not changed
-        assert floats_equal(exc.default_result, f)
+        assert floats_equal(e.value.default_result, f)
         assert context.flags == Flags.INVALID
+
+        s = fmt.make_smallest_subnormal(False)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            abs(s)
+        assert e.value.op_tuple == (OP_ABS, s)
+        assert e.value.default_result is s
 
     def test_copy_abs(self, context):
         d = IEEEdouble.from_int(1)
@@ -1577,28 +1585,35 @@ class TestBinary:
 
         assert get_context().flags == 0
 
-    def test_negate(self, context):
-        d = IEEEdouble.from_int(1)
-        e = IEEEdouble.from_int(-1)
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_negate(self, fmt, context):
+        d = fmt.from_int(1)
+        e = fmt.from_int(-1)
 
         assert floats_equal(-d, e)
         assert floats_equal(-e, d)
 
-        f = IEEEdouble.from_string('-NaN1')
-        g = IEEEdouble.from_string('NaN1')
-        assert floats_equal(-f, g)
-        assert floats_equal(-g, f)
+        f = fmt.from_string('-NaN1')
+        g = fmt.from_string('NaN1')
+        assert -f is f
+        assert -g is g
 
         context = get_context()
         assert context.flags == 0
 
-        h = IEEEdouble.from_string('-sNaN')
-        with pytest.raises(SignallingNaNOperand) as exc:
-            h = -h
-        exc = exc.value
+        h = fmt.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as e:
+            -h
+        assert e.value.op_tuple == (OP_MINUS, h)
         # The NaN is quietened; sign is not changed
-        assert floats_equal(exc.default_result, f)
+        assert floats_equal(e.value.default_result, f)
         assert context.flags == Flags.INVALID
+
+        s = fmt.make_smallest_subnormal(False)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            -s
+        assert e.value.op_tuple == (OP_MINUS, s)
 
     def test_copy_negate(self, context):
         d = IEEEdouble.from_int(1)
@@ -1621,28 +1636,37 @@ class TestBinary:
         assert floats_equal(h, k.copy_negate())
         assert context.flags == 0
 
-    def test_plus(self, context):
-        d = IEEEdouble.from_int(1)
-        e = IEEEdouble.from_int(-1)
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_plus(self, fmt, context):
+        d = fmt.from_int(1)
+        e = fmt.from_int(-1)
 
         assert +d is d
         assert +e is e
 
-        f = IEEEdouble.from_string('-NaN1')
-        g = IEEEdouble.from_string('NaN1')
+        f = fmt.from_string('-NaN1')
+        g = fmt.from_string('NaN1')
         assert +f is f
         assert +g is g
 
         context = get_context()
         assert context.flags == 0
 
-        k = IEEEdouble.from_string('-sNaN')
-        with pytest.raises(SignallingNaNOperand) as exc:
-            k = -k
-        exc = exc.value
+        k = fmt.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as e:
+            +k
+        assert e.value.op_tuple == (OP_PLUS, k)
         # The NaN is quietened; sign is not changed
-        assert floats_equal(exc.default_result, f)
+        assert floats_equal(e.value.default_result, f)
         assert context.flags == Flags.INVALID
+
+        s = fmt.make_smallest_subnormal(False)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            +s
+        assert e.value.op_tuple == (OP_PLUS, s)
+        assert e.value.default_result is s
+
 
     @pytest.mark.parametrize('text, rhs, compare', (
         # Comparisons of Infs

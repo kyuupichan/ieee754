@@ -827,7 +827,11 @@ class BinaryFormat(NamedTuple):
         else:
             nan = nans[0]
 
-        result = self.make_nan(nan.sign, False, nan.nan_payload())
+        if nan.fmt is self and not nan.is_snan():
+            result = nan
+        else:
+            result = self.make_nan(nan.sign, False, nan.nan_payload())
+
         if any(nan.is_snan() for nan in nans):
             result = SignallingNaNOperand(op_tuple, result).signal(context)
         return result
@@ -1803,6 +1807,15 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## format.
     ##
 
+    def _set_sign(self, op_tuple, sign):
+        '''Like set_sign but does not affect NaNs and not quiet.'''
+        if self.is_nan():
+            return self.fmt._propagate_nan(op_tuple)
+        result = self.set_sign(sign)
+        if result.is_subnormal():
+            result = UnderflowExact(op_tuple, result).signal(None)
+        return result
+
     def remainder(self, rhs, context=None):
         '''Set to the remainder when divided by rhs.
 
@@ -2599,25 +2612,16 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ##
 
     def __abs__(self):
-        '''Return this value with sign False (positive).'''
-        if self.is_snan():
-            op_tuple = (OP_ABS, self)
-            return self.fmt._propagate_nan(op_tuple)
-        return self.set_sign(False)
+        '''Return non-NaN values with sign False (positive).'''
+        return self._set_sign((OP_ABS, self), False)
 
     def __neg__(self):
         '''Return this value with the opposite sign (unary minus).'''
-        if self.is_snan():
-            op_tuple = (OP_MINUS, self)
-            return self.fmt._propagate_nan(op_tuple)
-        return self.set_sign(not self.sign)
+        return self._set_sign((OP_MINUS, self), not self.sign)
 
     def __pos__(self):
         '''Return this value (unary plus).'''
-        if self.is_snan():
-            op_tuple = (OP_PLUS, self)
-            return self.fmt._propagate_nan(op_tuple)
-        return self
+        return self._set_sign((OP_PLUS, self), self.sign)
 
     def __eq__(self, other):
         compare = compare_any_eq(self, other)
@@ -2720,13 +2724,13 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
-        return self.mod(self, other)
+        return self.mod(other)
 
     def __floordiv__(self, other):
         other = self.fmt.convert_for_arith(other)
         if other is None:
             return NotImplemented
-        return self.floordiv(self, other)
+        return self.floordiv(other)
 
     def __divmod__(self, other):
         other = self.fmt.convert_for_arith(other)

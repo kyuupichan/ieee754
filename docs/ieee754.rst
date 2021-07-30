@@ -315,7 +315,49 @@ Binary objects
 ==============
 
 A Binary object represents a binary floating-point value.  They should not be constructed
-directly, but through helper class methods on the :class:`BinaryFormat` class.
+directly, but through helper methods or class methods on the :class:`BinaryFormat` class.
+Once constructed, :class:`Binary` objects are immutable.
+
+Binary objects share many properties with other built-in numeric types such as `float` and
+`int`.  The usual mathematical operations and special methods apply.  Likewise Binary
+objects can be copied, pickled, printed, used as dictionary keys, used as set elements,
+compared, sorted and coerced to another type (such as `float` and `int`).
+
+Binary objects behave the same as `float` object for the ``%`` and ``//`` operators::
+
+  >>> -7.0 % 4.0
+  1.0
+  >>> -7.0 // 4.0
+  -2.0
+  >>> IEEEhalf.from_int(-7) % IEEEhalf.from_int(4)
+  0x1.000p+0
+  >>> IEEEhalf.from_int(-7) // IEEEhalf.from_int(4)
+  -0x1.000p+1
+
+Binary objects cannot generally be combined with instances of `decimal.Decimal` or
+`fractions.Fraction`, but they can be combined with instances of type `int` and `float`.
+However it is possible to use Python's comparison operators to compare a :class:`Binary`
+instance with any other numeric type.
+
+Unless noted otherwise :const:`NaN` operands are propagated as descibed in the section
+`NaN propagation`_.
+
+
+.. method:: __abs__:
+
+   Return the absolute value, i.e., with sign :const:`False`.
+
+
+.. method:: __neg__:
+
+   The unary minus operator - return the same value with opposite sign.
+
+
+.. method:: __pos__:
+
+   The unary plus operator - return the same value.
+
+
 
 
 Context objects
