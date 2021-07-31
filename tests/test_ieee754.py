@@ -1550,13 +1550,13 @@ class TestBinary:
         with pytest.raises(AttributeError):
             d.sign = True
 
-    @pytest.mark.parametrize('fmt, value', product(all_IEEE_fmts, signs))
+    @pytest.mark.parametrize('fmt, sign', product(all_IEEE_fmts, signs))
     def test_as_integer_ratio_inf(self, fmt, sign):
         with pytest.raises(OverflowError):
             fmt.make_infinity(sign).as_integer_ratio()
 
     @pytest.mark.parametrize('fmt, is_signalling', product(all_IEEE_fmts, signs))
-    def test_as_integer_ratio_inf(self, fmt, is_signalling):
+    def test_as_integer_ratio_nan(self, fmt, is_signalling):
         with pytest.raises(ValueError):
             fmt.make_nan(False, is_signalling, 0).as_integer_ratio()
 
@@ -1577,6 +1577,14 @@ class TestBinary:
     def test_as_integer_ratio_inexact(self):
         pi =  IEEEdouble.from_string('3.141592653589793')
         assert pi.as_integer_ratio() == (884279719003555, 281474976710656)
+
+    def test_copy_sign(self):
+        minus_one = IEEEdouble.from_int(-1)
+        two = IEEEdouble.from_int(2)
+        assert minus_one.copy_sign(two) == 1
+        assert two.copy_sign(minus_one) == -2
+        assert minus_one.copy_sign(minus_one) == -1
+        assert two.copy_sign(two) == 2
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_abs(self, fmt, context):
