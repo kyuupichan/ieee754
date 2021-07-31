@@ -1500,6 +1500,46 @@ class TestBinaryFormat:
 
 class TestBinary:
 
+    def test_constructor_type1(self):
+        with pytest.raises(TypeError):
+            Binary(1.0, False, 0, 0)
+
+    def test_constructor_type2(self):
+        with pytest.raises(TypeError):
+            Binary(IEEEdouble, 0, 0, 0)
+
+    def test_constructor_type3(self):
+        with pytest.raises(TypeError):
+            Binary(IEEEdouble, False, 0.0, 0)
+
+    def test_constructor_type4(self):
+        with pytest.raises(TypeError):
+            Binary(IEEEdouble, False, 0, 0.0)
+
+    def test_constructor_value1(self):
+        with pytest.raises(ValueError):
+            Binary(IEEEdouble, False, -1, 0)
+
+    def test_constructor_value2(self):
+        with pytest.raises(ValueError):
+            Binary(IEEEdouble, False, IEEEdouble.e_max + IEEEdouble.e_bias + 1, 0)
+
+    def test_constructor_value3(self):
+        with pytest.raises(ValueError):
+            Binary(IEEEdouble, False, 0, -1)
+
+    def test_constructor_value4(self):
+        with pytest.raises(ValueError):
+            Binary(IEEEdouble, False, 0, IEEEdouble.int_bit)
+
+    def test_constructor_value5(self):
+        with pytest.raises(ValueError):
+            Binary(IEEEdouble, False, 1, -1)
+
+    def test_constructor_value6(self):
+        with pytest.raises(ValueError):
+            Binary(IEEEdouble, False, 1, IEEEdouble.max_significand + 1)
+
     def test_repr_str(self):
         d = IEEEdouble.from_string('1.25')
         assert repr(d) == '0x1.4000000000000p+0'

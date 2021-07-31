@@ -1568,6 +1568,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''Validate and create a floating point number with the given format, sign, biased
         exponent and significand.
         '''
+        if not isinstance(fmt, BinaryFormat):
+            raise TypeError('fmt must be a BinaryFormat')
+        if not isinstance(sign, bool):
+            raise TypeError('sign must be a bool')
         if not isinstance(e_biased, int):
             raise TypeError('e_biased must be an integer')
         if not isinstance(significand, int):
