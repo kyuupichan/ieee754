@@ -579,9 +579,9 @@ class Context:
         self.exceptions = []
 
     def copy(self):
-        '''Return a (deep) copy of the context.'''
-        # A deep copy is needed because handlers and exceptions are mutable containers
-        return copy.deepcopy(self)
+        '''Return a copy of the context with each attribute shallow-copied.'''
+        return Context(self.rounding, self.flags, self.tininess_after, self.handlers.copy(),
+                       self.exceptions.copy())
 
     def set_handler(self, exc_classes, kind, handler=None):
         classes = (exc_classes, ) if not isinstance(exc_classes, (tuple, list)) else exc_classes

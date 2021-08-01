@@ -12,18 +12,18 @@
 The :mod:`ieee754` module provides support for arbitrary-precision binary floating point
 arithmetic.
 
-Its design revolves around four concepts: binary numbers, binary formats, the context for
+Its design revolves around four concepts: binary formats, binary numbers, the context for
 arithmetic, and signals.
 
+A binary format controls the exponent range and precision that values are stored in and
+that calculation results are delivered to.
+
 A binary number is immutable.  It has a format, sign, exponent and significand, and can
-hold special values such as :const:`Infinity`, :const:`NaN`, :const:`sNaN`.  It also
+hold special values such as :const:`Infinity`, :const:`NaN` and :const:`sNaN`.  It also
 distinguishes :const:`-0` from :const:`+0`.
 
-A binary format controls the exponent range and precision that the result of a calculation
-is delivered to.
-
 Arithmetic is done under the control of an environment called a `context`.  It specifies
-rounding rules, when tininess is detected, holds flags indicating what arithmetic
+the rounding rule and when tininess is detected, holds flags indicating what arithmetic
 exceptions have occurred, and offers fine-grained control over signal handling.  Rounding
 options are :const:`ROUND_CEILING` (towards :const:`+Infinity`), :const:`ROUND_FLOOR`
 (towards :const:`-Infinity`), :const:`ROUND_DOWN` (towards zero), :const:`ROUND_UP` (away
@@ -33,22 +33,23 @@ nearest, ties away from zero).
 
 `Signals`_ are exceptional conditions that can arise during the course of a computation.
 Depending on the needs of the applicaiton, signals may be handled in various ways
-including ignoring them, noting them with flags, recording their details, substitute a
+including ignoring them, noting them with flags, recording their details, substituting a
 result, or raising an exception.  The signals are those specified by the **IEEE-754**
 standard, namely :exc:`Invalid`, :exc:`DivisionByZero`, :exc:`Inexact`, :exc:`Overflow`,
 and :exc:`Underflow`.
 
-Each of the five major signals has its own flag which normally is set in the controlling
-`context` object when it occurs.  Flags are sticky, so the user needs to reset them when
-wanting to detect them in a fresh calculation.  Many signals have subcategories, organised
-as an exception hierarchy, and the context controls what happens when each is detected.
-The user can specify how each exception or sub-exception in the hierarchy is handled.  If
-nothing is specified for the specific exception that occurred, handling is delegated to
-the parent exception, recursively.
+Each of the five major signals has its own flag which, with the possible exception of
+:exc:`Underflow`, is set in the controlling `context` object when it occurs.  Flags are
+sticky, so the user needs to reset them to be sure of detecting them in a fresh
+calculation.  Many signals have subcategories, organised as an exception hierarchy, and
+the context controls what happens when each is detected.  The user can specify how each
+exception or sub-exception in the hierarchy is handled.  If nothing is specified for the
+specific exception that occurred then handling is delegated, recursively, to the parent
+exception.
 
-Several of the classes described in this documentation have attributes and methods that
-are not documented.  Consider these as implementation details that are subject to change
-or removal.
+All of the classes described in this documentation have undocumented attributes and
+methods.  No promise is made to retain them, let alone their meaning and behaviour, so
+client applications should not rely on them in any way.
 
 
 Quick-start Tutorial
@@ -103,24 +104,24 @@ You can also create your own binary formats with the constructors
    binary `interchange format`_ with a precision of 64 bits and an exponent width of 15
    bits.
 
-   Since the format's integer bit is explicit, it admits extra non-canonical encodings
-   (which Intel termed pseudo-NaNs, pseudo-infinities, pseudo-denormals and unnormals)
-   beyond those specified in IEEE-754.  The :meth:`Binary.pack` method never returns such
-   encodings and :meth:`BinaryFormat.unpack` automatically canonicalizes them.
+   The format's integer bit is explicit, so it admits non-canonical encodings (which Intel
+   termed pseudo-NaNs, pseudo-infinities, pseudo-denormals and unnormals) beyond those
+   specified in IEEE-754.  The :meth:`Binary.pack` method never returns such encodings and
+   :meth:`BinaryFormat.unpack` silently canonicalizes them.
 
 
 .. data:: x87double
 
-   This simulates the operation of x87 compatible CPUs when in round-to-double-precision
-   mode.  It has a precision of 53 bits and an exponent width of 15 bits, and is not a
-   binary interchange format.
+   This simulates the operation of x87 compatible CPUs in round-to-double-precision mode.
+   It has a precision of 53 bits and an exponent width of 15 bits, and is not a binary
+   interchange format.
 
 
 .. data:: x87single
 
-   This simulates the operation of x87 compatible CPUs when in round-to-single-precision
-   mode.  It has a precision of 24 bits and an exponent width of 15 bits, and is not a
-   binary interchange format.
+   This simulates the operation of x87 compatible CPUs in round-to-single-precision mode.
+   It has a precision of 24 bits and an exponent width of 15 bits, and is not a binary
+   interchange format.
 
 
 .. class:: BinaryFormat
@@ -148,7 +149,7 @@ You can also create your own binary formats with the constructors
   .. attribute:: logb_inf
 
      These values are returned by the :meth:`Binary.logb_integral` operation on zero,
-     :const:`NaN` and :const:`infinity` values in this format, respectively.
+     :const:`NaN` and :const:`Infinity` values in this format, respectively.
 
   .. classmethod:: from_triple(precision, e_max, e_min)
 
@@ -252,7 +253,7 @@ You can also create your own binary formats with the constructors
   .. method:: unpack_value(raw, endianness=None, context=None)
 
      Convert from a packed binary encoding *raw* of a value of this `interchange format`_.
-     *endiannness* is the byte order of the encoding, valid values are 'little', 'big' and
+     *endiannness* is the byte order of the encoding; valid values are 'little', 'big' and
      :const:`None` which will use the native endianness of the host machine.  sNaNs are
      preserved and Conversion is necessarily exact so only :exc:`UnderflowExact` can be
      signalled.
@@ -294,7 +295,7 @@ You can also create your own binary formats with the constructors
   .. method:: pack(sign, exponent, significand, endianness=None)
 
      Encode the three parts of a floating point number to `bytes`.  *endiannness* is the
-     byte order of the encoding, valid values are 'little', 'big' and :const:`None` which
+     byte order of the encoding; valid values are 'little', 'big' and :const:`None` which
      will use the native endianness of the host machine.  *exponent* is the biased
      exponent in the IEEE sense, i.e., it is zero for zeroes and subnormals and e_max *
      2 + 1 for NaNs and infinites.  *significand* must not include the integer bit.
@@ -304,7 +305,7 @@ You can also create your own binary formats with the constructors
      *raw* is a a binary encoding of a value; decode it and return a ``(sign, exponent,
      significand)`` tuple.
 
-     *endiannness* is the byte order of the encoding, valid values are 'little', 'big' and
+     *endiannness* is the byte order of the encoding; valid values are 'little', 'big' and
      :const:`None` which will use the native endianness of the host machine.  *exponent*
      is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and subnormals
      and e_max * 2 + 1 for NaNs and infinites.  *significand* does not include the integer
@@ -429,9 +430,9 @@ the argument.
 
 .. method:: pack(endianness=None)
 
-   Encode the three parts of the floating point value as `bytes`.  *endiannness* is the
-   byte order of the encoding, valid values are 'little', 'big' and :const:`None` which
-   will use the native endianness of the host machine.
+   Encode the three parts of the floating point value as a byte string.  *endiannness* is
+   the byte order of the encoding; valid values are 'little', 'big' and :const:`None`
+   which will use the native endianness of the host machine.
 
 .. method:: nan_payload()
 
@@ -474,8 +475,8 @@ These operations takes operands of a single format and return a result in that f
 .. method:: fmod(other, context=None)
 
    Return the result of C99's ``fmod`` operation.  This is like :meth:`remainder` except
-   that the quotient ``x / y`` is rounded with :const:`ROUND_DOWN` so that the result has
-   the same sign as `x`.
+   that the quotient ``x / y`` is rounded with :const:`ROUND_DOWN` so that the remainder
+   has the same sign as `x`.
 
 .. method:: mod(other, context=None)
 
@@ -483,7 +484,7 @@ These operations takes operands of a single format and return a result in that f
 
    If `y` is non-zero, ``x % y`` is defined for finite operands `x` and `y` as ``r = x -
    y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded with
-   :const:`ROUND_FLOOR`.  The result is always exact and its sign is that of `y`.
+   :const:`ROUND_FLOOR`.  The reaminder is always exact and its sign is that of `y`.
 
    If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
    operand is a :const:`NaN`.  If `y` is infinite then the result is the limiting result
@@ -495,13 +496,8 @@ These operations takes operands of a single format and return a result in that f
 
 .. method:: floordiv(other, context=None)
 
-   Return the result of Python's ``//`` operation; the result ``x / y`` is rounded with
+   Return the result of Python's ``//`` operation; the quotient ``x / y`` is rounded with
    :const:`ROUND_FLOOR`.
-
-.. method:: divmod(other, context=None)
-
-   Return the result of Python's ``divmod`` operation.  This returns a ``(quot, rem)``
-   pair that combines the results of the :meth:`mod` and :meth:`floordiv` operations.
 
 
 Context objects
@@ -590,7 +586,7 @@ addition the :mod:`ieee754` module provides a predefined context.
 
     .. method:: copy()
 
-       Return a deep copy of the context.
+       Return a copy of the context with its attributes shallow-copied..
 
     .. method:: set_handler(exc_classes, kind, handler=None)
 
@@ -753,7 +749,7 @@ class hierarchy as follows::
 
          op_tuple = (OP_DIVIDE, x, y)
 
-    .. attribute:: result
+    .. attribute:: default_result
 
     The result that default exception handling should deliver.  This can be inspected to
     determine the appropriate destination format for the operation.
@@ -769,7 +765,7 @@ class hierarchy as follows::
     a :class:`BinaryFormat` instance, then *result* is converted to a quiet :const:`NaN`
     of that format with zero payload and clear sign bit.
 
-    ::exc::`Invalid` has many sub-exceptions which indicate more precisely what happened.
+    :exc:`Invalid` has many sub-exceptions which indicate more precisely what happened.
 
 
 .. exception:: SignallingNaNOperand
@@ -870,9 +866,9 @@ class hierarchy as follows::
 
 .. exception:: Inexact
 
-   One of the five IEEE-754 signals, this is raised when the infinitely precise result
-   cannot be represented in the destination format.  This is perhaps the most common
-   signal.
+   One of the five IEEE-754 signals, `Inexact` is signalled when the infinitely precise
+   result cannot be represented in the destination format.  This is perhaps the most
+   common signal.
 
    The default result is the precise result rounded according to the rounding mode to fit
    the destination format.
@@ -904,21 +900,21 @@ class hierarchy as follows::
     though with unbounded exponent range would lie strictly between ``± 2^e_min`` where
     :attr:`e_min` is the minimum normalized exponent of the destination format.
 
-    Tininess can be detected before or after rounding, as determined by the operation's
-    *context* argument.
+    Tininess can be detected before or after rounding; this is controlled by the
+    :attr:`Context.tininess_after` attribute of the operation's *context* argument.
 
-    This exception must not be raised directly; instead one of its two sub-exceptions
-    should be raised depending on whether the result is exact.
+    This exception should not be raised directly; instead one of its two sub-exceptions
+    should be raised depending on whether or not the result is exact.
 
 
 .. exception:: UnderflowExact
 
-   This exception is signalled when the result it tiny but exact.  Since the result is
+   This exception is signalled when the result is tiny but exact.  Since the result is
    exact it was necessarily tiny before and after rounding.
 
    Under default exception handling, as per IEEE-754, this signal does *not* raise the
-   :attr:`UNDERFLOW` flag and it does *not* signal :exc:`Inexact`.  It is the only signal
-   to not raise its associated flag.
+   :attr:`UNDERFLOW` flag (nor does it signal :exc:`Inexact`).  It is the only signal to
+   not raise its associated flag.
 
 
 .. exception:: UnderflowInexact
@@ -928,11 +924,10 @@ class hierarchy as follows::
 
    A tiny rounded result was necessarily tiny before rounding, however an infinitely
    precise result that was tiny might round to be the smallest finite non-tiny number.
-   Hence it matters whether tininess is detected before or after rounding; this is
-   controlled by the :attr:`tininess_after` attribute of the *context* of the operation.
+   Hence it matters whether tininess is detected before or after rounding.
 
-   The method of detecting tininess has no effect on the rounded result delivered, which
-   might be any of zero, a subnormal number, or the smallest finite normal number.
+   The method of detecting tininess has no effect on the deafult rounded result delivered,
+   which will be one of zero, a subnormal number, or the smallest finite normal number.
 
    Under default exception handling this signal raises the :attr:`UNDERFLOW` flag and
    signals :exc:`Inexact`.
