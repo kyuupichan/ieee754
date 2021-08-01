@@ -1811,170 +1811,152 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## format.
     ##
 
-    def _set_sign(self, op_tuple, sign):
-        '''Like set_sign but does not affect NaNs and not quiet.'''
-        if self.is_nan():
-            return self.fmt._propagate_nan(op_tuple)
-        result = self.set_sign(sign)
-        if result.is_subnormal():
-            result = UnderflowExact(op_tuple, result).signal(None)
-        return result
-
-    def remainder(self, rhs, context=None):
+    def remainder(self, other, context=None):
         '''Set to the remainder when divided by rhs.
 
         If rhs != 0, the remainder is defined for finite operands as r = x - y * n, where
         n is the integer nearest the exact number x / y rounded with ROUND_HALF_EVEN.  The
-        result is always exact, and if r is zero its sign shall be that of lhs.
+        result is always exact, and if r is zero its sign shall be that of self.
 
-        If rhs is zero or lhs is infinite, an invalid operation is returned if neither
-        operand is a NaN.  If rhs is infinite then the result is lhs if it is finite.
+        If rhs is zero or self is infinite, an invalid operation is returned if neither
+        operand is a NaN.  If rhs is infinite then the result is self if it is finite.
         '''
-        op_tuple = (OP_REMAINDER, self, rhs)
-        _quot, rem = self._divmod(op_tuple, rhs, ROUND_HALF_EVEN, context)
-        return rem
+        return self._remainder(other, ROUND_HALF_EVEN, OP_REMAINDER, context)
 
-    def fmod(self, rhs, context=None):
+    def fmod(self, other, context=None):
         '''C99's fmod operation.  As for remainder, but rounding is with ROUND_DOWN.'''
-        op_tuple = (OP_FMOD, self, rhs)
-        _quot, rem = self._divmod(op_tuple, rhs, ROUND_DOWN, context)
-        return rem
+        return self._remainder(other, ROUND_DOWN, OP_FMOD, context)
 
-    def mod(self, rhs, context=None):
+    def mod(self, other, context=None):
         '''Python's mod.  As for remainder, but rounding is with ROUND_FLOOR.'''
-        op_tuple = (OP_MOD, self, rhs)
-        _quot, rem = self._divmod(op_tuple, rhs, ROUND_FLOOR, context)
+        return self._remainder(other, ROUND_FLOOR, OP_MOD, context)
+
+    def _remainder(self, other, quot_rounding, operation, context):
+        if self.fmt != other.fmt:
+            raise ValueError(f'{operation} requires operands of the same format')
+        op_tuple = (operation, self, other)
+        quot, rem = self._divmod(other, quot_rounding)
+        if quot is None:
+            # We must either propagate a NaN or signal invalid remainder
+            if rem == 'N':
+                return self.fmt._propagate_nan(op_tuple, context)
+            return InvalidRemainder(op_tuple, self.fmt).signal(context)
+        if rem.is_subnormal():
+            rem = UnderflowExact(op_tuple, rem).signal(context)
         return rem
 
-    def floordiv(self, rhs, context=None):
+    def floordiv(self, other, context=None):
         '''Python's floordiv operation.  The quotient of mod().'''
-        # TODO - suppress remainder signals?
-        op_tuple = (OP_FLOORDIV, self, rhs)
-        quot, _rem = self._divmod(op_tuple, rhs, ROUND_FLOOR, context)
-        return self.fmt.from_int(quot)
+        if self.fmt != other.fmt:
+            raise ValueError(f'OP_FLOORDIV requires operands of the same format')
+        op_tuple = (OP_FLOORDIV, self, other)
+        quot, rem = self._divmod(other, ROUND_FLOOR)
+        if quot is None:
+            if rem == 'N':
+                return self.fmt._propagate_nan(op_tuple, context)
+            return InvalidRemainder(op_tuple, self.fmt).signal(context)
+        return self.fmt._normalize(self.sign ^ other.sign, 0, abs(quot), op_tuple, context)
 
-    def divmod(self, rhs, context=None):
-        '''Python's divmod operation - floordiv and mod combined.  The quotient is returned as a
-        floating point number of the same format.
-        '''
-        # TODO - are two sets of signals possible?
-        quot, rem = self._divmod(OP_DIVMOD, rhs, ROUND_FLOOR, context)
-        quot = self.fmt.from_int(quot)
-        return quot, rem
-
-    def _divmod(self, op_tuple, rhs, rounding, context):
+    def _divmod(self, other, quot_rounding):
         '''Common implementation of the various remainder operations.
 
-        Returns a (quot, remainder) pair where quot is a Python int or a NaN.
+        Returns a (quot, remainder) pair where quot is a Python int.  If quot is None, a
+        remainder of 'N' means to propagate a NaN, 'I' means the operation is invalid.
         '''
-        if self.fmt != rhs.fmt:
-            raise ValueError(f'{op_tuple[0]} requires operands of the same format')
-
-        context = context or get_context()
-        quot_sign = self.sign ^ rhs.sign     # Sign of the quotient
-        rem_sign = self.sign                 # Rounding up always flips rem_sign
-
         # NaNs?
-        if self.is_nan() or rhs.is_nan():
-            result = self.fmt._propagate_nan(op_tuple, context)
-            return result, result
+        if self.is_nan() or other.is_nan():
+            return None, 'N'
 
         # remainder (infinity, non-NaN) is an invalid operation
-        if self.e_biased == 0:
-            result = InvalidRemainder(op_tuple, self.fmt).signal(context)
-            return result, result
-
-        # remainder(finite, infinity) is the LHS and exact.  remainder(subnormal,
-        # infinity) is the LHS and signals underflow
-        if rhs.e_biased == 0:
-            rem = self
-            quot = 0
-            if round_up(rounding, LF_LESS_THAN_HALF, quot_sign, False):
-                rem = self.fmt.make_infinity(not rem_sign)
-                quot = 1
-            elif rem.is_subnormal():
-                rem = UnderflowExact(op_tuple, rem).signal(context)
-            return -quot if quot_sign else quot, rem
-
         # remainder (finite, zero) is an invalid operation
-        if rhs.significand == 0:
-            result = InvalidRemainder(op_tuple, self.fmt).signal(context)
-            return result, result
+        if self.e_biased == 0 or other.is_zero():
+            return None, 'I'
 
-        lhs_sig = self.significand
-        if not lhs_sig:
-            # Both operations return a zero of the same sign.  As this is a homogeneous
-            # operation formats match so just return self.
+        quot_sign = self.sign ^ other.sign
+
+        # remainder (zero, finite) and remainder(zero, infinity) are zero but use the
+        # rounding rule to determine the sign.
+        if not self.significand:
+            if round_up(quot_rounding, LF_LESS_THAN_HALF, quot_sign, False):
+                return 0, self.set_sign(not self.sign)
             return 0, self
-        rhs_sig = rhs.significand
 
-        # Like divide, shift significands until rhs_sig <= lhs_sig < rhs_sig * 2 keeping
+        # remainder(finite, infinity) is the limiting case as y tends to inifinity.
+        if other.e_biased == 0:
+            if round_up(quot_rounding, LF_LESS_THAN_HALF, quot_sign, False):
+                return (-1 if quot_sign else 1), self.fmt.make_infinity(not self.sign)
+            return 0, self
+
+        # Like divide, shift significands until other_sig <= self_sig < other_sig * 2 keeping
         # track of implied exponents.
-        lhs_exponent = self.exponent_int()
-        rhs_exponent = rhs.exponent_int()
+        self_sig = self.significand
+        other_sig = other.significand
+        self_exponent = self.exponent_int()
+        other_exponent = other.exponent_int()
 
-        lshift = rhs_sig.bit_length() - lhs_sig.bit_length()
+        lshift = other_sig.bit_length() - self_sig.bit_length()
         if lshift >= 0:
-            lhs_sig <<= lshift
-            lhs_exponent -= lshift
+            self_sig <<= lshift
+            self_exponent -= lshift
         else:
-            rhs_sig <<= -lshift
-            rhs_exponent += lshift
+            other_sig <<= -lshift
+            other_exponent += lshift
 
-        if lhs_sig < rhs_sig:
-            lhs_sig <<= 1
-            lhs_exponent -= 1
+        if self_sig < other_sig:
+            self_sig <<= 1
+            self_exponent -= 1
 
-        # Now the quotient is lhs_sig / rhs_sig, which has integer bit of 1 and exponent
-        # lhs_exponent - rhs_exponent.  However we only want to do the bit-by-bit division
+        # Now the quotient is self_sig / other_sig, which has integer bit of 1 and exponent
+        # self_exponent - other_exponent.  However we only want to do the bit-by-bit division
         # operation until we've found the integer result, when we must stop to keep the
         # remainder.
         quot = 0
-        bits = (lhs_exponent - rhs_exponent) + 1
+        bits = (self_exponent - other_exponent) + 1
+        context = Context()
         if bits <= 0:
             if bits == 0:
-                if lhs_sig > rhs_sig:
+                if self_sig > other_sig:
                     lost_fraction = LF_MORE_THAN_HALF
                 else:
                     lost_fraction = LF_EXACTLY_HALF
             else:
                 lost_fraction = LF_LESS_THAN_HALF
-            rem = self
-            if round_up(rounding, lost_fraction, quot_sign, False):
-                rem = self.fmt.subtract(self, rhs, context)
-                quot = 1
-            return -quot if quot_sign else quot, rem
+            if round_up(quot_rounding, lost_fraction, quot_sign, False):
+                return (-1 if quot_sign else 1), self.fmt.subtract(self, other, context)
+            else:
+                return 0, self
 
         # Perform the division
         while True:
             quot <<= 1
-            if lhs_sig >= rhs_sig:
+            if self_sig >= other_sig:
                 quot += 1
-                lhs_sig -= rhs_sig
+                self_sig -= other_sig
             bits -= 1
-            if not (bits and lhs_sig):
+            if not bits:
                 break
-            lhs_sig <<= 1
+            self_sig <<= 1
 
-        if lhs_sig * 2 > rhs_sig:
+        if self_sig * 2 > other_sig:
             lost_fraction = LF_MORE_THAN_HALF
-        elif lhs_sig * 2 == rhs_sig:
+        elif self_sig * 2 == other_sig:
             lost_fraction = LF_EXACTLY_HALF
-        elif lhs_sig:
+        elif self_sig:
             lost_fraction = LF_LESS_THAN_HALF
         else:
             lost_fraction = LF_EXACTLY_ZERO
 
-        # IEEE-754 decrees a remainder of zero shall have the sign of the LHS.  A
-        # remainder of zero cannot round up, so this is satisfied.
-        if round_up(rounding, lost_fraction, quot_sign, bool(quot & 1)):
-            lhs_sig = rhs_sig - lhs_sig
+        # IEEE-754 decrees a remainder of zero shall have the sign of self.  A remainder
+        # of zero cannot round up, so this is satisfied.
+        rem_sign = self.sign
+        if round_up(quot_rounding, lost_fraction, quot_sign, bool(quot & 1)):
+            self_sig = other_sig - self_sig
             rem_sign = not rem_sign
             quot += 1
 
         # This is exact; signals underflow if appropriate
-        rem = self.fmt._normalize(rem_sign, rhs_exponent, lhs_sig, op_tuple, context)
-        return -quot if quot_sign else quot, rem
+        rem = self.fmt._normalize(rem_sign, other_exponent, self_sig, None, context)
+        return (-quot if quot_sign else quot), rem
 
     ##
     ## logBFormat operations (logBFormat is an integer format)
@@ -2614,6 +2596,15 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ##
     ## These operations are not quiet.
     ##
+
+    def _set_sign(self, op_tuple, sign):
+        '''Like set_sign but does not affect NaNs and not quiet.'''
+        if self.is_nan():
+            return self.fmt._propagate_nan(op_tuple)
+        result = self.set_sign(sign)
+        if result.is_subnormal():
+            result = UnderflowExact(op_tuple, result).signal(None)
+        return result
 
     def __abs__(self):
         '''Return non-NaN values with sign False (positive).'''

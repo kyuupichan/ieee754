@@ -1939,7 +1939,6 @@ class TestGeneralNonComputationalOps:
             assert value.fmt is fmt
             if exponent < fmt.e_min:
                 assert context.flags == 0
-                # FIXME: test underflow was signalled
                 assert not value.is_normal()
                 assert value.is_subnormal()
                 if sign:
@@ -1997,7 +1996,6 @@ class TestGeneralNonComputationalOps:
                               or (rounding == ROUND_CEILING and sign)
                               or (rounding == ROUND_FLOOR and not sign)
                               or (rounding == ROUND_DOWN))
-        # FIXME: test underflow was raised
         assert context.flags == Flags.INEXACT | Flags.UNDERFLOW
         if underflows_to_zero:
             assert value.is_zero()
@@ -2098,7 +2096,6 @@ class TestGeneralNonComputationalOps:
                         or (rounding == ROUND_HALF_UP and two_bits in (2, 3))
                         or (rounding == ROUND_CEILING and not sign)
                         or (rounding == ROUND_FLOOR and sign)))
-        # FIXME: test underflow was raised
         if rounds_away:
             assert context.flags == Flags.INEXACT
             assert value.is_normal()
@@ -2129,7 +2126,6 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('from_string.txt'))
     def test_from_string(self, line):
-        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) == 1:
             hex_str, = parts
@@ -2222,7 +2218,6 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('convert.txt'))
     def test_convert(self, line):
-        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 6:
             assert False, f'bad line: {line}'
@@ -2262,7 +2257,6 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('to_hex.txt'))
     def test_to_hex(self, line):
-        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 7:
             assert False, f'bad line: {line}'
@@ -2663,11 +2657,12 @@ class TestBinaryOps:
         min_max_op(line, 'min_mag_num')
 
     @pytest.mark.parametrize('line', read_lines('remainder.txt'))
-    def test_remainder(self, line):
+    def test_remainder(self, line, quiet_context):
         parts = line.split()
         if len(parts) != 5:
             assert False, f'bad line: {line}'
         fmt, lhs, rhs, status, answer = parts
+        context = quiet_context
 
         fmt = format_codes[fmt]
         lhs = from_string(fmt, lhs)
@@ -2675,8 +2670,13 @@ class TestBinaryOps:
         status = status_codes[status]
         answer = from_string(fmt, answer)
 
-        context = Context()
-        result = lhs.remainder(rhs, context)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        if answer.is_subnormal():
+            with pytest.raises(UnderflowExact) as e:
+                lhs.remainder(rhs, context)
+            result = e.value.default_result
+        else:
+            result = lhs.remainder(rhs, context)
         assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
@@ -2696,6 +2696,44 @@ class TestBinaryOps:
 
         context = Context()
         result = lhs.fmod(rhs, context)
+        assert result.fmt is fmt
+        assert floats_equal(result, answer)
+        assert context.flags == status
+
+    @pytest.mark.parametrize('line', read_lines('mod.txt'))
+    def test_mod(self, line, quiet_context):
+        parts = line.split()
+        if len(parts) != 7:
+            assert False, f'bad line: {line}'
+        fmt, lhs, rhs, _, _, status, answer = parts
+        context = quiet_context
+
+        fmt = format_codes[fmt]
+        lhs = from_string(fmt, lhs)
+        rhs = from_string(fmt, rhs)
+        status = status_codes[status]
+        answer = from_string(fmt, answer)
+
+        result = lhs.mod(rhs, context)
+        assert result.fmt is fmt
+        assert floats_equal(result, answer)
+        assert context.flags == status
+
+    @pytest.mark.parametrize('line', read_lines('mod.txt'))
+    def test_floordiv(self, line, quiet_context):
+        parts = line.split()
+        if len(parts) != 7:
+            assert False, f'bad line: {line}'
+        fmt, lhs, rhs, status, answer, _, _ = parts
+        context = quiet_context
+
+        fmt = format_codes[fmt]
+        lhs = from_string(fmt, lhs)
+        rhs = from_string(fmt, rhs)
+        status = status_codes[status]
+        answer = from_string(fmt, answer)
+
+        result = lhs.floordiv(rhs, context)
         assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status

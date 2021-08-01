@@ -347,7 +347,8 @@ Quiet Operations
 ----------------
 
 The following operations are *quiet* - they do not raise signals and no context affects or
-is affected by them.
+is affected by them.  If the result is a floating point number it has the same format as
+the argument.
 
 .. method:: number_class()
 
@@ -422,6 +423,10 @@ is affected by them.
 
    Return this value with sign :const:`False` (including for :const:`NaN` values).
 
+.. method:: negate_quiet()
+
+   Return this value with the opposite sign (including for :const:`NaN` values).
+
 .. method:: pack(endianness=None)
 
    Encode the three parts of the floating point value as `bytes`.  *endiannness* is the
@@ -430,8 +435,73 @@ is affected by them.
 
 .. method:: nan_payload()
 
-   Return the payload of a :const:`NaN` as a Python `int`.  If the value is not a
+   Return the payload of a :const:`NaN` as a Python `int`.  If the argument is not a
    :const:`NaN` raise a :exc:`RuntimeError`.
+
+.. method:: payload()
+
+   Return the payload of a :const:`NaN` as a non-negative floating point integer; if the
+   argument is not a :const:`NaN` return :const:`-1`.
+
+.. method:: set_payload()
+
+   Return a quiet :const:`NaN` with the argument as the payload provided it is an in-range
+   floating point integer, otherwise return :const:`+0`.
+
+.. method:: set_payload_signalling()
+
+   Return a signalling :const:`NaN` with the argument as the payload provided it is an
+   in-range floating point integer, otherwise return :const:`+0`.
+
+
+Homogenous Operations
+---------------------
+
+These operations takes operands of a single format and return a result in that format.
+
+.. method:: remainder(other, context=None)
+
+   Return the the IEEE-754 remainder when divided by other.
+
+   If `y` is non-zero, the remainder is defined for finite operands `x` and `y` as ``r =
+   x - y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded with
+   :const:`ROUND_HALF_EVEN`.  The result is always exact, and if `r` is zero its sign
+   shall be that of `x`.
+
+   If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
+   operand is a :const:`NaN`.  If `y` is infinite then the result is `x` if it is finite.
+
+.. method:: fmod(other, context=None)
+
+   Return the result of C99's ``fmod`` operation.  This is like :meth:`remainder` except
+   that the quotient ``x / y`` is rounded with :const:`ROUND_DOWN` so that the result has
+   the same sign as `x`.
+
+.. method:: mod(other, context=None)
+
+   Return the result of Python's ``%`` operation.
+
+   If `y` is non-zero, ``x % y`` is defined for finite operands `x` and `y` as ``r = x -
+   y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded with
+   :const:`ROUND_FLOOR`.  The result is always exact and its sign is that of `y`.
+
+   If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
+   operand is a :const:`NaN`.  If `y` is infinite then the result is the limiting result
+   of finite operands `y` tending to that infinity.
+
+   .. note:: Python may not give the same result for small values of *other* because it
+             uses approximate arithmetic in double precision.  This library returns the
+             correct result.
+
+.. method:: floordiv(other, context=None)
+
+   Return the result of Python's ``//`` operation; the result ``x / y`` is rounded with
+   :const:`ROUND_FLOOR`.
+
+.. method:: divmod(other, context=None)
+
+   Return the result of Python's ``divmod`` operation.  This returns a ``(quot, rem)``
+   pair that combines the results of the :meth:`mod` and :meth:`floordiv` operations.
 
 
 Context objects

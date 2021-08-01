@@ -1,0 +1,144 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: Format LHS RHS QuotStatus Quot RemStatus Rem
+
+
+###############
+#
+# mod(NaN, Anything)
+# mod(Anything, NaN)
+#
+###############
+
+# mod(Nan, others) - return the LHS
+D NaN1 0 K NaN1 K NaN1
+D NaN1 -1 K NaN1 K NaN1
+D NaN1 Inf K NaN1 K NaN1
+D NaN1 -Inf K NaN1 K NaN1
+D NaN1 NaN2 K NaN1 K NaN1
+
+# mod(non-NaN, NaN) - return the RHS
+Q -1 NaN2 K NaN2 K NaN2
+D -0 -NaN2 K -NaN2 K -NaN2
+D -inf -NaN0xbeef K -NaN0xbeef K -NaN0xbeef
+
+# Quiet and Signalling.  Return the left hand quiet NaN
+D SNaN5 NaN4 X NaN5 X NaN5
+H -NaN1 SNaN2 X -NaN1 X -NaN1
+Q SNaN0xdead -SNaN0xbeef X NaN0xdead X NaN0xdead
+Q -NaN0xdead -SNaN0xbeef X -NaN0xdead X -NaN0xdead
+
+# Both Signalling.  Return the left hand quiet NaN
+S SNaN0x25 SNaN0xdead X NaN0x25 X NaN0x25
+D -SNaN0xdead SNaN2 X -NaN0xdead X -NaN0xdead
+Q SNaN1 -SNaN2 X NaN1 X NaN1
+Q -SNaN3 -SNaN4 X -NaN3 X -NaN3
+
+###############
+#
+# mod(Finite, Infinity)
+# mod(Subnormal, Infinity)
+#
+###############
+
+S 1.25 Inf K 0 K 1.25
+S 0x1.25p-130 Inf K 0 K 0x1.25p-130
+H 0 Inf K 0 K 0
+H 0 -Inf K -0 K -0
+H -0 Inf K -0 K 0
+H -0 -Inf K 0 K -0
+H 1 Inf K 0 K 1
+H 1 -Inf K -1 K -Inf
+H -1 Inf K -1 K Inf
+H -1 -Inf K 0 K -1
+D -0x1.bedp-1050 Inf K -1 K Inf
+D -0x1.bedp-1050 -Inf K 0 K -0x1.bedp-1050
+
+###############
+#
+# mod(non-NaN, Zero)
+# mod(Infinity, non-NaN)
+#
+###############
+
+S -1.0 0 X NaN X NaN
+S 0 -0 X NaN X NaN
+S 1 -0 X NaN X NaN
+
+S -Inf 0 X NaN X NaN
+S Inf Inf X NaN X NaN
+
+S Inf 0x1.25p-130 X NaN X NaN
+S -Inf 1 X NaN X NaN
+S Inf -1 X NaN X NaN
+S Inf Inf X NaN X NaN
+S -Inf Inf X NaN X NaN
+
+###############
+#
+# mod(Zero, Finite Non-Zero)
+#
+###############
+
+S 0 1 K 0 K 0
+S 0 -1 K -0 K -0
+S -0 1 K -0 K 0
+S -0 -1 K 0 K -0
+
+S -0 0x1.25p-130 K -0 K 0
+S 0 -0x1.25p-130 K -0 K -0
+
+###############
+#
+# mod(Finite Non-Zero, Finite Non-Zero)
+#
+###############
+
+# Try all 4 sign combinations.
+
+# Round down with all four sign combinations
+S 20 6 K 3 K 2
+S 20 -6 K -4 K -4
+S -20 6 K -4 K 4
+S -20 -6 K 3 K -2
+
+# Round up with all four sign combinations
+S 22 6 K 3 K 4
+S 22 -6 K -4 K -2
+S -22 6 K -4 K 2
+S -22 -6 K 3 K -4
+
+# Ties; round up to even with all four sign combinations
+S 21 6 K 3 K 3
+S 21 -6 K -4 K -3
+S -21 6 K -4 K 3
+S -21 -6 K 3 K -3
+
+# Ties; round down to even with all four sign combinations
+S 15 6 K 2 K 3
+S 15 -6 K -3 K -3
+S -15 6 K -3 K 3
+S -15 -6 K 2 K -3
+
+# Mod zero with sign of LHS
+S 12 6 K 2 K 0
+S 24 -6 K -4 K 0
+S -12 6 K -2 K -0
+S -24 -6 K 4 K -0
+
+# Generic floating point examples
+D 1.234 0.6589 K 1 K 0.5751
+D 1234 0.6589 K 1872 K 0.5391999999999229
+
+# Overflow in dividend
+D  2.34 0x1.289p-1029 VI  inf K 5.814268467245e-311
+# Python gets this wrong (!); it uses a double to do the division
+D -2.34 0x1.289p-1029 VI -inf K 1.43234715890156e-310
+
+D  2.34 0x1.289p-1022 I  9.078104071721152e+307 K 2.382067595105976e-308
+D -2.34 0x1.289p-1022 I -9.078104071721152e+307 K 1.955631320953595e-309
