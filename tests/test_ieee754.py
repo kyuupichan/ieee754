@@ -1578,13 +1578,16 @@ class TestBinary:
         pi =  IEEEdouble.from_string('3.141592653589793')
         assert pi.as_integer_ratio() == (884279719003555, 281474976710656)
 
-    def test_copy_sign(self):
-        minus_one = IEEEdouble.from_int(-1)
-        two = IEEEdouble.from_int(2)
-        assert minus_one.copy_sign(two) == 1
-        assert two.copy_sign(minus_one) == -2
-        assert minus_one.copy_sign(minus_one) == -1
-        assert two.copy_sign(two) == 2
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_copy_sign(self, fmt, context):
+        minus_one = fmt.from_int(-1)
+        plus_one = fmt.from_int(1)
+        two = fmt.from_int(2)
+        minus_two = fmt.from_int(-2)
+        assert floats_equal(minus_one.copy_sign(two), plus_one)
+        assert floats_equal(two.copy_sign(minus_one), minus_two)
+        assert minus_one.copy_sign(minus_one) is minus_one
+        assert two.copy_sign(two) is two
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_abs(self, fmt, context):
@@ -1599,7 +1602,6 @@ class TestBinary:
         assert abs(f) is f
         assert abs(g) is g
 
-        context = get_context()
         assert context.flags == 0
 
         h = fmt.from_string('-sNaN')
@@ -1617,21 +1619,27 @@ class TestBinary:
         assert e.value.op_tuple == (OP_ABS, s)
         assert e.value.default_result is s
 
-    def test_copy_abs(self, context):
-        d = IEEEdouble.from_int(1)
-        assert d.copy_abs() is d
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_abs_quiet(self, fmt, context):
+        d = fmt.from_int(1)
+        assert d.abs_quiet() is d
 
-        e = IEEEdouble.from_int(-1)
-        assert floats_equal(e.copy_abs(), d)
+        e = fmt.from_int(-1)
+        assert floats_equal(e.abs_quiet(), d)
 
-        f = IEEEdouble.from_string('-NaN')
-        g = IEEEdouble.from_string('NaN')
-        assert floats_equal(f.copy_abs(), g)
+        pi = fmt.make_infinity(False)
+        ni = fmt.make_infinity(True)
+        assert pi.abs_quiet() is pi
+        assert floats_equal(ni.abs_quiet(), pi)
 
-        h = IEEEdouble.from_string('sNaN')
-        assert h.copy_abs() is h
+        f = fmt.from_string('-NaN')
+        g = fmt.from_string('NaN')
+        assert floats_equal(f.abs_quiet(), g)
 
-        assert get_context().flags == 0
+        h = fmt.from_string('sNaN')
+        assert h.abs_quiet() is h
+
+        assert context.flags == 0
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_negate(self, fmt, context):
@@ -1646,7 +1654,6 @@ class TestBinary:
         assert -f is f
         assert -g is g
 
-        context = get_context()
         assert context.flags == 0
 
         h = fmt.from_string('-sNaN')
@@ -1663,25 +1670,23 @@ class TestBinary:
             -s
         assert e.value.op_tuple == (OP_MINUS, s)
 
-    def test_copy_negate(self, context):
-        d = IEEEdouble.from_int(1)
-        e = IEEEdouble.from_int(-1)
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_negate_quiet(self, fmt, context):
+        d = fmt.from_int(1)
+        e = fmt.from_int(-1)
 
-        assert floats_equal(d.copy_negate(), e)
-        assert floats_equal(e.copy_negate(), d)
+        assert floats_equal(d.negate_quiet(), e)
+        assert floats_equal(e.negate_quiet(), d)
 
-        f = IEEEdouble.from_string('-NaN')
-        g = IEEEdouble.from_string('NaN')
-        assert floats_equal(f.copy_negate(), g)
-        assert floats_equal(g.copy_negate(), f)
+        f = fmt.from_string('-NaN')
+        g = fmt.from_string('NaN')
+        assert floats_equal(f.negate_quiet(), g)
+        assert floats_equal(g.negate_quiet(), f)
 
-        context = get_context()
-        assert context.flags == 0
-
-        h = IEEEdouble.from_string('sNaN')
-        k = IEEEdouble.from_string('-sNaN')
-        assert floats_equal(h.copy_negate(), k)
-        assert floats_equal(h, k.copy_negate())
+        h = fmt.from_string('sNaN')
+        k = fmt.from_string('-sNaN')
+        assert floats_equal(k, h.negate_quiet())
+        assert floats_equal(h, k.negate_quiet())
         assert context.flags == 0
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
@@ -1697,7 +1702,6 @@ class TestBinary:
         assert +f is f
         assert +g is g
 
-        context = get_context()
         assert context.flags == 0
 
         k = fmt.from_string('-sNaN')
@@ -2402,8 +2406,8 @@ class TestUnaryOps:
 
         # Now for next_down
         context.flags = 0
-        in_value = in_value.copy_negate()
-        answer = answer.copy_negate()
+        in_value = in_value.negate_quiet()
+        answer = answer.negate_quiet()
         result = in_value.next_down(context)
         assert result.fmt is fmt
         assert floats_equal(result, answer)
@@ -2753,8 +2757,8 @@ class TestBinaryOps:
         answer = boolean_codes[answer_code]
 
         assert lhs.compare_total(rhs) is answer
-        lhs_abs = lhs.copy_abs()
-        rhs_abs = rhs.copy_abs()
+        lhs_abs = lhs.abs_quiet()
+        rhs_abs = rhs.abs_quiet()
 
         assert lhs.compare_total_mag(rhs) is lhs_abs.compare_total(rhs_abs)
 

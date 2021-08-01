@@ -1663,7 +1663,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.sign
 
     def is_normal(self):
-        '''Return True if the value is finite, non-zero and not denormal.'''
+        '''Return True if the value is finite, non-zero and not subnormal.'''
         return self.significand & self.fmt.int_bit
 
     def is_finite(self):
@@ -1728,11 +1728,11 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return self
         return Binary(self.fmt, sign, self.e_biased, self.significand)
 
-    def copy_abs(self):
+    def abs_quiet(self):
         '''Return this value with sign False (positive), including for NaNs.'''
         return self.set_sign(False)
 
-    def copy_negate(self):
+    def negate_quiet(self):
         '''Return this value with the opposite sign, including for NaNs.'''
         return self.set_sign(not self.sign)
 
@@ -2386,7 +2386,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def compare_total_mag(self, rhs):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
-        return self.copy_abs().compare_total(rhs.copy_abs())
+        return self.abs_quiet().compare_total(rhs.abs_quiet())
 
     def _max_min(self, flags, rhs, context):
         '''Implementation of IEEE-754 2019's maximum and maximum_number operations.'''
@@ -2394,7 +2394,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             raise ValueError(f'{flags.op_name()} requires both operands have the same format')
 
         if flags & MinMaxFlags.MAG:
-            comp = self.copy_abs()._compare_quiet(rhs.copy_abs(), True)
+            comp = self.abs_quiet()._compare_quiet(rhs.abs_quiet(), True)
             # If magnitudes are equal, compare without magnitudes
             if comp == Compare.EQUAL:
                 comp = self._compare_quiet(rhs, True)

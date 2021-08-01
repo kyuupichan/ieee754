@@ -343,6 +343,95 @@ instance with any other numeric type.
 Unless noted otherwise :const:`NaN` operands are propagated as descibed in the section
 `NaN propagation`_.
 
+Quiet Operations
+----------------
+
+The following operations are *quiet* - they do not raise signals and no context affects or
+is affected by them.
+
+.. method:: number_class()
+
+   Return a string describing the *class* of the operand, which is one of the following
+   ten strings:
+
+      * ``"-Infinity"`` when the operand is negative infinity.
+      * ``"-Normal"`` when the operand is a negative normal number.
+      * ``"-Subnormal"`` when the operand is negative and subnormal.
+      * ``"-Zero"`` when the operand is negative zero.
+      * ``"+Zero"`` when the operand is positive zero.
+      * ``"+Subnormal"`` when the operand is positive and subnormal.
+      * ``"+Normal"`` when the operand is a positive normal number.
+      * ``"+Infinity"`` when the operand is positive infinity.
+      * ``"NaN"`` when the operand is a quiet NaN (Not a Number).
+      * ``"sNaN"`` when the operand is a signalling NaN.
+
+.. method:: is_negative()
+
+   Return :const:`True` if the sign bit is set (including for :const:`NaN` values).
+
+.. method:: is_zero()
+
+   Return :const:`True` if the value is a zero of either sign.
+
+.. method:: is_subnormal()
+
+   Return :const:`True` if the value is subnormal.
+
+.. method:: is_normal()
+
+   Return :const:`True` if the value is finite, non-zero and not subnormal.
+
+.. method:: is_finite()
+
+   Return :const:`True` if the value is finite.  A finite number is precisely one of zero,
+   subnormal or normal.
+
+.. method:: is_finite_non_zero()
+
+   Return :const:`True` if the value is subnormal or normal.
+
+.. method:: is_infinite()
+
+   Return :const:`True` if the value is an :const:`Infinity` of either sign.
+
+.. method:: is_nan()
+
+   Return :const:`True` if the value is a quiet or signalling :const:`NaN`.
+
+.. method:: is_qnan()
+
+   Return :const:`True` if the value is a quiet :const:`NaN`.
+
+.. method:: is_snan()
+
+   Return :const:`True` if the value is a signalling :const:`NaN`.
+
+.. method:: is_canonical()
+
+   Return :const:`True`.
+
+.. method:: radix()
+
+   Return :const:`2`.
+
+.. method:: set_sign(sign)
+
+   Return this value with the given sign (including for :const:`NaN` values).
+
+.. method:: abs_quiet()
+
+   Return this value with sign :const:`False` (including for :const:`NaN` values).
+
+.. method:: pack(endianness=None)
+
+   Encode the three parts of the floating point value as `bytes`.  *endiannness* is the
+   byte order of the encoding, valid values are 'little', 'big' and :const:`None` which
+   will use the native endianness of the host machine.
+
+.. method:: nan_payload()
+
+   Return the payload of a :const:`NaN` as a Python `int`.  If the value is not a
+   :const:`NaN` raise a :exc:`RuntimeError`.
 
 
 Context objects
@@ -415,7 +504,8 @@ addition the :mod:`ieee754` module provides a predefined context.
 
     .. attribute:: flags
 
-      Which flags have been raised; see `Context Flags`_.
+      Which flags have been raised; see `Context Flags`_.  Flags can be set or cleared
+      directly at any time.
 
     .. attribute:: tininess_after
 
