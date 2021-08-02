@@ -297,8 +297,9 @@ You can also create your own binary formats with the constructors
      Encode the three parts of a floating point number to `bytes`.  *endiannness* is the
      byte order of the encoding; valid values are 'little', 'big' and :const:`None` which
      will use the native endianness of the host machine.  *exponent* is the biased
-     exponent in the IEEE sense, i.e., it is zero for zeroes and subnormals and e_max *
-     2 + 1 for NaNs and infinites.  *significand* must not include the integer bit.
+     exponent in the IEEE sense, i.e., it is zero for zero and subnormal values, and
+     ``e_max * 2 + 1`` for NaNs and infinites.  *significand* must not include the integer
+     bit.
 
   .. method:: unpack(raw, endianness=None)
 
@@ -307,9 +308,9 @@ You can also create your own binary formats with the constructors
 
      *endiannness* is the byte order of the encoding; valid values are 'little', 'big' and
      :const:`None` which will use the native endianness of the host machine.  *exponent*
-     is the biased exponent in the IEEE sense, i.e., it is zero for zeroes and subnormals
-     and e_max * 2 + 1 for NaNs and infinites.  *significand* does not include the integer
-     bit.
+     is the biased exponent in the IEEE sense, i.e., it is zero for zero and subnormal
+     values, and ``e_max * 2 + 1`` for NaNs and infinites.  *significand* does not include
+     the integer bit.
 
 
 Binary objects

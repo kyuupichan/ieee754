@@ -243,6 +243,18 @@ class TestContext:
     def contexts_equal(self, lhs, rhs):
         return lhs.flags == rhs.flags and lhs.rounding == rhs.rounding
 
+    def test_copy(self, context):
+        context.exceptions = [1]
+        context.flags = Flags.INEXACT
+        c = context.copy()
+        assert c.flags == context.flags
+        assert c.rounding == context.rounding
+        assert c.tininess_after == context.tininess_after
+        assert c.handlers is not context.handlers
+        assert c.handlers == context.handlers
+        assert c.exceptions is not context.exceptions
+        assert c.exceptions == context.exceptions
+
     def test_get_context(self):
         context = get_context()
         assert context is not DefaultContext

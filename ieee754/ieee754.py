@@ -128,7 +128,6 @@ class Flags(IntFlag):
     INEXACT     = 0x10
 
 
-BinaryTuple = namedtuple('BinaryTuple', 'sign exponent significand')
 pack_double = Struct('=d').pack
 unpack_double = Struct('=d').unpack
 
@@ -580,8 +579,11 @@ class Context:
 
     def copy(self):
         '''Return a copy of the context with each attribute shallow-copied.'''
-        return Context(self.rounding, self.flags, self.tininess_after, self.handlers.copy(),
-                       self.exceptions.copy())
+        result = Context(rounding=self.rounding, flags=self.flags,
+                         tininess_after=self.tininess_after)
+        result.handlers = self.handlers.copy()
+        result.exceptions = self.exceptions.copy()
+        return result
 
     def set_handler(self, exc_classes, kind, handler=None):
         classes = (exc_classes, ) if not isinstance(exc_classes, (tuple, list)) else exc_classes
@@ -1023,7 +1025,7 @@ class BinaryFormat(NamedTuple):
         return value.to_bytes(self.fmt_width // 8, endianness or host_endianness)
 
     def unpack(self, raw, endianness=None):
-        '''Decode a binary encoding and return a BinaryTuple.
+        '''Decode a binary encoding and return a (sign, exponent, significand) tuple.
 
         Endianness can be 'big' or 'little'.  If None, host-native endianness is used.
 
@@ -1046,7 +1048,7 @@ class BinaryFormat(NamedTuple):
         exponent = value & (self.e_max * 2 + 1)
         sign = value != exponent
 
-        return BinaryTuple(sign, exponent, significand)
+        return sign, exponent, significand
 
     def unpack_value(self, raw, endianness=None, context=None):
         '''Decode a binary encoding and return a Binary floating point value.  Might signal
@@ -1611,7 +1613,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return '-Infinity' if self.sign else '+Infinity'
 
     def as_tuple(self):
-        '''Returns a BinaryTuple: (sign, exponent, significand).
+        '''Returns a sign, exponent, significand tuple.
 
         Finite non-zero numbers have the magniture 2^exponent * significand (an integer).
 
@@ -1636,7 +1638,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         else:
             exponent = self.exponent_int()
 
-        return BinaryTuple(self.sign, exponent, significand)
+        return self.sign, exponent, significand
 
     def pack(self, endianness=None):
         '''Packs this value to bytes of the given endianness.
