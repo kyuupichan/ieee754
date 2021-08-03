@@ -454,33 +454,47 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      Return a signalling :const:`NaN` with the argument as the payload provided it is an
      in-range floating point integer, otherwise return :const:`+0`.
 
+  .. method:: compare_total(other)
+
+     Return :const:`True` if the operand is less than or equal to *other* in the IEEE-754
+     total ordering.
+
+     Unlike in IEEE-754 there is no requirement the operands be of the same format.  Two
+     NaNs, with the same sign and signalling property, are ordered according to their
+     payloads as unsigned integers.
+
+  .. method:: compare_total_mag(other)
+
+     The same as :meth:`compare_total` but the signs of the operands are taken to be
+     :const:`False`, i.e., their magnitudes are compared.
+
   These operations are *homogenous*; they take operands of a single format and return a
   result in that format.  They can raise signals.
 
   .. method:: next_up(context=None)
 
-        Return the smallest floating point value (unless operating on positive infinity or
-        :const:`NaN`) that compares greater than the operand.
+     Return the smallest floating point value (unless operating on positive infinity or
+     :const:`NaN`) that compares greater than the operand.
 
   .. method:: next_down(context=None)
 
-        Return the largest floating point value (unless operating on negative infinity or
-        a :const:`NaN`) that compares greater than the operand.
+     Return the largest floating point value (unless operating on negative infinity or a
+     :const:`NaN`) that compares greater than the operand.
 
   .. method:: round_to_integral(rounding, context=None)
 
-    Return the value rounded to the nearest integer in the same format.  The *rounding*
-    method is given explicitly; that in *context* is ignored.
+     Return the value rounded to the nearest integer in the same format.  The *rounding*
+     method is given explicitly; that in *context* is ignored.
 
-    :exc:`Inexact` is not signalled.
+     :exc:`Inexact` is not signalled.
 
   .. method:: round_to_integral_exact(context=None)
 
-    Return the value rounded to an integer value in the same format.  The rounding method
-    is taken from *context*.
+     Return the value rounded to an integer value in the same format.  The rounding method
+     is taken from *context*.
 
-    This operation signals :exc:`Inexact` if the result differs from the original value
-    (i.e., it was not an integer).
+     This operation signals :exc:`Inexact` if the result differs from the original value
+     (i.e., it was not an integer).
 
   .. method:: remainder(other, context=None)
 
@@ -572,6 +586,120 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      The same as :meth:`convert_to_integer` except that :exc:`Inexact` is signalled if the
      result is not numerically equal to the original value (i.e. it was not an integer)
      **and** it is in-range.
+
+  .. method:: compare(other, context=None)
+
+     Return the operand compared to *other*, returning a :class:`Compare` constant.
+     Signalling :const:`NaN` operands raise :exc:`SignallingNaNOperand`.
+
+  .. method:: compare_signal(other, context=None)
+
+     As for :meth:`compare` except that a :const:`NaN` operand signals
+     :exc:`InvalidComparison`.
+
+  .. method:: compare_eq(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.EQUAL`.
+
+  .. method:: compare_ne(other, context=None)
+
+     Return :const:`True` if :meth:`compare` does not return :attr:`Compare.EQUAL`.
+
+  .. method:: compare_gt(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.GREATER_THAN`.
+
+  .. method:: compare_ng(other, context=None)
+
+     Return :const:`True` if :meth:`compare` does not return :attr:`Compare.GREATER_THAN`.
+
+  .. method:: compare_ge(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.GREATER_THAN` or
+     :attr:`Compare.EQUAL`.
+
+  .. method:: compare_lu(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.LESS_THAN` or
+     :attr:`Compare.UNORDERED`.
+
+  .. method:: compare_lt(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.LESS_THAN`.
+
+  .. method:: compare_nl(other, context=None)
+
+     Return :const:`True` if :meth:`compare` does not return :attr:`Compare.LESS_THAN`.
+
+  .. method:: compare_le(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.LESS_THAN` or
+     :attr:`Compare.EQUAL`.
+
+  .. method:: compare_gu(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.GREATER_THAN` or
+     :attr:`Compare.UNORDERED`.
+
+  .. method:: compare_un(other, context=None)
+
+     Return :const:`True` if :meth:`compare` returns :attr:`Compare.UNORDERED`.
+
+  .. method:: compare_or(other, context=None)
+
+     Return :const:`True` if :meth:`compare` does not return :attr:`Compare.UNORDERED`.
+
+  .. method:: compare_eq_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.EQUAL`.
+
+  .. method:: compare_ne_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` does not return :attr:`Compare.EQUAL`.
+
+  .. method:: compare_gt_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.GREATER_THAN`.
+
+  .. method:: compare_ng_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` does not return :attr:`Compare.GREATER_THAN`.
+
+  .. method:: compare_ge_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.GREATER_THAN` or
+     :attr:`Compare.EQUAL`.
+
+  .. method:: compare_lu_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.LESS_THAN` or
+     :attr:`Compare.UNORDERED`.
+
+  .. method:: compare_lt_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.LESS_THAN`.
+
+  .. method:: compare_nl_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` does not return :attr:`Compare.LESS_THAN`.
+
+  .. method:: compare_le_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.LESS_THAN` or
+     :attr:`Compare.EQUAL`.
+
+  .. method:: compare_gu_signal(other, context=None)
+
+     Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.GREATER_THAN` or
+     :attr:`Compare.UNORDERED`.
+
+
+.. class:: Compare
+
+    .. attribute:: LESS_THAN
+    .. attribute:: EQUAL
+    .. attribute:: GREATER_THAN
+    .. attribute:: UNORDERED
 
 
 Context objects

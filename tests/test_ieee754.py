@@ -2840,6 +2840,10 @@ class TestBinaryOps:
 
         assert lhs.compare_total_mag(rhs) is lhs_abs.compare_total(rhs_abs)
 
+    def test_compare_formats(self):
+        assert IEEEsingle.make_zero(True).compare_total(IEEEdouble.make_zero(False))
+        assert not IEEEsingle.make_zero(False).compare_total(IEEEquad.make_zero(True))
+
 
 class TestFMA:
 

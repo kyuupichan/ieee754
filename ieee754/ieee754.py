@@ -1814,14 +1814,14 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ##
 
     def remainder(self, other, context=None):
-        '''Set to the remainder when divided by rhs.
+        '''Set to the remainder when divided by other.
 
-        If rhs != 0, the remainder is defined for finite operands as r = x - y * n, where
+        If other != 0, the remainder is defined for finite operands as r = x - y * n, where
         n is the integer nearest the exact number x / y rounded with ROUND_HALF_EVEN.  The
         result is always exact, and if r is zero its sign shall be that of self.
 
-        If rhs is zero or self is infinite, an invalid operation is returned if neither
-        operand is a NaN.  If rhs is infinite then the result is self if it is finite.
+        If other is zero or self is infinite, an invalid operation is returned if neither
+        operand is a NaN.  If other is infinite then the result is self if it is finite.
         '''
         return self._remainder(other, ROUND_HALF_EVEN, OP_REMAINDER, context)
 
@@ -2183,51 +2183,51 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ## Signalling computational operations
     ##
 
-    def _compare_quiet(self, rhs, order_zeroes):
-        '''Return LHS vs RHS as one of the four comparison constants.
+    def _compare_quiet(self, other, order_zeroes):
+        '''Return self vs other as one of the four comparison constants.
 
         If order_zeroes is True then -0 compares less than +0.
         '''
         if self.e_biased == 0:
-            # LHS is a NaN?
+            # self is a NaN?
             if not self.significand:
-                # LHS is infinity.
-                if rhs.e_biased == 0:
-                    # RHS Infinity?
-                    if not rhs.significand:
+                # self is infinity.
+                if other.e_biased == 0:
+                    # other Infinity?
+                    if not other.significand:
                         # Comparing two infinities
-                        if self.sign == rhs.sign:
+                        if self.sign == other.sign:
                             return Compare.EQUAL
-                        # RHS is finite or a differently-signed infinity
+                        # other is finite or a differently-signed infinity
                         return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
                     # Fall through for NaN comparisons
                 else:
-                    # RHS finite
+                    # other finite
                     return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
             # Fall through for NaN comparisons
-        elif rhs.e_biased == 0:
-            # LHS is finite, RHS is not
-            if not rhs.significand:
+        elif other.e_biased == 0:
+            # self is finite, other is not
+            if not other.significand:
                 # Finite vs infinity
-                return Compare.GREATER_THAN if rhs.sign else Compare.LESS_THAN
+                return Compare.GREATER_THAN if other.sign else Compare.LESS_THAN
             # Finite vs NaN - Fall through
-        elif self.significand == rhs.significand == 0:
+        elif self.significand == other.significand == 0:
             # Zero vs Zero
-            if order_zeroes and self.sign != rhs.sign:
+            if order_zeroes and self.sign != other.sign:
                 return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
             return Compare.EQUAL
         else:
             # Finite vs Finite, at least one non-zero.  If signs differ it's easy.  Also
             # get the either-is-a-zero case out the way as zeroes cannot have their
             # exponents compared.
-            if self.sign != rhs.sign or not rhs.significand:
+            if self.sign != other.sign or not other.significand:
                 return Compare.LESS_THAN if self.sign else Compare.GREATER_THAN
             if not self.significand:
-                return Compare.GREATER_THAN if rhs.sign else Compare.LESS_THAN
+                return Compare.GREATER_THAN if other.sign else Compare.LESS_THAN
 
             # Finally, two non-zero finite numbers with equal signs.  Compare the unbiased
             # exponents of their explicit integer-bit significands.
-            exponent_diff = self.exponent() - rhs.exponent()
+            exponent_diff = self.exponent() - other.exponent()
             if exponent_diff:
                 if (exponent_diff > 0) ^ (self.sign):
                     return Compare.GREATER_THAN
@@ -2235,17 +2235,17 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                     return Compare.LESS_THAN
 
             # Exponents are the same.  We need to make their significands comparable.
-            lhs_sig, rhs_sig = self.significand, rhs.significand
-            length_diff = lhs_sig.bit_length() - rhs_sig.bit_length()
+            lhs_sig, other_sig = self.significand, other.significand
+            length_diff = lhs_sig.bit_length() - other_sig.bit_length()
             if length_diff > 0:
-                rhs_sig <<= length_diff
+                other_sig <<= length_diff
             elif length_diff < 0:
                 lhs_sig <<= -length_diff
 
             # At last we have an apples-for-apples comparison
-            if lhs_sig == rhs_sig:
+            if lhs_sig == other_sig:
                 return Compare.EQUAL
-            if (lhs_sig > rhs_sig) ^ (self.sign):
+            if (lhs_sig > other_sig) ^ (self.sign):
                 return Compare.GREATER_THAN
             else:
                 return Compare.LESS_THAN
@@ -2253,122 +2253,120 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         # Comparisons involving at least one NaN.
         return Compare.UNORDERED
 
-    def _compare(self, rhs, context, signalling):
-        '''Return LHS vs RHS as one of the four comparison constants.
+    def _compare(self, other, context, signalling):
+        '''Return self vs other as one of the four comparison constants.
 
         If signalling is True, comparisons of NaNs signal InvalidComparison if either is a
         NaN.  Otherwise SignallingNaNOperand may be signalled.
         '''
-        result = self._compare_quiet(rhs, False)
+        result = self._compare_quiet(other, False)
         # Comparisons involving at least one NaN.
-        if result == Compare.UNORDERED and (signalling or self.is_snan() or rhs.is_snan()):
+        if result == Compare.UNORDERED and (signalling or self.is_snan() or other.is_snan()):
             context = context or get_context()
-            op_tuple = (OP_COMPARE, self, rhs)
+            op_tuple = (OP_COMPARE, self, other)
             cls = InvalidComparison if signalling else SignallingNaNOperand
             result = cls(op_tuple, result).signal(context)
         return result
 
-    def compare(self, rhs, context=None):
-        '''Return LHS vs RHS as one of the four comparison constants.  A signalling NaN signals
+    def compare(self, other, context=None):
+        '''Return self vs other as one of the four comparison constants.  A signalling NaN signals
         SignallingNaNOperand.'''
-        return self._compare(rhs, context, False)
+        return self._compare(other, context, False)
 
-    def compare_signal(self, rhs, context=None):
+    def compare_signal(self, other, context=None):
         '''This operation is identical to the compare() method, except that any NaN operand
         signals InvalidComparison.'''
-        return self._compare(rhs, context, True)
+        return self._compare(other, context, True)
 
-    def compare_eq(self, rhs, context=None):
-        return self._compare(rhs, context, False) == Compare.EQUAL
+    def compare_eq(self, other, context=None):
+        return self._compare(other, context, False) == Compare.EQUAL
 
-    def compare_ne(self, rhs, context=None):
-        return self._compare(rhs, context, False) != Compare.EQUAL
+    def compare_ne(self, other, context=None):
+        return self._compare(other, context, False) != Compare.EQUAL
 
-    def compare_gt(self, rhs, context=None):
-        return self._compare(rhs, context, False) == Compare.GREATER_THAN
+    def compare_gt(self, other, context=None):
+        return self._compare(other, context, False) == Compare.GREATER_THAN
 
-    def compare_ng(self, rhs, context=None):
-        return self._compare(rhs, context, False) != Compare.GREATER_THAN
+    def compare_ng(self, other, context=None):
+        return self._compare(other, context, False) != Compare.GREATER_THAN
 
-    def compare_ge(self, rhs, context=None):
-        return self._compare(rhs, context, False) in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_ge(self, other, context=None):
+        return self._compare(other, context, False) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_lu(self, rhs, context=None):
-        return self._compare(rhs, context, False) not in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_lu(self, other, context=None):
+        return self._compare(other, context, False) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_lt(self, rhs, context=None):
-        return self._compare(rhs, context, False) == Compare.LESS_THAN
+    def compare_lt(self, other, context=None):
+        return self._compare(other, context, False) == Compare.LESS_THAN
 
-    def compare_nl(self, rhs, context=None):
-        return self._compare(rhs, context, False) != Compare.LESS_THAN
+    def compare_nl(self, other, context=None):
+        return self._compare(other, context, False) != Compare.LESS_THAN
 
-    def compare_le(self, rhs, context=None):
-        return self._compare(rhs, context, False) in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_le(self, other, context=None):
+        return self._compare(other, context, False) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_gu(self, rhs, context=None):
-        return self._compare(rhs, context, False) not in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_gu(self, other, context=None):
+        return self._compare(other, context, False) not in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_un(self, rhs, context=None):
-        return self._compare(rhs, context, False) == Compare.UNORDERED
+    def compare_un(self, other, context=None):
+        return self._compare(other, context, False) == Compare.UNORDERED
 
-    def compare_or(self, rhs, context=None):
-        return self._compare(rhs, context, False) != Compare.UNORDERED
+    def compare_or(self, other, context=None):
+        return self._compare(other, context, False) != Compare.UNORDERED
 
-    def compare_eq_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) == Compare.EQUAL
+    def compare_eq_signal(self, other, context=None):
+        return self._compare(other, context, True) == Compare.EQUAL
 
-    def compare_ne_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) != Compare.EQUAL
+    def compare_ne_signal(self, other, context=None):
+        return self._compare(other, context, True) != Compare.EQUAL
 
-    def compare_gt_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) == Compare.GREATER_THAN
+    def compare_gt_signal(self, other, context=None):
+        return self._compare(other, context, True) == Compare.GREATER_THAN
 
-    def compare_ge_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_ge_signal(self, other, context=None):
+        return self._compare(other, context, True) in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_lt_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) == Compare.LESS_THAN
+    def compare_lt_signal(self, other, context=None):
+        return self._compare(other, context, True) == Compare.LESS_THAN
 
-    def compare_le_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_le_signal(self, other, context=None):
+        return self._compare(other, context, True) in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_ng_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) != Compare.GREATER_THAN
+    def compare_ng_signal(self, other, context=None):
+        return self._compare(other, context, True) != Compare.GREATER_THAN
 
-    def compare_lu_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) not in (Compare.EQUAL, Compare.GREATER_THAN)
+    def compare_lu_signal(self, other, context=None):
+        return self._compare(other, context, True) not in (Compare.EQUAL, Compare.GREATER_THAN)
 
-    def compare_nl_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) != Compare.LESS_THAN
+    def compare_nl_signal(self, other, context=None):
+        return self._compare(other, context, True) != Compare.LESS_THAN
 
-    def compare_gu_signal(self, rhs, context=None):
-        return self._compare(rhs, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)
+    def compare_gu_signal(self, other, context=None):
+        return self._compare(other, context, True) not in (Compare.EQUAL, Compare.LESS_THAN)
 
-    def compare_total(self, rhs):
+    def compare_total(self, other):
         '''The total order relation on a format.  A loose equivalent of <=.'''
-        if self.fmt != rhs.fmt:
-            raise ValueError('total order requires both operands have the same format')
-        comp = self._compare_quiet(rhs, True)
+        comp = self._compare_quiet(other, True)
         if comp == Compare.UNORDERED:
             # At least one is a NaN
-            if rhs.is_nan():
+            if other.is_nan():
                 if self.is_nan():
-                    if self.sign != rhs.sign:
+                    if self.sign != other.sign:
                         return self.sign
-                    if self.is_snan() != rhs.is_snan():
+                    if self.is_snan() != other.is_snan():
                         return self.is_snan() ^ self.sign
-                    if self.nan_payload() < rhs.nan_payload():
+                    if self.nan_payload() < other.nan_payload():
                         return not self.sign
-                    if self.nan_payload() > rhs.nan_payload():
+                    if self.nan_payload() > other.nan_payload():
                         return self.sign
                     return True
-                return not rhs.sign
+                return not other.sign
             return self.sign
         return comp != Compare.GREATER_THAN
 
-    def compare_total_mag(self, rhs):
+    def compare_total_mag(self, other):
         '''Per IEEE-754, totalOrderMag(x, y) is totalOrder(abs(x), abs(y)).'''
-        return self.abs_quiet().compare_total(rhs.abs_quiet())
+        return self.abs_quiet().compare_total(other.abs_quiet())
 
     def _max_min(self, flags, rhs, context):
         '''Implementation of IEEE-754 2019's maximum and maximum_number operations.'''
