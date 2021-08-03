@@ -467,6 +467,21 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
         Return the largest floating point value (unless operating on negative infinity or
         a :const:`NaN`) that compares greater than the operand.
 
+  .. method:: round_to_integral(rounding, context=None)
+
+    Return the value rounded to the nearest integer in the same format.  The *rounding*
+    method is given explicitly; that in *context* is ignored.
+
+    :exc:`Inexact` is not signalled.
+
+  .. method:: round_to_integral_exact(context=None)
+
+    Return the value rounded to an integer value in the same format.  The rounding method
+    is taken from *context*.
+
+    This operation signals :exc:`Inexact` if the result differs from the original value
+    (i.e., it was not an integer).
+
   .. method:: remainder(other, context=None)
 
      Return the the IEEE-754 remainder when divided by other.
@@ -538,6 +553,25 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      If `x` is a zero, infinity or :const:`NaN` then :exc:`InvalidLogBIntegral` is
      signalled with a default result of :attr:`BinaryFormat.logb_zero`,
      :attr:`BinaryFormat.logb_inf` and :attr:`BinaryFormat.logb_nan` respectively.
+
+  .. method:: convert_to_integer(min_int, max_int, rounding, context=None)
+
+     Return the value rounded to an integer as a Python `int`.  The *rounding* method is
+     given explicitly; that in *context* is ignored.
+
+     The result should lie between *min_int* and *max_int* inclusive, which satisfy the
+     inequality ``min_int <= 0 <= max_int``.  If both are :const:`0` then there is no
+     bound on the result.
+
+     NaNs, infinities and rounded values that lie outside the range signal
+     :exc:`InvalidConvertToInteger` with default result the closest in-range value (
+     :const:`0` if the operand is a :const:`NaN`).  :exc:`Inexact` is never signalled.
+
+  .. method:: convert_to_integer_exact(min_int, max_int, rounding, context=None)
+
+     The same as :meth:`convert_to_integer` except that :exc:`Inexact` is signalled if the
+     result is not numerically equal to the original value (i.e. it was not an integer)
+     **and** it is in-range.
 
 
 Context objects
