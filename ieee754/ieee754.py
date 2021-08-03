@@ -897,7 +897,6 @@ class BinaryFormat(NamedTuple):
         False, next_down() as True.
         '''
         assert value.fmt is self
-        context = context or get_context()
         sign = value.sign ^ flip_sign
         e_biased = value.e_biased
         significand = value.significand
@@ -1173,7 +1172,6 @@ class BinaryFormat(NamedTuple):
         TextFormat docstring for output control.  All signals are raised as appropriate,
         and zeroes are output with an exponent of 0.
         '''
-        context = context or get_context()
         text_format = text_format or DefaultHexFormat
         op_tuple = (OP_TO_STRING, value)
 
@@ -1195,8 +1193,6 @@ class BinaryFormat(NamedTuple):
         return self._add_sub((OP_SUBTRACT, lhs, rhs), lhs, rhs, True, context)
 
     def _add_sub(self, op_tuple, lhs, rhs, is_subtract, context):
-        context = context or get_context()
-
         # Handle either being non-finite
         if lhs.e_biased == 0 or rhs.e_biased == 0:
             # Put the non-finite in LHS
@@ -1255,6 +1251,7 @@ class BinaryFormat(NamedTuple):
         # unless rounding to minus infinity.  However, regardless of rounding mode, adding
         # two like-signed zeroes (or subtracting opposite-signed ones) gives the sign of
         # the left hand zero.
+        context = context or get_context()
         if not significand and (lhs.significand or rhs.significand or is_sub):
             sign = context.rounding == ROUND_FLOOR
 
@@ -1262,7 +1259,6 @@ class BinaryFormat(NamedTuple):
 
     def multiply(self, lhs, rhs, context=None):
         '''Returns the product of LHS and RHS in this format.'''
-        context = context or get_context()
         op_tuple = (OP_MULTIPLY, lhs, rhs)
 
         if lhs.e_biased == 0 or rhs.e_biased == 0:
@@ -1292,7 +1288,6 @@ class BinaryFormat(NamedTuple):
 
     def divide(self, lhs, rhs, context=None):
         '''Return lhs / rhs in this format.'''
-        context = context or get_context()
         op_tuple = (OP_DIVIDE, lhs, rhs)
         sign = lhs.sign ^ rhs.sign
 
@@ -1502,7 +1497,6 @@ class BinaryFormat(NamedTuple):
         '''Return a fused multiply-add operation.  The result is lhs * rhs + addend correctly
         rounded to this format.'''
         op_tuple = (OP_FMA, lhs, rhs, addend)
-        context = context or get_context()
 
         # FMA must signal no more than once for the entire operation; this precludes a
         # naive multiply followed by add.  It seems simplest to handle cases where
@@ -2020,7 +2014,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         logb(1) is +0.  logb(NaN) is a NaN, logb(∞) is +∞, and logb(0) is -∞ and signals
         the divide-by-zero exception.
         '''
-        context = context or get_context()
         op_tuple = (OP_LOGB, self)
 
         result = self._logb()
@@ -2262,7 +2255,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         result = self._compare_quiet(other, False)
         # Comparisons involving at least one NaN.
         if result == Compare.UNORDERED and (signalling or self.is_snan() or other.is_snan()):
-            context = context or get_context()
             op_tuple = (OP_COMPARE, self, other)
             cls = InvalidComparison if signalling else SignallingNaNOperand
             result = cls(op_tuple, result).signal(context)
