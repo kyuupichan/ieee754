@@ -345,160 +345,189 @@ instance with any other numeric type.
 Unless noted otherwise :const:`NaN` operands are propagated as descibed in the section
 `NaN propagation`_.
 
-Quiet Operations
-----------------
+.. class:: Binary
 
-The following operations are *quiet* - they do not raise signals and no context affects or
-is affected by them.  If the result is a floating point number it has the same format as
-the argument.
+  The following operations are *quiet* - they do not raise signals and no context affects
+  or is affected by them.  If the result is a floating point number it has the same format
+  as the argument.
 
-.. method:: number_class()
+  .. method:: number_class()
 
-   Return a string describing the *class* of the operand, which is one of the following
-   ten strings:
+     Return a string describing the *class* of the operand, which is one of the following
+     ten strings:
 
-      * ``"-Infinity"`` when the operand is negative infinity.
-      * ``"-Normal"`` when the operand is a negative normal number.
-      * ``"-Subnormal"`` when the operand is negative and subnormal.
-      * ``"-Zero"`` when the operand is negative zero.
-      * ``"+Zero"`` when the operand is positive zero.
-      * ``"+Subnormal"`` when the operand is positive and subnormal.
-      * ``"+Normal"`` when the operand is a positive normal number.
-      * ``"+Infinity"`` when the operand is positive infinity.
-      * ``"NaN"`` when the operand is a quiet NaN (Not a Number).
-      * ``"sNaN"`` when the operand is a signalling NaN.
+       * ``"-Infinity"`` when the operand is negative infinity.
+       * ``"-Normal"`` when the operand is a negative normal number.
+       * ``"-Subnormal"`` when the operand is negative and subnormal.
+       * ``"-Zero"`` when the operand is negative zero.
+       * ``"+Zero"`` when the operand is positive zero.
+       * ``"+Subnormal"`` when the operand is positive and subnormal.
+       * ``"+Normal"`` when the operand is a positive normal number.
+       * ``"+Infinity"`` when the operand is positive infinity.
+       * ``"NaN"`` when the operand is a quiet NaN (Not a Number).
+       * ``"sNaN"`` when the operand is a signalling NaN.
 
-.. method:: is_negative()
+  .. method:: is_negative()
 
-   Return :const:`True` if the sign bit is set (including for :const:`NaN` values).
+     Return :const:`True` if the sign bit is set (including for :const:`NaN` values).
 
-.. method:: is_zero()
+  .. method:: is_zero()
 
-   Return :const:`True` if the value is a zero of either sign.
+     Return :const:`True` if the value is a zero of either sign.
 
-.. method:: is_subnormal()
+  .. method:: is_subnormal()
 
-   Return :const:`True` if the value is subnormal.
+     Return :const:`True` if the value is subnormal.
 
-.. method:: is_normal()
+  .. method:: is_normal()
 
-   Return :const:`True` if the value is finite, non-zero and not subnormal.
+     Return :const:`True` if the value is finite, non-zero and not subnormal.
 
-.. method:: is_finite()
+  .. method:: is_finite()
 
-   Return :const:`True` if the value is finite.  A finite number is precisely one of zero,
-   subnormal or normal.
+     Return :const:`True` if the value is finite.  A finite number is precisely one of
+     zero, subnormal or normal.
 
-.. method:: is_finite_non_zero()
+  .. method:: is_finite_non_zero()
 
-   Return :const:`True` if the value is subnormal or normal.
+     Return :const:`True` if the value is subnormal or normal.
 
-.. method:: is_infinite()
+  .. method:: is_infinite()
 
-   Return :const:`True` if the value is an :const:`Infinity` of either sign.
+     Return :const:`True` if the value is an :const:`Infinity` of either sign.
 
-.. method:: is_nan()
+  .. method:: is_nan()
 
-   Return :const:`True` if the value is a quiet or signalling :const:`NaN`.
+     Return :const:`True` if the value is a quiet or signalling :const:`NaN`.
 
-.. method:: is_qnan()
+  .. method:: is_qnan()
 
-   Return :const:`True` if the value is a quiet :const:`NaN`.
+     Return :const:`True` if the value is a quiet :const:`NaN`.
 
-.. method:: is_snan()
+  .. method:: is_snan()
 
-   Return :const:`True` if the value is a signalling :const:`NaN`.
+     Return :const:`True` if the value is a signalling :const:`NaN`.
 
-.. method:: is_canonical()
+  .. method:: is_canonical()
 
-   Return :const:`True`.
+     Return :const:`True`.
 
-.. method:: radix()
+  .. method:: radix()
 
-   Return :const:`2`.
+     Return :const:`2`.
 
-.. method:: set_sign(sign)
+  .. method:: set_sign(sign)
 
-   Return this value with the given sign (including for :const:`NaN` values).
+     Return this value with the given sign (including for :const:`NaN` values).
 
-.. method:: abs_quiet()
+  .. method:: abs_quiet()
 
-   Return this value with sign :const:`False` (including for :const:`NaN` values).
+     Return this value with sign :const:`False` (including for :const:`NaN` values).
 
-.. method:: negate_quiet()
+  .. method:: negate_quiet()
 
-   Return this value with the opposite sign (including for :const:`NaN` values).
+     Return this value with the opposite sign (including for :const:`NaN` values).
 
-.. method:: pack(endianness=None)
+  .. method:: pack(endianness=None)
 
-   Encode the three parts of the floating point value as a byte string.  *endiannness* is
-   the byte order of the encoding; valid values are 'little', 'big' and :const:`None`
-   which will use the native endianness of the host machine.
+     Encode the three parts of the floating point value as a byte string.  *endiannness*
+     is the byte order of the encoding; valid values are 'little', 'big' and :const:`None`
+     which will use the native endianness of the host machine.
 
-.. method:: nan_payload()
+  .. method:: nan_payload()
 
-   Return the payload of a :const:`NaN` as a Python `int`.  If the argument is not a
-   :const:`NaN` raise a :exc:`RuntimeError`.
+     Return the payload of a :const:`NaN` as a Python `int`.  If the argument is not a
+     :const:`NaN` raise a :exc:`RuntimeError`.
 
-.. method:: payload()
+  .. method:: payload()
 
-   Return the payload of a :const:`NaN` as a non-negative floating point integer; if the
-   argument is not a :const:`NaN` return :const:`-1`.
+     Return the payload of a :const:`NaN` as a non-negative floating point integer; if the
+     argument is not a :const:`NaN` return :const:`-1`.
 
-.. method:: set_payload()
+  .. method:: set_payload()
 
-   Return a quiet :const:`NaN` with the argument as the payload provided it is an in-range
-   floating point integer, otherwise return :const:`+0`.
+     Return a quiet :const:`NaN` with the argument as the payload provided it is an in-range
+     floating point integer, otherwise return :const:`+0`.
 
-.. method:: set_payload_signalling()
+  .. method:: set_payload_signalling()
 
-   Return a signalling :const:`NaN` with the argument as the payload provided it is an
-   in-range floating point integer, otherwise return :const:`+0`.
+     Return a signalling :const:`NaN` with the argument as the payload provided it is an
+     in-range floating point integer, otherwise return :const:`+0`.
 
+  These operations are *homogenous*; they take operands of a single format and return a
+  result in that format.  They can raise signals.
 
-Homogenous Operations
----------------------
+  .. method:: remainder(other, context=None)
 
-These operations takes operands of a single format and return a result in that format.
+     Return the the IEEE-754 remainder when divided by other.
 
-.. method:: remainder(other, context=None)
+     If `y` is non-zero, the remainder is defined for finite operands `x` and `y` as ``r =
+     x - y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded
+     with :const:`ROUND_HALF_EVEN`.  The result is always exact, and if `r` is zero its
+     sign shall be that of `x`.
 
-   Return the the IEEE-754 remainder when divided by other.
+     If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
+     operand is a :const:`NaN`.  If `y` is infinite then the result is `x` if it is
+     finite.
 
-   If `y` is non-zero, the remainder is defined for finite operands `x` and `y` as ``r =
-   x - y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded with
-   :const:`ROUND_HALF_EVEN`.  The result is always exact, and if `r` is zero its sign
-   shall be that of `x`.
+  .. method:: fmod(other, context=None)
 
-   If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
-   operand is a :const:`NaN`.  If `y` is infinite then the result is `x` if it is finite.
+     Return the result of C99's ``fmod`` operation.  This is like :meth:`remainder` except
+     that the quotient ``x / y`` is rounded with :const:`ROUND_DOWN` so that the remainder
+     has the same sign as `x`.
 
-.. method:: fmod(other, context=None)
+  .. method:: mod(other, context=None)
 
-   Return the result of C99's ``fmod`` operation.  This is like :meth:`remainder` except
-   that the quotient ``x / y`` is rounded with :const:`ROUND_DOWN` so that the remainder
-   has the same sign as `x`.
+     Return the result of Python's ``%`` operation.
 
-.. method:: mod(other, context=None)
+     If `y` is non-zero, ``x % y`` is defined for finite operands `x` and `y` as ``r = x -
+     y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded with
+     :const:`ROUND_FLOOR`.  The reaminder is always exact and its sign is that of `y`.
 
-   Return the result of Python's ``%`` operation.
+     If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
+     operand is a :const:`NaN`.  If `y` is infinite then the result is the limiting result
+     of finite operands `y` tending to that infinity.
 
-   If `y` is non-zero, ``x % y`` is defined for finite operands `x` and `y` as ``r = x -
-   y * n``, where `n` is the integer nearest the exact quotient ``x / y`` rounded with
-   :const:`ROUND_FLOOR`.  The reaminder is always exact and its sign is that of `y`.
+     .. note:: Python may not give the same result for small values of *other* because it
+               uses approximate arithmetic in double precision.  This library returns the
+               correct result.
 
-   If `y` is zero or `x` is infinite, :exc:`InvalidRemainder` is signalled if neither
-   operand is a :const:`NaN`.  If `y` is infinite then the result is the limiting result
-   of finite operands `y` tending to that infinity.
+  .. method:: floordiv(other, context=None)
 
-   .. note:: Python may not give the same result for small values of *other* because it
-             uses approximate arithmetic in double precision.  This library returns the
-             correct result.
+     Return the result of Python's ``//`` operation; the quotient ``x / y`` is rounded
+     with :const:`ROUND_FLOOR`.
 
-.. method:: floordiv(other, context=None)
+  .. method:: scaleb(N, context=None)
 
-   Return the result of Python's ``//`` operation; the quotient ``x / y`` is rounded with
-   :const:`ROUND_FLOOR`.
+     Return ``x * 2^N`` in the format of `x` where *N* is a Python `int`.
+
+     If `x` is a zero or infinity, or *N* is zero, `x` is returned unchanged.
+
+  .. method:: logb(context=None)
+
+     Return the exponent of `x` when represented with infinite range and minimum exponent.
+     The result is a signed floating point integer in the same format as `x`.  The sign of
+     `x` is ignored.
+
+     Thus ``1 <= scaleb(x, -logb(x)) < 2`` when x is positive and finite.  If `x` is a
+     :const:`1` the result is :const:`+0`, if an infinity the result is
+     :const:`+Infinity`.  If `x` is zero signal the :exc:`LogBZero` exception with a
+     default result of :const:`-Infinity`.
+
+  The remaining operations take operands which can be in different formats to the result.
+  They can raise signals.
+
+  .. method:: logb_integral(context=None)
+
+     Return the exponent of `x` when represented with infinite range and minimum exponent.
+     The result is a Python `int`.  The sign of `x` is ignored.
+
+     Thus ``1 <= scaleb(x, -logb(x)) < 2`` when x is positive and finite.  If `x` is a
+     :const:`1` the result is :const:`0`.
+
+     If `x` is a zero, infinity or :const:`NaN` then :exc:`InvalidLogBIntegral` is
+     signalled with a default result of :attr:`BinaryFormat.logb_zero`,
+     :attr:`BinaryFormat.logb_inf` and :attr:`BinaryFormat.logb_nan` respectively.
 
 
 Context objects

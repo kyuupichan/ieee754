@@ -1965,13 +1965,12 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
     ##
 
     def scaleb(self, N, context=None):
-        '''Return x * 2^N for integral values N, correctly-rounded. and in the format of
-        x.  For non-zero values of N, scalb(±0, N) is ±0 and scalb(±∞) is ±∞.  For zero values
-        of N, scalb(x, N) is x.
+        '''Return x * 2^N for integral values N, correctly-rounded. and in the format of x.  For
+        non-zero values of N, scaleb(±0, N) is ±0 and scaleb(±∞, N) is ±∞.  For zero
+        values of N, scaleb(x, N) is x.
         '''
         if not isinstance(N, int):
             raise TypeError('scaleb requires an integer')
-        context = context or get_context()
         op_tuple = (OP_SCALEB, self, N)
 
         if self.e_biased == 0:
@@ -2005,7 +2004,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return result
 
         op_tuple = (OP_LOGB_INTEGRAL, self)
-        context = context or get_context()
 
         if result == 'Inf':
             result = self.fmt.logb_inf
