@@ -1177,7 +1177,7 @@ class BinaryFormat(NamedTuple):
         text_format = text_format or DefaultHexFormat
         op_tuple = (OP_TO_STRING, value)
 
-        # Do a convert() operation but preserve sNaNs.  This step signals inexact if appropriate.
+        # Do a convert() operation but preserve sNaNs.  This step raises signals appropriately.
         value = self._convert(value, op_tuple, context, True)
 
         # Now output the value.
@@ -2370,9 +2370,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
 
     def _max_min(self, flags, rhs, context):
         '''Implementation of IEEE-754 2019's maximum and maximum_number operations.'''
-        if self.fmt != rhs.fmt:
-            raise ValueError(f'{flags.op_name()} requires both operands have the same format')
-
         if flags & MinMaxFlags.MAG:
             comp = self.abs_quiet()._compare_quiet(rhs.abs_quiet(), True)
             # If magnitudes are equal, compare without magnitudes
@@ -2452,7 +2449,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.fmt.to_string(self, text_format, context)
 
     def to_decimal_string(self, precision=0, text_format=None, context=None):
-        '''Return text, with a hexadecimal significand for finite numbers, that is a
+        '''Return text, with a decimal significand for finite numbers, that is a
         representation of the floating point value.  See TextFormat docstring for output
         control.  All signals are raised as appropriate, and zeroes are output with an
         exponent of 0.
@@ -2488,8 +2485,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if self.is_zero():
             return 0, '0', False
 
-        if not self.is_finite():
-            raise RuntimeError('value must be finite')
+        assert self.is_finite()
 
         e_p = self.exponent_int()
         R = self.significand << max(0, e_p)

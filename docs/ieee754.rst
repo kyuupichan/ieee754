@@ -587,6 +587,27 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      result is not numerically equal to the original value (i.e. it was not an integer)
      **and** it is in-range.
 
+  .. method:: to_string(text_format=None, context=None)
+
+     Return a Python string, with a hexadecimal significand for finite numbers, that is a
+     representation of the floating point value.  See :class:`TextFormat` for details on
+     output control via *text_format*.  All signals are raised as appropriate and zeroes
+     are output with an exponent of :const:`0`.
+
+  .. method:: to_decimal_string(precision=0, text_format=None, context=None)
+
+     Return a python string, with a decimal significand for finite numbers, that is a
+     representation of the floating point value.  See :class:`TextFormat` for details on
+     output control via *text_format*.  Signals are raised as appropriate and zeroes
+     output with an exponent of :const:`0`.  :exc:`Underflow` and :exc:`Overflow` are not
+     signalled as the output has an unrestricted exponent range.
+
+     If *precision* is positive, it is the number of significant digits to output which
+     are rounded according to *context*.  :const:`0` returns the floating point number
+     printed in the shortest possible number of digits such that reading the output back
+     with :const:`ROUND_HALF_EVEN` rounding shall give the original floating point number.
+     :const:`-1` outputs as many digits as necessary to give the precise value.
+
   .. method:: compare(other, context=None)
 
      Return the operand compared to *other*, returning a :class:`Compare` constant.
@@ -692,6 +713,51 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
 
      Return :const:`True` if :meth:`compare_signal` returns :attr:`Compare.GREATER_THAN` or
      :attr:`Compare.UNORDERED`.
+
+  These methods implement IEEE-754 2019's ``maximum``, ``minimum`` and related operations.
+  Unlike in the standard, the operands are not required to have the same format.  For the
+  purposes of these operations :const:`-0` compares less than :const:`+0`.  NaNs propagate
+  as per `NaN Propagation`_.  If the operands are equal either can be returned.
+
+  .. method:: min(other, context=None)
+
+     Return the result of the ``minimum`` operation.  ``min(x, y)`` is `x` if ``x < y`` or
+     `y` if ``y < x``.
+
+  .. method:: max(other, context=None)
+
+     Return the result of the ``maximum`` operation.  ``max(x, y)`` is `x` if ``x > y`` or
+     `y` if ``y > x``.
+
+  .. method:: min_mag(other, context=None)
+
+     Return the result of the ``minimumMagnitude`` operation.  ``min_mag(x, y)`` is `x` if
+     ``|x| < |y|``, `y` if ``|y| < |x|``, otherwise ``min(x, y)``.
+
+  .. method:: max_mag(other, context=None)
+
+     Return the result of the ``maximumMagnitude`` operation.  ``max_mag(x, y)`` is `x` if
+     ``|x| > |y|``, `y` if ``|y| > |x|``, otherwise ``max(x, y)``.
+
+  .. method:: min_num(other, context=None)
+
+     Return the result of the ``minimumNumber`` operation.  ``min_num(x, y)`` is `x` if
+     ``x < y``, `y` if ``y < x``, or the number if one is a :const:`NaN`.
+
+  .. method:: max_num(other, context=None)
+
+     Return the result of the ``maximumNumber`` operation.  ``max_num(x, y)`` is `x` if
+     ``x > y``, `y` if ``y > x``, or the number if one is a :const:`NaN`.
+
+  .. method:: min_mag_num(other, context=None)
+
+     Return the result of the ``minimumMagnitudeNumber`` operation.  ``min_mag_num(x, y)``
+     is `x` if ``|x| < |y|``, `y` if ``|y| < |x|``, otherwise ``min_num(x, y)``.
+
+  .. method:: max_mag_num(other, context=None)
+
+     Return the result of the ``maximumMagnitudeNumber`` operation.  ``max_mag_num(x, y)``
+     is `x` if ``|x| > |y|``, `y` if ``|y| > |x|``, otherwise ``max_num(x, y)``.
 
 
 .. class:: Compare
@@ -1301,7 +1367,7 @@ TextFormat objects
 .. class:: TextFormat
 
   Binary values can be converted to hexadecimal and decimal text form with the functions
-  :meth:`to_string` and :meth:`to_hex_string`.  Both functions accept a
+  :meth:`Binary.to_string` and :meth:`Binary.to_hex_string`.  Both functions accept a
   :class:`TextFormat` object which controls the precise form of the strings produced.  If
   no output format is specified the methods use :data:`DefaultHexFormat` or
   :data:`DefaultDecFormat` respectively.

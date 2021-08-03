@@ -1244,6 +1244,23 @@ class TestUnderflow:
             IEEEsingle.convert(value, quiet_context)
         assert e.value.op_tuple == (OP_CONVERT, value)
 
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_to_decimal_string(self, fmt, quiet_context):
+        value = fmt.divide(fmt.make_smallest_normal(False), fmt.from_int(2), quiet_context)
+        assert quiet_context.flags == 0
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        # Should not raise
+        value.to_decimal_string(precision=0, context=quiet_context)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_to_hexadecimal_string(self, fmt, quiet_context):
+        value = fmt.divide(fmt.make_smallest_normal(False), fmt.from_int(2), quiet_context)
+        assert quiet_context.flags == 0
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            value.to_string(context=quiet_context)
+        assert e.value.op_tuple[0] == OP_TO_STRING
+
     @pytest.mark.parametrize('string', ('0x1.000000p-15', '0.000030517578125'))
     def test_ue_from_string(self, string, quiet_context):
         quiet_context.set_handler(Underflow, HandlerKind.RAISE)
@@ -2590,6 +2607,7 @@ def min_max_op(line, operation):
         assert False, f'bad line: {line}'
     fmt, lhs, rhs, status, answer = parts
     fmt = format_codes[fmt]
+    fmt = random.choice((fmt, IEEEquad))
     lhs = from_string(fmt, lhs)
     rhs = from_string(fmt, rhs)
     answer = from_string(fmt, answer)
