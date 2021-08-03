@@ -457,6 +457,16 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
   These operations are *homogenous*; they take operands of a single format and return a
   result in that format.  They can raise signals.
 
+  .. method:: next_up(context=None)
+
+        Return the smallest floating point value (unless operating on positive infinity or
+        :const:`NaN`) that compares greater than the operand.
+
+  .. method:: next_down(context=None)
+
+        Return the largest floating point value (unless operating on negative infinity or
+        a :const:`NaN`) that compares greater than the operand.
+
   .. method:: remainder(other, context=None)
 
      Return the the IEEE-754 remainder when divided by other.

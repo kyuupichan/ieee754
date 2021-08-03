@@ -1219,13 +1219,30 @@ class TestUnderflow:
             assert context.flags == Flags.UNDERFLOW | Flags.INEXACT  # Both have been signalled
         assert not context.exceptions
 
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ue_next_up(self, fmt, quiet_context):
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        value = fmt.make_zero(True)
+        with pytest.raises(UnderflowExact) as e:
+            value.next_up(quiet_context)
+        assert e.value.op_tuple == (OP_NEXT_UP, value)
+
+        value = e.value.default_result
+        assert value.is_subnormal()
+        assert value.next_down(quiet_context).is_zero()
+
+        def handler(exception, context):
+            assert isinstance(exception, UnderflowExact)
+            return fmt.make_infinity(False)
+        quiet_context.set_handler(Underflow, HandlerKind.SUBSTITUTE_VALUE, handler)
+        assert value.next_up().is_infinite()
+
     def test_ue_convert(self, quiet_context):
         quiet_context.set_handler(Underflow, HandlerKind.RAISE)
         value = IEEEdouble.from_string('0x1.000000p-127')
         with pytest.raises(UnderflowExact) as e:
             IEEEsingle.convert(value, quiet_context)
         assert e.value.op_tuple == (OP_CONVERT, value)
-
 
     @pytest.mark.parametrize('string', ('0x1.000000p-15', '0.000030517578125'))
     def test_ue_from_string(self, string, quiet_context):
