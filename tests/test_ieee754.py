@@ -2346,7 +2346,6 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line', read_lines('scaleb.txt'))
     def test_scaleb(self, line):
-        # FIXME: subnormal tests
         parts = line.split()
         if len(parts) != 6:
             assert False, f'bad line: {line}'
@@ -2363,6 +2362,11 @@ class TestUnaryOps:
         assert result.fmt is fmt
         assert floats_equal(result, answer)
         assert context.flags == status
+
+    def test_scaleb_type(self):
+        one = IEEEdouble.make_one(False)
+        with pytest.raises(TypeError):
+            one.scaleb(0.0)
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_logb_specials(self, fmt):
@@ -2684,6 +2688,13 @@ class TestBinaryOps:
     @pytest.mark.parametrize('line', read_lines('min_mag_num.txt'))
     def test_min_mag_num(self, line):
         min_max_op(line, 'min_mag_num')
+
+    @pytest.mark.parametrize('operation', ('remainder', 'fmod', 'mod', 'floordiv'))
+    def test_diff_formats(self, operation, context):
+        lhs = IEEEsingle.make_one(False)
+        rhs = IEEEdouble.make_one(False)
+        with pytest.raises(ValueError):
+            getattr(lhs, operation)(rhs, context)
 
     @pytest.mark.parametrize('line', read_lines('remainder.txt'))
     def test_remainder(self, line, quiet_context):
