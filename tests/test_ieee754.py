@@ -3,7 +3,7 @@ import random
 import re
 import threading
 from decimal import Decimal
-from math import isfinite
+from math import isfinite, trunc, ceil, floor, isnan
 from fractions import Fraction
 from functools import partial
 from itertools import product
@@ -1353,6 +1353,14 @@ class TestUnderflow:
             fmt.sqrt(value, quiet_context)
         assert e.value.op_tuple == (OP_SQRT, value)
 
+    def test_ue_float(self, quiet_context):
+        z = IEEEdouble.from_string('0x1p-1026')
+        quiet_context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            float(z)
+        assert e.value.default_result == float.fromhex('0x1p-1026')
+        assert quiet_context.flags == 0
+
 
 class TestBinaryFormat:
 
@@ -1544,7 +1552,30 @@ class TestBinaryFormat:
         assert BinaryFormat.from_triple(8, 99, -99) != 1
 
 
+class MyType:
+    '''Dummy class for testing NotImplemented in Binary comparisons'''
+
+    def __eq__(self, other):
+        return other.fmt is IEEEdouble
+
+    def __ne__(self, other):
+        return other.fmt != IEEEdouble
+
+    def __lt__(self, other):
+        return False
+
+    def __le__(self, other):
+        return True
+
+    def __gt__(self, other):
+        return 3
+
+    def __ge__(self, other):
+        return 5
+
+
 class TestPython:
+    '''Test Pyhton built-in support.'''
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_abs(self, fmt, context):
@@ -1787,27 +1818,79 @@ class TestPython:
 
         assert (zero <= MyType()) == 5
 
+    @pytest.mark.parametrize('fmt, sign', product(all_IEEE_fmts, (False, True)))
+    def test_bool(self, fmt, sign, context):
+        assert not bool(fmt.make_zero(sign))
+        assert bool(fmt.make_one(sign))
+        assert bool(fmt.make_infinity(sign))
+        assert bool(fmt.make_nan(sign, False, 0))
+        assert bool(fmt.make_nan(sign, True, 0))
+        assert context.flags == 0
 
-class MyType:
-    '''Dummy class for testing NotImplemented in Binary comparisons'''
+    @pytest.mark.parametrize('line', read_lines('trunc.txt'))
+    def test_trunc(self, line, quiet_context):
+        context = quiet_context
+        parts = line.split()
+        if len(parts) != 5:
+            assert False, f'bad line: {line}'
+        value, status, trunc_answer, floor_answer, ceil_answer = parts
+        trunc_answer, floor_answer, ceil_answer = (int(trunc_answer), int(floor_answer),
+                                                   int(ceil_answer))
+        for fmt in all_IEEE_fmts:
+            x = fmt.from_string(value, context)
+            context.flags = 0
+            if status == 'K':
+                assert trunc(x) == trunc_answer
+                assert floor(x) == floor_answer
+                assert ceil(x) == ceil_answer
+                assert int(x) == trunc_answer
+                assert context.flags == 0
+            else:
+                assert trunc(x) == 0
+                assert context.flags == Flags.INVALID
+                context.flags = 0
+                assert floor(x) == 0
+                assert context.flags == Flags.INVALID
+                context.flags = 0
+                assert ceil(x) == 0
+                assert context.flags == Flags.INVALID
+                context.flags = 0
+                assert int(x) == 0
+                assert context.flags == Flags.INVALID
 
-    def __eq__(self, other):
-        return other.fmt is IEEEdouble
 
-    def __ne__(self, other):
-        return other.fmt != IEEEdouble
+    @pytest.mark.parametrize('fmt, string', product(
+        all_IEEE_fmts,
+        ('Inf', '-Inf', 'NaN', '-0.0', '0.0', '1.25')
+    ))
+    def test_float(self, fmt, string, quiet_context):
+        value = fmt.from_string(string)
+        answer = float(string)
+        result = float(value)
+        assert quiet_context.flags == 0
+        assert pack('d', result) == pack('d', answer)
+        assert quiet_context.flags == 0
 
-    def __lt__(self, other):
-        return False
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_float_sNaN(self, fmt, quiet_context):
+        value = fmt.from_string('sNaN')
+        assert isnan(float(value))
+        assert quiet_context.flags == Flags.INVALID
 
-    def __le__(self, other):
-        return True
-
-    def __gt__(self, other):
-        return 3
-
-    def __ge__(self, other):
-        return 5
+    def test_float_signals(self, quiet_context):
+        # Overflow
+        assert float(IEEEquad.from_string('-0x1p5000')) == float('-Inf')
+        assert quiet_context.flags == Flags.OVERFLOW | Flags.INEXACT
+        # Underflow
+        x = IEEEquad.from_string('0x1p-5000')
+        quiet_context.flags = 0
+        assert float(x) == 0.0
+        assert quiet_context.flags == Flags.UNDERFLOW | Flags.INEXACT
+        # Inexact
+        quiet_context.flags = 0
+        assert float(IEEEquad.from_string
+                     ('0x1.123456789123456789123456p-20')) == 1.021491156675701e-06
+        assert quiet_context.flags == Flags.INEXACT
 
 
 class TestBinary:
@@ -2040,15 +2123,6 @@ class TestBinary:
             one >= 'a'
         assert not one == 'a'
         assert one != 'a'
-
-    @pytest.mark.parametrize('fmt, sign', product(all_IEEE_fmts, (False, True)))
-    def test_bool(self, fmt, sign, context):
-        assert not bool(fmt.make_zero(sign))
-        assert bool(fmt.make_one(sign))
-        assert bool(fmt.make_infinity(sign))
-        assert bool(fmt.make_nan(sign, False, 0))
-        assert bool(fmt.make_nan(sign, True, 0))
-        assert context.flags == 0
 
 
 # Test basic class functions before reading test files

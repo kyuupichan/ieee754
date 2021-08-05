@@ -2649,6 +2649,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_DOWN)
 
     def __float__(self):
+        # This coversion raises all signals
         value = IEEEdouble.convert(self)
         result, = unpack_double(value.pack())
         return result

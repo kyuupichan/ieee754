@@ -324,7 +324,8 @@ Binary objects share many properties with other built-in numeric types such as `
 `int`.  The usual mathematical operations and special methods apply; the thread's default
 context is used as the context.  Likewise Binary objects can be copied, pickled, printed,
 used as dictionary keys, used as set elements, compared, sorted and coerced to another
-type (such as `float` and `int`).  Conversion to `bool` is a quiet operation.
+type (such as `float` and `int`).  Conversion to `bool` is a quiet operation; other
+conversions and operations raise signals as appropriate in the thread's ambient context.
 
 Binary objects behave the same as `float` object for the ``%`` and ``//`` operators::
 
