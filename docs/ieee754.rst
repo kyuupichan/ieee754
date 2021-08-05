@@ -326,6 +326,8 @@ context is used as the context.  Likewise Binary objects can be copied, pickled,
 used as dictionary keys, used as set elements, compared, sorted and coerced to another
 type (such as `float` and `int`).  Conversion to `bool` is a quiet operation; other
 conversions and operations raise signals as appropriate in the thread's ambient context.
+As for the `decimal` type, signalling NaNs cannot be hashed and all quiet NaNs hash to the
+same :const:`0` value regardless of payload.
 
 Binary objects behave the same as `float` object for the ``%`` and ``//`` operators::
 

@@ -1892,6 +1892,25 @@ class TestPython:
                      ('0x1.123456789123456789123456p-20')) == 1.021491156675701e-06
         assert quiet_context.flags == Flags.INEXACT
 
+    @pytest.mark.parametrize('fmt, string', product(
+        all_IEEE_fmts,
+        ('Inf', '-Inf', 'NaN', 'NaN256', '-0.0', '0.0', '1.25', '0.1', '-2.45')
+    ))
+    def test_hash(self, fmt, string):
+        value = fmt.from_string(string)
+        if value.is_finite():
+            assert hash(value) == hash(Fraction(*value.as_integer_ratio()))
+        else:
+            assert hash(value) == hash(Decimal(string))
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_hash_NaN(self, fmt):
+        value = fmt.from_string('nan2')
+        assert hash(value) == 0
+        value = fmt.from_string('snan3')
+        with pytest.raises(TypeError):
+            hash(value)
+
 
 class TestBinary:
 
