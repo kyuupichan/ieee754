@@ -1544,6 +1544,272 @@ class TestBinaryFormat:
         assert BinaryFormat.from_triple(8, 99, -99) != 1
 
 
+class TestPython:
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_abs(self, fmt, context):
+        d = fmt.from_int(1)
+        assert abs(d) is d
+
+        e = fmt.from_int(-1)
+        assert floats_equal(abs(e), d)
+
+        f = fmt.from_string('-NaN1')
+        g = fmt.from_string('NaN1')
+        assert abs(f) is f
+        assert abs(g) is g
+
+        assert context.flags == 0
+
+        h = fmt.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as e:
+            abs(h)
+        assert e.value.op_tuple == (OP_ABS, h)
+        # The NaN is quietened; sign is not changed
+        assert floats_equal(e.value.default_result, f)
+        assert context.flags == Flags.INVALID
+
+        s = fmt.make_smallest_subnormal(False)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            abs(s)
+        assert e.value.op_tuple == (OP_ABS, s)
+        assert e.value.default_result is s
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_negate(self, fmt, context):
+        d = fmt.from_int(1)
+        e = fmt.from_int(-1)
+
+        assert floats_equal(-d, e)
+        assert floats_equal(-e, d)
+
+        f = fmt.from_string('-NaN1')
+        g = fmt.from_string('NaN1')
+        assert -f is f
+        assert -g is g
+
+        assert context.flags == 0
+
+        h = fmt.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as e:
+            -h
+        assert e.value.op_tuple == (OP_MINUS, h)
+        # The NaN is quietened; sign is not changed
+        assert floats_equal(e.value.default_result, f)
+        assert context.flags == Flags.INVALID
+
+        s = fmt.make_smallest_subnormal(False)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            -s
+        assert e.value.op_tuple == (OP_MINUS, s)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_plus(self, fmt, context):
+        d = fmt.from_int(1)
+        e = fmt.from_int(-1)
+
+        assert +d is d
+        assert +e is e
+
+        f = fmt.from_string('-NaN1')
+        g = fmt.from_string('NaN1')
+        assert +f is f
+        assert +g is g
+
+        assert context.flags == 0
+
+        k = fmt.from_string('-sNaN')
+        with pytest.raises(SignallingNaNOperand) as e:
+            +k
+        assert e.value.op_tuple == (OP_PLUS, k)
+        # The NaN is quietened; sign is not changed
+        assert floats_equal(e.value.default_result, f)
+        assert context.flags == Flags.INVALID
+
+        s = fmt.make_smallest_subnormal(False)
+        context.set_handler(Underflow, HandlerKind.RAISE)
+        with pytest.raises(UnderflowExact) as e:
+            +s
+        assert e.value.op_tuple == (OP_PLUS, s)
+        assert e.value.default_result is s
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_eq(self, fmt, context):
+        one = fmt.make_one(False)
+
+        assert one == 1
+        assert 1 == one
+
+        assert one == Decimal(1)
+        assert Decimal(1) == one
+
+        assert one == 1.0
+        assert 1.0 == one
+
+        assert one == Fraction(1, 1)
+        assert Fraction(1, 1) == one
+
+        assert one == complex(1, 0)
+        assert complex(1, 0) == one
+
+        assert (one == MyType()) is (fmt is IEEEdouble)
+        assert (MyType() == one) is (fmt is IEEEdouble)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ne(self, fmt, context):
+        one = fmt.make_one(False)
+
+        assert one != 0
+        assert 2 != one
+
+        assert one != Decimal(0)
+        assert Decimal('1.01') != one
+
+        assert one != 2.0
+        assert 0.0 != one
+
+        assert one != Fraction(2, 1)
+        assert Fraction(0, 1) != one
+
+        assert one != complex(0, 1)
+        assert one != complex(0, 0)
+        assert complex(1, 1) != one
+
+        assert (one != MyType()) is (fmt is not IEEEdouble)
+        assert (MyType() != one) is (fmt is not IEEEdouble)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_gt(self, fmt, context):
+        one = fmt.make_one(False)
+
+        assert one > 0
+        assert not (one > 1)
+        assert -1 < one
+
+        assert one > Decimal(0)
+        assert Decimal(0) < one
+
+        assert one > 0.99999999999
+        assert not (one > 1.0)
+        assert 0.5 < one
+
+        assert one > Fraction(1, 2)
+        assert Fraction(0, 2) < one
+
+        with pytest.raises(TypeError):
+            one > complex(1, 0)
+
+        with pytest.raises(TypeError):
+            complex(1, 0) < one
+
+        assert (one > MyType()) is False
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_ge(self, fmt, context):
+        one = fmt.make_one(False)
+
+        assert one >= 1
+        assert one >= 0
+        assert -1 <= one
+        assert 1 <= one
+
+        assert one >= Decimal(0)
+        assert Decimal(0) <= one
+
+        assert one >= 0.5
+        assert 0.5 <= one
+
+        assert one >= Fraction(1, 2)
+        assert Fraction(0, 2) <= one
+
+        with pytest.raises(TypeError):
+            one >= complex(1, 0)
+
+        with pytest.raises(TypeError):
+            complex(1, 0) <= one
+
+        assert (one >= MyType()) is True
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_lt(self, fmt, context):
+        one = fmt.make_one(False)
+
+        assert one < 2
+        assert not (one < 1)
+        assert 2 > one
+
+        assert one < Decimal('1.1')
+        assert Decimal(2) > one
+
+        assert one < 1.000000000001
+        assert not (one < 1.0)
+        assert 1.5 > one
+
+        assert one < Fraction(9, 8)
+        assert Fraction(101, 99) > one
+
+        with pytest.raises(TypeError):
+            one < complex(1, 0)
+
+        with pytest.raises(TypeError):
+            complex(1, 0) > one
+
+        assert (one < MyType()) == 3
+
+
+    @pytest.mark.parametrize('fmt, sign', product(all_IEEE_fmts, signs))
+    def test_le(self, fmt, sign, context):
+        zero = fmt.make_zero(sign)
+
+        assert zero <= 0
+        assert zero <= 1
+        assert not (zero <= -1)
+        assert 2 >= zero
+
+        assert zero <= Decimal(1)
+        assert Decimal(1) >= zero
+
+        assert zero <= .0001
+        assert not (zero <= -1.0)
+        assert 0.1 >= zero
+
+        assert zero <= Fraction(0, 8)
+        assert Fraction(101, 99) >= zero
+        assert not (zero <= Fraction(-1, 8))
+
+        with pytest.raises(TypeError):
+            zero <= complex(1, 0)
+
+        with pytest.raises(TypeError):
+            complex(1, 0) >= zero
+
+        assert (zero <= MyType()) == 5
+
+
+class MyType:
+    '''Dummy class for testing NotImplemented in Binary comparisons'''
+
+    def __eq__(self, other):
+        return other.fmt is IEEEdouble
+
+    def __ne__(self, other):
+        return other.fmt != IEEEdouble
+
+    def __lt__(self, other):
+        return False
+
+    def __le__(self, other):
+        return True
+
+    def __gt__(self, other):
+        return 3
+
+    def __ge__(self, other):
+        return 5
+
+
 class TestBinary:
 
     def test_constructor_type1(self):
@@ -1636,36 +1902,6 @@ class TestBinary:
         assert two.copy_sign(two) is two
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
-    def test_abs(self, fmt, context):
-        d = fmt.from_int(1)
-        assert abs(d) is d
-
-        e = fmt.from_int(-1)
-        assert floats_equal(abs(e), d)
-
-        f = fmt.from_string('-NaN1')
-        g = fmt.from_string('NaN1')
-        assert abs(f) is f
-        assert abs(g) is g
-
-        assert context.flags == 0
-
-        h = fmt.from_string('-sNaN')
-        with pytest.raises(SignallingNaNOperand) as e:
-            abs(h)
-        assert e.value.op_tuple == (OP_ABS, h)
-        # The NaN is quietened; sign is not changed
-        assert floats_equal(e.value.default_result, f)
-        assert context.flags == Flags.INVALID
-
-        s = fmt.make_smallest_subnormal(False)
-        context.set_handler(Underflow, HandlerKind.RAISE)
-        with pytest.raises(UnderflowExact) as e:
-            abs(s)
-        assert e.value.op_tuple == (OP_ABS, s)
-        assert e.value.default_result is s
-
-    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_abs_quiet(self, fmt, context):
         d = fmt.from_int(1)
         assert d.abs_quiet() is d
@@ -1688,35 +1924,6 @@ class TestBinary:
         assert context.flags == 0
 
     @pytest.mark.parametrize('fmt', all_IEEE_fmts)
-    def test_negate(self, fmt, context):
-        d = fmt.from_int(1)
-        e = fmt.from_int(-1)
-
-        assert floats_equal(-d, e)
-        assert floats_equal(-e, d)
-
-        f = fmt.from_string('-NaN1')
-        g = fmt.from_string('NaN1')
-        assert -f is f
-        assert -g is g
-
-        assert context.flags == 0
-
-        h = fmt.from_string('-sNaN')
-        with pytest.raises(SignallingNaNOperand) as e:
-            -h
-        assert e.value.op_tuple == (OP_MINUS, h)
-        # The NaN is quietened; sign is not changed
-        assert floats_equal(e.value.default_result, f)
-        assert context.flags == Flags.INVALID
-
-        s = fmt.make_smallest_subnormal(False)
-        context.set_handler(Underflow, HandlerKind.RAISE)
-        with pytest.raises(UnderflowExact) as e:
-            -s
-        assert e.value.op_tuple == (OP_MINUS, s)
-
-    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
     def test_negate_quiet(self, fmt, context):
         d = fmt.from_int(1)
         e = fmt.from_int(-1)
@@ -1734,37 +1941,6 @@ class TestBinary:
         assert floats_equal(k, h.negate_quiet())
         assert floats_equal(h, k.negate_quiet())
         assert context.flags == 0
-
-    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
-    def test_plus(self, fmt, context):
-        d = fmt.from_int(1)
-        e = fmt.from_int(-1)
-
-        assert +d is d
-        assert +e is e
-
-        f = fmt.from_string('-NaN1')
-        g = fmt.from_string('NaN1')
-        assert +f is f
-        assert +g is g
-
-        assert context.flags == 0
-
-        k = fmt.from_string('-sNaN')
-        with pytest.raises(SignallingNaNOperand) as e:
-            +k
-        assert e.value.op_tuple == (OP_PLUS, k)
-        # The NaN is quietened; sign is not changed
-        assert floats_equal(e.value.default_result, f)
-        assert context.flags == Flags.INVALID
-
-        s = fmt.make_smallest_subnormal(False)
-        context.set_handler(Underflow, HandlerKind.RAISE)
-        with pytest.raises(UnderflowExact) as e:
-            +s
-        assert e.value.op_tuple == (OP_PLUS, s)
-        assert e.value.default_result is s
-
 
     @pytest.mark.parametrize('text, rhs, compare', (
         # Comparisons of Infs

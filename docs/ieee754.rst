@@ -1290,7 +1290,7 @@ At present no support is implemented for the delayed forms of exception handling
        Behaviour is as for :attr:`SUBSTITUTE_VALUE` except the sign of the value to
        substitue is ignored and instead replaced with the correct sign of the multiply or
        divide operation (i.e., the exclusive or of the signs of the two operands).  Sign
-       substitution does not happend for :const:`NaN` values.
+       substitution does not happen for :const:`NaN` values.
 
     .. attribute:: ABRUPT_UNDERFLOW
 
