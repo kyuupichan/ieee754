@@ -1911,6 +1911,82 @@ class TestPython:
         with pytest.raises(TypeError):
             hash(value)
 
+    @pytest.mark.parametrize('fmt, case', product(
+        all_IEEE_fmts,
+        (('0.6', 1), ('0.5', 0), ('1.5', 2), ('-0.5', 0), ('-1.5', -2))
+    ))
+    def test_round_None(self, fmt, case, quiet_context):
+        string, answer = case
+        value = fmt.from_string(string)
+        quiet_context.flags = 0
+        result = round(value)
+        assert isinstance(result, int)
+        assert result == answer
+        assert quiet_context.flags == 0
+
+        result = round(value, 0)
+        assert isinstance(result, Binary)
+        assert result.fmt is fmt
+        assert result == answer
+        assert quiet_context.flags == 0
+
+    # @pytest.mark.parametrize('fmt, case', product(
+    #     all_IEEE_fmts,
+    #     (('0.5', -1, '0'),
+    #      ('0.5', 0, '0'),
+    #      ('0.5', 1, '0.5'),
+    #      ('0.5', 2, '0.5'),
+    #      ('15', 0, '15'),
+    #      ('15', -1, '20'),
+    #      ('15', -2, '0'),
+    # )))
+    # def test_round_n(self, fmt, case, quiet_context):
+    #     string, ndigits, answer = case
+    #     value = fmt.from_string(string)
+    #     answer = fmt.from_string(answer)
+    #     quiet_context.flags = 0
+    #     result = round(value, ndigits)
+    #     assert floats_equal(result, answer)
+    #     assert quiet_context.flags == 0
+
+    @pytest.mark.parametrize('fmt, special', product(
+        all_IEEE_fmts,
+        ('Inf', '-Inf', 'Nan', 'SNan'),
+    ))
+    def test_round_None_specials(self, fmt, special, quiet_context):
+        value = fmt.from_string(special)
+        quiet_context.flags = 0
+        result = round(value)
+        assert isinstance(result, int)
+        assert result == 0
+        assert quiet_context.flags == Flags.INVALID
+
+        quiet_context.flags = 0
+        result = round(value, 2)
+        assert isinstance(result, Binary)
+        assert result.fmt is fmt
+        if value.is_nan():
+            assert result.is_nan()
+        else:
+            assert result == value
+        assert quiet_context.flags == (Flags.INVALID if value.is_snan() else 0)
+
+        quiet_context.flags = 0
+        result = round(value, -2)
+        assert isinstance(result, Binary)
+        assert result.fmt is fmt
+        if value.is_nan():
+            assert result.is_nan()
+        else:
+            assert result == value
+        assert quiet_context.flags == (Flags.INVALID if value.is_snan() else 0)
+
+    @pytest.mark.parametrize('fmt, ndigits', product(all_IEEE_fmts, (0.0, 1.0, round, int)))
+    def test_round_type(self, fmt, ndigits):
+        value = fmt.make_zero(False)
+        with pytest.raises(TypeError):
+            round(value, ndigits)
+
 
 class TestBinary:
 

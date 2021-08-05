@@ -326,7 +326,7 @@ context is used as the context.  Likewise Binary objects can be copied, pickled,
 used as dictionary keys, used as set elements, compared, sorted and coerced to another
 type (such as `float` and `int`).  Conversion to `bool` is a quiet operation; other
 conversions and operations raise signals as appropriate in the thread's ambient context.
-As for the `decimal` type, signalling NaNs cannot be hashed and all quiet NaNs hash to the
+As for the `Decimal` type, signalling NaNs cannot be hashed and all quiet NaNs hash to the
 same :const:`0` value regardless of payload.
 
 Binary objects behave the same as `float` object for the ``%`` and ``//`` operators::
@@ -347,6 +347,7 @@ instance with any other numeric type.
 
 Unless noted otherwise :const:`NaN` operands are propagated as descibed in the section
 `NaN propagation`_.
+
 
 .. class:: Binary
 
@@ -589,6 +590,17 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      The same as :meth:`convert_to_integer` except that :exc:`Inexact` is signalled if the
      result is not numerically equal to the original value (i.e. it was not an integer)
      **and** it is in-range.
+
+  .. func:: __round__(ndigits=None)
+
+     This is the the `round` builtin.
+
+     If *ndigits* is :const:`None` round the operand to a Python `int`.  This is the same
+     as ``convert_to_integer(0, 0, ROUND_HALF_EVEN)``.
+
+     Otherwise, round after *ndigits* decimal digits with rounding mode
+     :const:`ROUND_HALF_EVEN`.  The result is :class:`Binary` object with the same format
+     as *value*.
 
   .. method:: to_string(text_format=None, context=None)
 
