@@ -2385,7 +2385,7 @@ class TestUnaryOps:
 
     @pytest.mark.parametrize('line, kind, exact', product(
         read_lines('round_to_integral.txt'),
-        ('round', (-128, 127), (0, 255), (-(1 << 63), (1 << 63) - 1), (0, (1 << 64) - 1)),
+        ('round', (-128, 127), (0, 255), (0, 0), (-(1 << 63), (1 << 63) - 1), (0, (1 << 64) - 1)),
         (False, True),
     ))
     def test_to_integer(self, line, kind, exact):
@@ -2420,7 +2420,9 @@ class TestUnaryOps:
                 answer = min_int if answer.sign else max_int
             else:
                 answer = int(answer_str)
-                if answer < min_int:
+                if min_int == max_int:
+                    pass
+                elif answer < min_int:
                     answer, status = min_int, Flags.INVALID
                 elif answer > max_int:
                     answer, status = max_int, Flags.INVALID
@@ -2436,6 +2438,18 @@ class TestUnaryOps:
                 assert isinstance(result, int)
                 assert result == answer
                 assert context.flags == status & ~Flags.INEXACT
+
+    def test_convert_to_integer_bad(self, context):
+        zero = IEEEdouble.make_zero(False)
+        zero.convert_to_integer(0, 65536, ROUND_CEILING, context)
+        with pytest.raises(TypeError):
+            zero.convert_to_integer(0.0, 65536, ROUND_CEILING, context)
+        with pytest.raises(TypeError):
+            zero.convert_to_integer(0, 65536.0, ROUND_CEILING, context)
+        with pytest.raises(ValueError):
+            zero.convert_to_integer(1, 65536, ROUND_CEILING, context)
+        with pytest.raises(ValueError):
+            zero.convert_to_integer(-65536, -1, ROUND_CEILING, context)
 
 
     @pytest.mark.parametrize('line', read_lines('convert.txt'))
