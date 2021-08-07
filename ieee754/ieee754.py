@@ -975,20 +975,20 @@ class BinaryFormat(NamedTuple):
         # Infinities
         return self.make_infinity(value.sign)
 
-    def convert_for_arith(self, value):
-        '''Convert value to something capable of doing arithmetic with this format.
-
-        Binary values are returned unmodified.  Python floats are returned as an
-        IEEEdouble.  Python ints are converted to this format.  Otherwise None is
-        returned.
-        '''
-        if isinstance(value, Binary):
+    def _convert_quiet(self, value):
+        '''Convert value quietly to this format.  It should fit in this format.'''
+        if value.fmt is self:
             return value
-        if isinstance(value, float):
-            return IEEEdouble_from_float_quiet(value)
-        if isinstance(value, int):
-            return self.from_int(value)
-        return None
+
+        if value.e_biased:
+            if value.significand:
+                return self._normalize(value.sign, value.exponent_int(), value.significand,
+                                       None, Context())
+            return self.make_zero(value.sign)
+
+        if value.significand:
+            return self.make_nan(value.sign, value.is_snan(), value.nan_payload())
+        return self.make_infinity(value.sign)
 
     def pack(self, sign, exponent, significand, endianness=None):
         '''Packs the IEEE parts of a floating point number as bytes of the given endianness.
@@ -2680,43 +2680,43 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return result.scaleb(-ndigits)
 
     def __add__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.fmt.add(self, other)
 
     def __sub__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.fmt.subtract(self, other)
 
     def __mul__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.fmt.multiply(self, other)
 
     def __truediv__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.fmt.divide(self, other)
 
     def __mod__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.mod(other)
 
     def __floordiv__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.floordiv(other)
 
     def __divmod__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.divmod(other)
@@ -2725,7 +2725,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.__add__(other)
 
     def __rsub__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.fmt.subtract(other, self)
@@ -2734,25 +2734,25 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self.__mul__(other)
 
     def __rtruediv__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return self.fmt.divide(other, self)
 
     def __rmod__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return other.mod(self)
 
     def __rfloordiv__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return other.floordiv(self)
 
     def __rdivmod__(self, other):
-        other = self.fmt.convert_for_arith(other)
+        self, other = convert_for_arith(self, other)
         if other is None:
             return NotImplemented
         return other.divmod(self)
@@ -3102,6 +3102,47 @@ def compare_any_eq(value, other):
         return Compare.UNORDERED
 
     return compare_any(value, other)
+
+
+def common_format(lhs, rhs):
+    '''Return a common format encompassing the precision and exponent range of both formats.'''
+    if lhs is rhs:
+        return lhs
+
+    triple = (max(lhs.precision, rhs.precision), max(lhs.e_max, rhs.e_max),
+              min(lhs.e_min, rhs.e_min))
+    if triple == (lhs.precision, lhs.e_max, lhs.e_min):
+        return lhs
+    if triple == (rhs.precision, rhs.e_max, rhs.e_min):
+        return rhs
+    return BinaryFormat.from_triple(*triple)
+
+
+def convert_for_arith(value, other):
+    '''Determine a common binary format, and return the pair of operands converted to that
+    format.  value must be a Binary object.  other can be a Python int, Python float, or
+    Binary.  If it is none of these it is returned as None.
+
+    If other is a Python int, then it is converted to the format of value; this may be
+    inexact and overflow.
+
+    A Python float is converted quietly to IEEEdouble format.  Both operands are now
+    Binary; the common format is chosen to encompass the precision and range of both
+    formats without loss.
+    '''
+    assert isinstance(value, Binary)
+
+    if isinstance(other, int):
+        return value, value.fmt.from_int(other)
+
+    if isinstance(other, float):
+        other = IEEEdouble_from_float_quiet(other)
+
+    if not isinstance(other, Binary):
+        return value, None
+
+    fmt = common_format(value.fmt, other.fmt)
+    return fmt._convert_quiet(value), fmt._convert_quiet(other)
 
 
 def compare_any(value, other):

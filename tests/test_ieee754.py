@@ -1987,6 +1987,259 @@ class TestPython:
         with pytest.raises(TypeError):
             round(value, ndigits)
 
+    def test_pyadd_special(self, context):
+        assert floats_equal(IEEEdouble.make_zero(False) + IEEEquad.make_infinity(False),
+                            IEEEdouble.make_infinity(False) + IEEEquad.make_zero(False))
+        with pytest.raises(SignallingNaNOperand):
+            IEEEdouble.make_zero(False) + IEEEhalf.make_nan(False, True, 1)
+
+    def test_mixed_formats(self, context):
+        fmt1 = BinaryFormat.from_triple(30, 5, -5)
+        fmt2 = BinaryFormat.from_triple(10, 10, -8)
+        three = fmt1.from_int(3)
+        two = fmt2.from_int(2)
+        six = three * two
+        assert floats_equal(six, two * three)
+        assert six == 6
+        assert six.fmt.precision == 30
+        assert six.fmt.e_max == 10
+        assert six.fmt.e_min == -8
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_pyadd(self, fmt, context):
+        one = fmt.make_one(False)
+        value = fmt.from_int(2)
+        value = value + value
+        assert value.fmt is fmt
+        assert value == 4
+
+        value = value + 1
+        assert value.fmt is fmt
+        assert value == 5
+
+        value += 1
+        assert value.fmt is fmt
+        assert value == 6
+
+        value = value + one
+        assert value.fmt is fmt
+        assert value == 7
+
+        value += one
+        assert value.fmt is fmt
+        assert value == 8
+
+        result_fmt = fmt if fmt is IEEEquad else IEEEdouble
+        value += 1.0
+        assert value.fmt is result_fmt
+        assert value == 9
+
+        value = value + 1.0
+        assert value.fmt is result_fmt
+        assert value == 10
+
+        with pytest.raises(TypeError):
+            value + Decimal(1)
+
+        with pytest.raises(TypeError):
+            value += Decimal(1)
+
+        with pytest.raises(TypeError):
+            value + Fraction(1, 1)
+
+        assert context.flags == 0
+
+        value = fmt.make_largest_finite(False)
+        with pytest.raises(Overflow):
+            value += value
+
+        assert context.flags == Flags.OVERFLOW
+
+        context.flags = 0
+        value = fmt.make_zero(False)
+        with pytest.raises(Overflow):
+            value + (1 << (fmt.e_max + 1))
+
+        context.flags = 0
+        value = ((1 << fmt.precision) + 1) + value
+        assert context.flags == Flags.INEXACT
+        assert value == 1 << fmt.precision
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_radd(self, fmt, context):
+        one = fmt.make_one(False)
+        value = fmt.from_int(2)
+        result_fmt = fmt if fmt is IEEEquad else IEEEdouble
+
+        value = 1 + value
+        assert value.fmt is fmt
+        assert value == 3
+
+        value = one + value
+        assert value.fmt is fmt
+        assert value == 4
+
+        value = 1.0 + value
+        assert value.fmt is result_fmt
+        assert value == 5
+
+        with pytest.raises(TypeError):
+            Decimal(1) + value
+
+        with pytest.raises(TypeError):
+            Fraction(1, 1) + value
+
+        assert context.flags == 0
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_pysub(self, fmt, context):
+        one = fmt.make_one(False)
+        value = fmt.from_int(2)
+        value = value - one
+        assert value.fmt is fmt
+        assert value == 1
+
+        value = value - 1
+        assert value.fmt is fmt
+        assert value == 0
+
+        value -= 1
+        assert value.fmt is fmt
+        assert value == -1
+
+        result_fmt = fmt if fmt is IEEEquad else IEEEdouble
+        value -= 100.0
+        assert value.fmt is result_fmt
+        assert value == -101
+
+        with pytest.raises(TypeError):
+            value - Decimal(1)
+
+        assert context.flags == 0
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_rsub(self, fmt, context):
+        one = fmt.make_one(False)
+        value = fmt.from_int(2)
+
+        value = 1 - value
+        assert value.fmt is fmt
+        assert value == -1
+
+        result_fmt = fmt if fmt is IEEEquad else IEEEdouble
+        value = 2.0 - value
+        assert value.fmt is result_fmt
+        assert value == 3
+
+        with pytest.raises(TypeError):
+            Decimal(1) - value
+
+        assert context.flags == 0
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_pymul(self, fmt, context):
+        value = fmt.from_string('1.5')
+
+        assert value * -2 == -3
+        assert value * -3.0 == -4.5
+
+        value = fmt.make_largest_finite(False)
+        with pytest.raises(Overflow):
+            value *= 2
+        with pytest.raises(TypeError):
+            value * abs
+
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_rmul(self, fmt, context):
+        value = fmt.from_string('1.5')
+
+        assert -2 * value == -3
+        assert 3.0 * value == 4.5
+        with pytest.raises(TypeError):
+            abs * value
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_pydiv(self, fmt, context):
+        value = fmt.from_string('1.5')
+
+        assert value / 2 == 0.75
+        assert value / -0.5 == -3
+
+        assert context.flags == 0
+        with pytest.raises(TypeError):
+            value / Decimal(1)
+
+        value = fmt.make_largest_finite(False)
+        with pytest.raises(Overflow):
+            value *= 2
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_rdiv(self, fmt, context):
+        value = fmt.from_string('0.5')
+
+        value = 2 / value
+        assert value.fmt is fmt
+        assert value == 4
+
+        assert -8.0 / value == -2
+
+        assert context.flags == 0
+        with pytest.raises(TypeError):
+            Decimal(1) / value
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_pymod(self, fmt, context):
+        value = fmt.from_int(-7)
+
+        mod = value % 4
+        assert mod == 1.0
+        assert mod.fmt is fmt
+        assert value % -4.0 == -3
+
+        assert context.flags == 0
+        with pytest.raises(TypeError):
+            value % Decimal(1)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_pyfloordiv(self, fmt, context):
+        value = fmt.from_int(-7)
+
+        fdiv = value // 4
+        assert fdiv == -2
+        assert fdiv.fmt is fmt
+        assert value // -4.0 == 1
+
+        assert context.flags == 0
+        with pytest.raises(TypeError):
+            value // Decimal(1)
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_rmod(self, fmt, context):
+        value = fmt.from_int(4)
+
+        mod = -7 % value
+        assert mod == 1.0
+        assert mod.fmt is fmt
+        assert -7.0 % value == 1
+
+        assert context.flags == 0
+        with pytest.raises(TypeError):
+            Decimal(1) % value
+
+    @pytest.mark.parametrize('fmt', all_IEEE_fmts)
+    def test_rfloordiv(self, fmt, context):
+        value = fmt.from_int(4)
+
+        fdiv = -7 // value
+        assert fdiv == -2
+        assert fdiv.fmt is fmt
+        assert -7.0 // value == -2
+
+        assert context.flags == 0
+        with pytest.raises(TypeError):
+            Decimal(1) // value
+
 
 class TestBinary:
 

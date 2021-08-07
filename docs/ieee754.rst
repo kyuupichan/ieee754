@@ -321,13 +321,15 @@ directly, but through helper methods or class methods on the :class:`BinaryForma
 Once constructed, :class:`Binary` objects are immutable.
 
 Binary objects share many properties with other built-in numeric types such as `float` and
-`int`.  The usual mathematical operations and special methods apply; the thread's default
-context is used as the context.  Likewise Binary objects can be copied, pickled, printed,
-used as dictionary keys, used as set elements, compared, sorted and coerced to another
-type (such as `float` and `int`).  Conversion to `bool` is a quiet operation; other
-conversions and operations raise signals as appropriate in the thread's ambient context.
-As for the `Decimal` type, signalling NaNs cannot be hashed and all quiet NaNs hash to the
-same :const:`0` value regardless of payload.
+`int`.  The usual Python mathematical operations and special methods apply; the thread's
+default context is used as the context.  :class:`Binary` objects can be operated with
+values of `int`, `float` and other Binary objects.  Values of type `int` are coerced to
+Binary objects of the format of the other operand; this conversion may be inexact or
+overflow.  An operand of type `float` is converted to a Binary object of
+:const:`IEEEdouble` format.  Then a result format is chosen that encompasses the precision
+and exponent range of both operands, and the result is delivered in that format.  This
+ensures that operations like `+` and `*` are commutative and deliver the same value
+regardless of the order of the operands.
 
 Binary objects behave the same as `float` object for the ``%`` and ``//`` operators::
 
@@ -344,6 +346,12 @@ Binary objects cannot generally be combined with instances of `decimal.Decimal` 
 `fractions.Fraction`, but they can be combined with instances of type `int` and `float`.
 However it is possible to use Python's comparison operators to compare a :class:`Binary`
 instance with any other numeric type.
+
+Likewise :class:`Binary` objects can be copied, pickled, printed, used as dictionary keys
+or set elements, compared, sorted and coerced to `float` and `int` types.  Conversion to
+`bool` is a quiet operation; other conversions and operations raise signals as appropriate
+in the thread's ambient context.  Like for the `Decimal` type, signalling NaNs cannot be
+hashed and all quiet NaNs hash to the same :const:`0` value regardless of payload.
 
 Unless noted otherwise :const:`NaN` operands are propagated as descibed in the section
 `NaN propagation`_.
@@ -591,7 +599,7 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      result is not numerically equal to the original value (i.e. it was not an integer)
      **and** it is in-range.
 
-  .. func:: __round__(ndigits=None)
+  .. method:: __round__(ndigits=None)
 
      This is the the `round` builtin.
 
