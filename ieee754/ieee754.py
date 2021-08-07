@@ -30,7 +30,7 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'ROUND_CEILING', 'ROUND_FLOOR', 'ROUND_DOWN', 'ROUND_UP',
            'ROUND_HALF_EVEN', 'ROUND_HALF_UP', 'ROUND_HALF_DOWN',
            'OP_ABS', 'OP_ADD', 'OP_SUBTRACT', 'OP_MULTIPLY', 'OP_DIVIDE', 'OP_FMA', 'OP_SQRT',
-           'OP_REMAINDER', 'OP_FMOD', 'OP_MOD', 'OP_DIVMOD', 'OP_FLOORDIV',
+           'OP_REMAINDER', 'OP_FMOD', 'OP_MOD', 'OP_FLOORDIV',
            'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
            'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE',
            'OP_CONVERT', 'OP_CONVERT_TO_INTEGER', 'OP_CONVERT_TO_INTEGER_EXACT',
@@ -64,7 +64,6 @@ OP_FMA = 'fma'
 OP_REMAINDER = 'remainder'
 OP_FMOD = 'fmod'
 OP_MOD = 'mod'                # Python
-OP_DIVMOD = 'divmod'          # Python
 OP_FLOORDIV = 'floordiv'      # Python
 OP_SQRT = 'sqrt'
 OP_SCALEB = 'scaleb'
@@ -2715,12 +2714,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             return NotImplemented
         return self.floordiv(other)
 
-    def __divmod__(self, other):
-        self, other = convert_for_arith(self, other)
-        if other is None:
-            return NotImplemented
-        return self.divmod(other)
-
     def __radd__(self, other):
         return self.__add__(other)
 
@@ -2750,12 +2743,6 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         if other is None:
             return NotImplemented
         return other.floordiv(self)
-
-    def __rdivmod__(self, other):
-        self, other = convert_for_arith(self, other)
-        if other is None:
-            return NotImplemented
-        return other.divmod(self)
 
     def __hash__(self):
         '''Python hash.  Must hash equally to other types with the same value.'''
