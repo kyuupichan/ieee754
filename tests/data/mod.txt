@@ -135,6 +135,10 @@ S -24 -6 K 4 K -0
 D 1.234 0.6589 K 1 K 0.5751
 D 1234 0.6589 K 1872 K 0.5391999999999229
 
+# Code coverage
+D 1 2 K 0 K 1
+D 1 -2 K -1 K -1
+
 # Overflow in dividend
 D  2.34 0x1.289p-1029 VI  inf K 5.814268467245e-311
 # Python gets this wrong (!); it uses a double to do the division

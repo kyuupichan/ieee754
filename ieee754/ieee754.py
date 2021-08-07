@@ -1917,7 +1917,9 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             else:
                 lost_fraction = LF_LESS_THAN_HALF
             if round_up(quot_rounding, lost_fraction, quot_sign, False):
-                return (-1 if quot_sign else 1), self.fmt.subtract(self, other, context)
+                if quot_sign:
+                    return -1, self.fmt.add(self, other, context)
+                return 1, self.fmt.subtract(self, other, context)
             else:
                 return 0, self
 
