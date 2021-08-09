@@ -34,7 +34,7 @@ __all__ = ('Context', 'DefaultContext', 'get_context', 'set_context', 'local_con
            'OP_LOGB', 'OP_LOGB_INTEGRAL', 'OP_SCALEB',
            'OP_NEXT_UP', 'OP_NEXT_DOWN', 'OP_COMPARE',
            'OP_CONVERT', 'OP_CONVERT_TO_INTEGER', 'OP_CONVERT_TO_INTEGER_EXACT',
-           'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT', 'OP_UNPACK_VALUE',
+           'OP_ROUND', 'OP_ROUND_TO_INTEGRAL', 'OP_ROUND_TO_INTEGRAL_EXACT', 'OP_UNPACK_VALUE',
            'OP_FROM_INT', 'OP_FROM_FLOAT', 'OP_FROM_STRING', 'OP_FROM_DECIMAL', 'OP_FROM_FRACTION',
            'OP_TO_STRING', 'OP_TO_DECIMAL_STRING',
            'OP_MAX', 'OP_MAX_NUM', 'OP_MIN', 'OP_MIN_NUM', 'OP_MAX_MAG_NUM', 'OP_MAX_MAG',
@@ -74,6 +74,7 @@ OP_NEXT_DOWN = 'next_down'
 OP_COMPARE = 'compare'
 OP_CONVERT = 'convert'
 OP_UNPACK_VALUE = 'unpack_value'
+OP_ROUND = 'round'
 OP_ROUND_TO_INTEGRAL = 'round_to_integral'
 OP_ROUND_TO_INTEGRAL_EXACT = 'round_to_integral_exact'
 OP_CONVERT_TO_INTEGER = 'convert_to_integer'
@@ -2173,6 +2174,29 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         '''
         return self._to_integer(OP_CONVERT_TO_INTEGER_EXACT, min_int, max_int, rounding, context)
 
+    def round(self, ndigits=None, rounding=ROUND_HALF_EVEN, context=None):
+        '''If ndigits is None, round to a Python `int`.  Otherwise ndigits is an `int`, round
+        ndigits after the decimal point, and return the result as a floating point number
+        of the same fomat.
+
+        The rounding mode is explicit and not taken from the context.'''
+        op_tuple = (OP_ROUND, ndigits, rounding)
+        if ndigits is None:
+            return self._to_integer(OP_ROUND, 0, 0, rounding, context)
+        if not isinstance(ndigits, int):
+            raise TypeError('ndigits must be an integer')
+
+        if self.e_biased == 0:
+            return self._round_to_integral(OP_ROUND, rounding, context)
+
+        # This is the exponent of the leading digit
+        exponent, digits, _ = self._to_decimal_parts(1, ndigits, rounding)
+        exponent += 1 - len(digits)
+        sign = '-' if self.sign else ''
+        string = f'{sign}{digits}e{exponent}'
+        return decimal_to_binary.convert(op_tuple, self.fmt, string, context)
+
+
     ##
     ## Signalling computational operations
     ##
@@ -2457,7 +2481,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         op_tuple = (OP_TO_DECIMAL_STRING, self, precision)
 
         if self.is_finite():
-            exponent, digits, is_inexact = self._to_decimal_parts(precision, context.rounding)
+            exponent, digits, is_inexact = self._to_decimal_parts(0, precision, context.rounding)
             if precision == 0:
                 precision = self.fmt.decimal_precision - 1
             else:
@@ -2469,7 +2493,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         else:
             return text_format.format_non_finite(self, op_tuple, context)
 
-    def _to_decimal_parts(self, precision, rounding):
+    def _to_decimal_parts(self, mode, precision, rounding):
         '''Returns a tuple (exponent, digits, is_inexact) for finite numbers.
 
         See "How to Print Floating-Point Numbers Accurately" by Steele and White, in
@@ -2499,7 +2523,7 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
             S *= 10
             exponent += 1
 
-        if precision:
+        if mode or precision:
             # Precision is fixed or infinite.  Generate the digits.
             def gen_digits(count):
                 nonlocal R, S
@@ -2508,11 +2532,22 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                     yield U + 48
                     count -= 1
 
-            digits = bytearray(gen_digits(precision))
+            if mode == 0:
+                # Negative precision generates all digits.  Positive generates that many.
+                digits = bytearray(gen_digits(precision))
+            else:
+                # ndigits sig digits past the decimal point
+                precision += exponent + 1
+                if precision > 0:
+                    digits = bytearray(gen_digits(precision))
+                else:
+                    digits = bytearray(b'0')
+                    exponent += (1 - precision)
+
             # Rounding
             if R:
                 R *= 2
-                if R < S:
+                if R < S or precision < 0:
                     lost_fraction = LF_LESS_THAN_HALF
                 elif R == S:
                     lost_fraction = LF_EXACTLY_HALF
@@ -2532,6 +2567,10 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
                             exponent += 1
                             break
         else:
+            # Mode zero means shortest such that reading in with ROUND_HALF_EVEN gives the
+            # correct value.  Positive is that many sig digits.  Negative gives all
+            # digits.
+            #
             # Now the arithmetic value is R / S.  M is the value of one high-ulp, and
             # hence is always scaled alongside the significand remainder R.  A low-ulp is
             # almost always the same size as a high-ulp; the exception is when our value
@@ -2665,20 +2704,8 @@ class Binary(namedtuple('Binary', 'fmt sign e_biased significand')):
         return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_CEILING)
 
     def __round__(self, ndigits=None):
-        '''If ndigits is None, round to an integer under ROUND_HALF_EVEN.  Otherwise round after
-        ndigits binary digits with ROUND_HALF_EVEN and the result is floating-point.
-        '''
-        if ndigits is None:
-            return self._to_integer(OP_CONVERT_TO_INTEGER, 0, 0, ROUND_HALF_EVEN)
-        if not isinstance(ndigits, int):
-            raise TypeError('ndigits must be an integer')
-
-        if self.e_biased == 0:
-            return self._round_to_integral(OP_ROUND_TO_INTEGRAL, ROUND_HALF_EVEN)
-        ndigits = min(ndigits, -self.exponent_int())
-        result = self.scaleb(ndigits)
-        result = result._round_to_integral(OP_ROUND_TO_INTEGRAL, ROUND_HALF_EVEN)
-        return result.scaleb(-ndigits)
+        '''built-in round().'''
+        return self.round(ndigits, ROUND_HALF_EVEN)
 
     def __add__(self, other):
         self, other = convert_for_arith(self, other)
@@ -2775,7 +2802,7 @@ class DecimalToBinary:
         self.pow5_err = pow5_err
         self.pow5_recip_err = pow5_recip_err
 
-    def convert(self, op_tuple, fmt, string, context):
+    def convert(self, op_tuple, fmt, string, context=None):
         '''Converts a string with a hexadecimal significand to a floating number of the
         required format.
 

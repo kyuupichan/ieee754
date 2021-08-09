@@ -1911,44 +1911,6 @@ class TestPython:
         with pytest.raises(TypeError):
             hash(value)
 
-    @pytest.mark.parametrize('fmt, case', product(
-        all_IEEE_fmts,
-        (('0.6', 1), ('0.5', 0), ('1.5', 2), ('-0.5', 0), ('-1.5', -2))
-    ))
-    def test_round_None(self, fmt, case, quiet_context):
-        string, answer = case
-        value = fmt.from_string(string)
-        quiet_context.flags = 0
-        result = round(value)
-        assert isinstance(result, int)
-        assert result == answer
-        assert quiet_context.flags == 0
-
-        result = round(value, 0)
-        assert isinstance(result, Binary)
-        assert result.fmt is fmt
-        assert result == answer
-        assert quiet_context.flags == 0
-
-    # @pytest.mark.parametrize('fmt, case', product(
-    #     all_IEEE_fmts,
-    #     (('0.5', -1, '0'),
-    #      ('0.5', 0, '0'),
-    #      ('0.5', 1, '0.5'),
-    #      ('0.5', 2, '0.5'),
-    #      ('15', 0, '15'),
-    #      ('15', -1, '20'),
-    #      ('15', -2, '0'),
-    # )))
-    # def test_round_n(self, fmt, case, quiet_context):
-    #     string, ndigits, answer = case
-    #     value = fmt.from_string(string)
-    #     answer = fmt.from_string(answer)
-    #     quiet_context.flags = 0
-    #     result = round(value, ndigits)
-    #     assert floats_equal(result, answer)
-    #     assert quiet_context.flags == 0
-
     @pytest.mark.parametrize('fmt, special', product(
         all_IEEE_fmts,
         ('Inf', '-Inf', 'Nan', 'SNan'),
@@ -2873,6 +2835,28 @@ class TestUnaryOps:
         with pytest.raises(ValueError):
             zero.convert_to_integer(-65536, -1, ROUND_CEILING, context)
 
+    @pytest.mark.parametrize('line', read_lines('round.txt'))
+    def test_pyround(self, line, quiet_context):
+        parts = line.split()
+        if len(parts) != 6:
+            assert False, f'bad line: {line}'
+        fmt, rounding, value, ndigits, status, answer_str = parts
+        fmt = format_codes[fmt]
+        rounding = rounding_codes[rounding]
+        value = from_string(fmt, value)
+        if ndigits == 'None':
+            ndigits = None
+        else:
+            ndigits = int(ndigits)
+        status = status_codes[status]
+
+        answer = value.round(ndigits, rounding)
+        if ndigits is None:
+            assert isinstance(answer, int)
+            assert answer == int(answer_str)
+        else:
+            assert floats_equal(answer, fmt.from_string(answer_str))
+        assert quiet_context.flags == status
 
     @pytest.mark.parametrize('line', read_lines('convert.txt'))
     def test_convert(self, line):

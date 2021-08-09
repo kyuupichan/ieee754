@@ -1,0 +1,69 @@
+# FloatFormat: H=IEEEhalf S=IEEEsingle D=IEEEdouble Q=IEEEquad
+# Context:
+#   Rounding: E=ROUND_HALF_EVEN C=ROUND_CEILING F=ROUND_FLOOR D=ROUND_DOWN U=ROUND_UP
+#             u=ROUND_HALF_UP d=ROUND_HALF_DOWN
+# Status: K=OK V=Overflow U=Underflow I=Inexact Z=DivByZero X=InvalidOp S=Subnormal
+# Sign: + or -
+
+# Test format: FloatFormat Rounding String nDigits Status String
+
+############
+##
+## Non-zero integers
+##
+############
+
+D E 1.23456789 None K 1
+D E 1.23456789 -1 K 0
+D U 1.23456789 -1 K 10
+D U 1.23456789 -2 K 100
+D E 1.23456789 0 K 1
+D E 1.23456789 1 I 1.2
+D E 1.23456789 2 I 1.23
+D E 1.23456789 3 I 1.235
+D E 1.23456789 4 I 1.2346
+D E 1.23456789 8 I 1.23456789
+
+D E 1.245 2 K 1.25
+
+D E -876.543 None K -877
+D U -876.543 -4 K -10000
+D E -876.543 -4 K -0
+D E -876.543 -3 K -1000
+D E -876.543 -2 K -900
+D E -876.543 -1 K -880
+D E -876.543 0 K -877
+D E -876.543 1 K -876.5
+D E -876.543 2 I -876.54
+
+D C -0.01 0 K -0
+D U -0.01 0 K -1
+D C -0.01 None K 0
+D U -0.01 None K -1
+
+#
+# Infinities
+#
+
+S E +Inf None X 0
+D u -Inf None X 0
+D u -Inf 0 K -Inf
+D u -Inf 0 K -Inf
+
+#
+# Zeroes
+#
+
+S E 0 None K 0
+D u -0 None K -0
+Q C 0 0 K 0
+H U -0 0 K -0
+Q d 0 1 K 0
+
+#
+# NaNs
+#
+
+S E NaN None X 0
+S E NaN 0 K NaN
+D u sNaN 0 X NaN1

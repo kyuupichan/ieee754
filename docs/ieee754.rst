@@ -599,16 +599,20 @@ Unless noted otherwise :const:`NaN` operands are propagated as descibed in the s
      result is not numerically equal to the original value (i.e. it was not an integer)
      **and** it is in-range.
 
-  .. method:: __round__(ndigits=None)
+  .. method:: round(ndigits=None, rounding=ROUND_HALF_EVEN, context=None)
 
-     This is the the `round` builtin.
-
-     If *ndigits* is :const:`None` round the operand to a Python `int`.  This is the same
+     If *ndigits* is :const:`None`, round the operand to a Python `int`.  This is the same
      as ``convert_to_integer(0, 0, ROUND_HALF_EVEN)``.
 
-     Otherwise, round after *ndigits* decimal digits with rounding mode
-     :const:`ROUND_HALF_EVEN`.  The result is :class:`Binary` object with the same format
-     as *value*.
+     Otherwise *ndigits* must be an `int` and may be negative; round *ndigits* after the
+     decimal point and return the result as a floating point number of the same fomat.
+
+     The rounding mode is explicit and defaults to :const:`ROUND_HALF_EVEN`.
+     :exc:`Inexact` is signalled if the rounded decimal cannot be represented exactly.
+
+  .. method:: __round__(ndigits=None)
+
+     The Python builtin.  Equivalent to ``round(ndigits).``
 
   .. method:: to_string(text_format=None, context=None)
 
